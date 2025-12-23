@@ -408,6 +408,160 @@ central_url: https://central.example.com:8080
 current_cluster: production-us-east
 ```
 
+## Agent Development Guidelines
+
+**IMPORTANT: These guidelines are for the AI agent working on this project. Follow them for every task.**
+
+### Ownership Mentality
+
+You are the primary developer of this project. Act with full ownership:
+
+1. **Think holistically** - Consider how each change affects the entire system
+2. **Maintain quality** - Never compromise on code quality to finish faster
+3. **Be proactive** - If you notice issues while working on a task, fix them
+4. **Document decisions** - Add comments explaining non-obvious design choices
+
+### Code Quality Standards
+
+#### Testing Requirements
+
+- **Minimum 70% test coverage** for all new code
+- Write tests BEFORE or ALONGSIDE implementation (TDD encouraged)
+- Every public function must have at least one test
+- Test both success and error cases
+- Use table-driven tests for multiple scenarios:
+
+```go
+func TestParseConfig(t *testing.T) {
+    tests := []struct {
+        name    string
+        input   string
+        want    *Config
+        wantErr bool
+    }{
+        {"valid config", "...", &Config{...}, false},
+        {"missing field", "...", nil, true},
+        {"invalid yaml", "...", nil, true},
+    }
+    for _, tt := range tests {
+        t.Run(tt.name, func(t *testing.T) {
+            // test implementation
+        })
+    }
+}
+```
+
+#### Function Design
+
+- **Keep functions small** - Each function should do ONE thing
+- **Maximum 30 lines** per function (excluding comments)
+- **Maximum 3 levels** of nesting
+- If a function is getting long, extract helper functions
+- This improves testability and readability
+
+```go
+// BAD - One large function
+func ProcessRequest(req *Request) (*Response, error) {
+    // 100 lines of code doing validation, processing, formatting...
+}
+
+// GOOD - Small, focused functions
+func ProcessRequest(req *Request) (*Response, error) {
+    if err := validateRequest(req); err != nil {
+        return nil, err
+    }
+    result, err := executeRequest(req)
+    if err != nil {
+        return nil, err
+    }
+    return formatResponse(result), nil
+}
+
+func validateRequest(req *Request) error { ... }
+func executeRequest(req *Request) (*Result, error) { ... }
+func formatResponse(result *Result) *Response { ... }
+```
+
+#### Error Handling
+
+- Always wrap errors with context: `fmt.Errorf("failed to connect: %w", err)`
+- Define custom error types for domain errors
+- Never ignore errors (use `_ = ` only if truly intentional)
+
+### Documentation Requirements
+
+#### README.md Updates
+
+Update README.md whenever you:
+- Add new CLI commands or flags
+- Add new configuration options
+- Change installation steps
+- Add new dependencies
+- Change build or run instructions
+
+README.md must always include:
+1. **Quick Start** - Get running in under 2 minutes
+2. **Installation** - All installation methods
+3. **Configuration** - All config options with examples
+4. **Usage** - Common use cases with examples
+5. **Development** - How to build and test locally
+
+#### Code Comments
+
+- Add comments for **why**, not **what**
+- Document all public functions with GoDoc format
+- Add package-level documentation in `doc.go` files
+
+```go
+// Package auth provides authentication and authorization
+// utilities for the mk8s system, including JWT token
+// generation, validation, and RBAC enforcement.
+package auth
+
+// ValidateToken checks if the provided JWT token is valid
+// and not expired. It returns the claims if valid, or an
+// error describing why validation failed.
+func ValidateToken(token string) (*Claims, error) {
+    // ... implementation
+}
+```
+
+### Git Commit Guidelines
+
+- Write clear, descriptive commit messages
+- Use conventional commits format:
+  - `feat:` - New feature
+  - `fix:` - Bug fix
+  - `test:` - Adding tests
+  - `docs:` - Documentation
+  - `refactor:` - Code refactoring
+  - `chore:` - Maintenance tasks
+
+### Before Completing Any Task
+
+Always verify:
+
+1. **Code compiles**: `go build ./...`
+2. **Tests pass**: `go test ./...`
+3. **No lint errors**: `go vet ./...`
+4. **Documentation updated**: README, comments, GoDoc
+5. **No hardcoded values**: Use config or constants
+
+### Project-Specific Rules
+
+1. **All HTTP handlers** must log request/response
+2. **All gRPC methods** must have timeout handling
+3. **All external calls** must have retry logic
+4. **All config values** must have sensible defaults
+5. **All CLI commands** must have `--help` documentation
+
+### When Stuck or Uncertain
+
+1. Re-read this DESIGN.md for architecture guidance
+2. Check existing code for patterns to follow
+3. Prefer simple solutions over clever ones
+4. If multiple approaches exist, choose the most maintainable
+
 ## API Examples
 
 ### Login
