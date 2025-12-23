@@ -176,3 +176,134 @@ func TestNewCentralClient(t *testing.T) {
 		t.Error("expected httpClient to be initialized")
 	}
 }
+
+func TestCentralClient_ExecCommand_Success(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/v1/clusters/prod/exec" {
+			t.Errorf("unexpected path: %s", r.URL.Path)
+		}
+
+		if r.Method != http.MethodPost {
+			t.Errorf("expected POST, got %s", r.Method)
+		}
+
+		// Verify request body
+		var req ExecRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			t.Fatalf("failed to decode request: %v", err)
+		}
+
+		if len(req.Command) != 2 || req.Command[0] != "get" || req.Command[1] != "pods" {
+			t.Errorf("unexpected command: %v", req.Command)
+		}
+
+		resp := ExecResponse{
+			Output:   "pod-1\npod-2\n",
+			ExitCode: 0,
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(resp)
+	}))
+	defer server.Close()
+
+	client := NewCentralClient(server.URL)
+	resp, err := client.ExecCommand("prod", []string{"get", "pods"}, "", 30)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if resp.Output != "pod-1\npod-2\n" {
+		t.Errorf("expected output 'pod-1\\npod-2\\n', got %q", resp.Output)
+	}
+
+	if resp.ExitCode != 0 {
+		t.Errorf("expected exit code 0, got %d", resp.ExitCode)
+	}
+}
+
+func TestCentralClient_ExecCommand_NonZeroExit(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		resp := ExecResponse{
+			Output:   "Error: pods not found\n",
+			ExitCode: 1,
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(resp)
+	}))
+	defer server.Close()
+
+	client := NewCentralClient(server.URL)
+	resp, err := client.ExecCommand("prod", []string{"get", "pods"}, "", 30)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if resp.ExitCode != 1 {
+		t.Errorf("expected exit code 1, got %d", resp.ExitCode)
+	}
+}
+
+func TestCentralClient_ExecCommand_ClusterNotFound(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+		w.Write([]byte(`{"error":"cluster not found"}`))
+	}))
+	defer server.Close()
+
+	client := NewCentralClient(server.URL)
+	_, err := client.ExecCommand("nonexistent", []string{"get", "pods"}, "", 30)
+	if err == nil {
+		t.Fatal("expected error for cluster not found")
+	}
+}
+
+func TestCentralClient_ExecCommand_Disconnected(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusServiceUnavailable)
+		w.Write([]byte(`{"error":"cluster agent is disconnected"}`))
+	}))
+	defer server.Close()
+
+	client := NewCentralClient(server.URL)
+	_, err := client.ExecCommand("prod", []string{"get", "pods"}, "", 30)
+	if err == nil {
+		t.Fatal("expected error for disconnected agent")
+	}
+}
+
+func TestCentralClient_ExecCommand_Timeout(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusGatewayTimeout)
+		w.Write([]byte(`{"error":"command execution timed out"}`))
+	}))
+	defer server.Close()
+
+	client := NewCentralClient(server.URL)
+	_, err := client.ExecCommand("prod", []string{"get", "pods"}, "", 30)
+	if err == nil {
+		t.Fatal("expected error for timeout")
+	}
+}
+
+func TestCentralClient_ExecCommand_WithNamespace(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var req ExecRequest
+		json.NewDecoder(r.Body).Decode(&req)
+
+		if req.Namespace != "kube-system" {
+			t.Errorf("expected namespace 'kube-system', got %q", req.Namespace)
+		}
+
+		resp := ExecResponse{Output: "output", ExitCode: 0}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(resp)
+	}))
+	defer server.Close()
+
+	client := NewCentralClient(server.URL)
+	_, err := client.ExecCommand("prod", []string{"get", "pods"}, "kube-system", 30)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
