@@ -1,7 +1,10 @@
 package central
 
 import (
+	"context"
+	"log"
 	"net/http"
+	"time"
 
 	"github.com/gin-gonic/gin"
 )
@@ -16,22 +19,44 @@ type ClusterResponse struct {
 	Provider          string `json:"provider,omitempty"`
 }
 
+// ExecRequest represents a command execution request.
+type ExecRequest struct {
+	Command   []string `json:"command" binding:"required"`
+	Namespace string   `json:"namespace,omitempty"`
+	Timeout   int      `json:"timeout,omitempty"` // seconds, default 30
+}
+
+// ExecResponse represents a command execution response.
+type ExecResponse struct {
+	Output   string `json:"output"`
+	ExitCode int32  `json:"exit_code"`
+	Error    string `json:"error,omitempty"`
+}
+
+// DefaultExecTimeout is the default timeout for command execution.
+const DefaultExecTimeout = 30 * time.Second
+
+// MaxExecTimeout is the maximum allowed timeout for command execution.
+const MaxExecTimeout = 5 * time.Minute
+
 // HTTPServer handles REST API requests from CLI clients.
 type HTTPServer struct {
-	router     *gin.Engine
-	agentStore *AgentStore
+	router       *gin.Engine
+	agentStore   *AgentStore
+	commandQueue *CommandQueue
 }
 
 // NewHTTPServer creates a new HTTP server with configured routes.
-func NewHTTPServer(store *AgentStore) *HTTPServer {
+func NewHTTPServer(store *AgentStore, cmdQueue *CommandQueue) *HTTPServer {
 	gin.SetMode(gin.ReleaseMode)
 	router := gin.New()
 	router.Use(gin.Recovery())
 	router.Use(requestLogger())
 
 	s := &HTTPServer{
-		router:     router,
-		agentStore: store,
+		router:       router,
+		agentStore:   store,
+		commandQueue: cmdQueue,
 	}
 	s.setupRoutes()
 	return s
@@ -100,9 +125,88 @@ func (s *HTTPServer) handleExecCommand(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusNotImplemented, gin.H{
-		"error": "not implemented",
-	})
+	// Parse request body
+	var req ExecRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "invalid request: " + err.Error(),
+		})
+		return
+	}
+
+	// Validate command
+	if len(req.Command) == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "command is required",
+		})
+		return
+	}
+
+	// Determine timeout
+	timeout := DefaultExecTimeout
+	if req.Timeout > 0 {
+		timeout = time.Duration(req.Timeout) * time.Second
+		if timeout > MaxExecTimeout {
+			timeout = MaxExecTimeout
+		}
+	}
+
+	// Queue the command
+	requestID, err := s.commandQueue.Enqueue(
+		agent.ID,
+		clusterName,
+		req.Command,
+		req.Namespace,
+		int32(timeout.Seconds()),
+	)
+	if err != nil {
+		log.Printf("Failed to queue command: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "failed to queue command",
+		})
+		return
+	}
+
+	log.Printf("Queued command %s for cluster %s: %v", requestID, clusterName, req.Command)
+
+	// Wait for result with timeout
+	ctx, cancel := context.WithTimeout(c.Request.Context(), timeout+5*time.Second)
+	defer cancel()
+
+	result, err := s.commandQueue.WaitForResult(ctx, requestID)
+
+	// Clean up the command from queue
+	defer s.commandQueue.Remove(requestID)
+
+	if err != nil {
+		log.Printf("Command %s timed out or failed: %v", requestID, err)
+		c.JSON(http.StatusGatewayTimeout, gin.H{
+			"error": "command execution timed out",
+		})
+		return
+	}
+
+	// Build response
+	response := ExecResponse{
+		ExitCode: result.ExitCode,
+	}
+
+	// Combine stdout and stderr for output
+	if len(result.Stdout) > 0 {
+		response.Output = string(result.Stdout)
+	}
+	if len(result.Stderr) > 0 {
+		if response.Output != "" {
+			response.Output += "\n"
+		}
+		response.Output += string(result.Stderr)
+	}
+
+	if result.ErrorMessage != "" {
+		response.Error = result.ErrorMessage
+	}
+
+	c.JSON(http.StatusOK, response)
 }
 
 // requestLogger returns a middleware that logs HTTP requests.

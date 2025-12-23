@@ -19,9 +19,11 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	AgentService_Register_FullMethodName       = "/mk8s.agent.v1.AgentService/Register"
-	AgentService_Heartbeat_FullMethodName      = "/mk8s.agent.v1.AgentService/Heartbeat"
-	AgentService_ExecuteCommand_FullMethodName = "/mk8s.agent.v1.AgentService/ExecuteCommand"
+	AgentService_Register_FullMethodName            = "/mk8s.agent.v1.AgentService/Register"
+	AgentService_Heartbeat_FullMethodName           = "/mk8s.agent.v1.AgentService/Heartbeat"
+	AgentService_ExecuteCommand_FullMethodName      = "/mk8s.agent.v1.AgentService/ExecuteCommand"
+	AgentService_GetPendingCommands_FullMethodName  = "/mk8s.agent.v1.AgentService/GetPendingCommands"
+	AgentService_SubmitCommandResult_FullMethodName = "/mk8s.agent.v1.AgentService/SubmitCommandResult"
 )
 
 // AgentServiceClient is the client API for AgentService service.
@@ -39,7 +41,14 @@ type AgentServiceClient interface {
 	Heartbeat(ctx context.Context, in *HeartbeatRequest, opts ...grpc.CallOption) (*HeartbeatResponse, error)
 	// ExecuteCommand executes a kubectl command on the agent's cluster.
 	// Returns a stream of output chunks as the command runs.
+	// NOTE: This is currently unused - see GetPendingCommands for agent-initiated flow.
 	ExecuteCommand(ctx context.Context, in *CommandRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[CommandResponse], error)
+	// GetPendingCommands is called by the agent to poll for commands to execute.
+	// Returns any pending commands for this agent.
+	GetPendingCommands(ctx context.Context, in *GetPendingCommandsRequest, opts ...grpc.CallOption) (*GetPendingCommandsResponse, error)
+	// SubmitCommandResult is called by the agent after executing a command.
+	// Submits the command output and exit code back to central.
+	SubmitCommandResult(ctx context.Context, in *SubmitCommandResultRequest, opts ...grpc.CallOption) (*SubmitCommandResultResponse, error)
 }
 
 type agentServiceClient struct {
@@ -89,6 +98,26 @@ func (c *agentServiceClient) ExecuteCommand(ctx context.Context, in *CommandRequ
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
 type AgentService_ExecuteCommandClient = grpc.ServerStreamingClient[CommandResponse]
 
+func (c *agentServiceClient) GetPendingCommands(ctx context.Context, in *GetPendingCommandsRequest, opts ...grpc.CallOption) (*GetPendingCommandsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetPendingCommandsResponse)
+	err := c.cc.Invoke(ctx, AgentService_GetPendingCommands_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *agentServiceClient) SubmitCommandResult(ctx context.Context, in *SubmitCommandResultRequest, opts ...grpc.CallOption) (*SubmitCommandResultResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(SubmitCommandResultResponse)
+	err := c.cc.Invoke(ctx, AgentService_SubmitCommandResult_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // AgentServiceServer is the server API for AgentService service.
 // All implementations must embed UnimplementedAgentServiceServer
 // for forward compatibility.
@@ -104,7 +133,14 @@ type AgentServiceServer interface {
 	Heartbeat(context.Context, *HeartbeatRequest) (*HeartbeatResponse, error)
 	// ExecuteCommand executes a kubectl command on the agent's cluster.
 	// Returns a stream of output chunks as the command runs.
+	// NOTE: This is currently unused - see GetPendingCommands for agent-initiated flow.
 	ExecuteCommand(*CommandRequest, grpc.ServerStreamingServer[CommandResponse]) error
+	// GetPendingCommands is called by the agent to poll for commands to execute.
+	// Returns any pending commands for this agent.
+	GetPendingCommands(context.Context, *GetPendingCommandsRequest) (*GetPendingCommandsResponse, error)
+	// SubmitCommandResult is called by the agent after executing a command.
+	// Submits the command output and exit code back to central.
+	SubmitCommandResult(context.Context, *SubmitCommandResultRequest) (*SubmitCommandResultResponse, error)
 	mustEmbedUnimplementedAgentServiceServer()
 }
 
@@ -123,6 +159,12 @@ func (UnimplementedAgentServiceServer) Heartbeat(context.Context, *HeartbeatRequ
 }
 func (UnimplementedAgentServiceServer) ExecuteCommand(*CommandRequest, grpc.ServerStreamingServer[CommandResponse]) error {
 	return status.Error(codes.Unimplemented, "method ExecuteCommand not implemented")
+}
+func (UnimplementedAgentServiceServer) GetPendingCommands(context.Context, *GetPendingCommandsRequest) (*GetPendingCommandsResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetPendingCommands not implemented")
+}
+func (UnimplementedAgentServiceServer) SubmitCommandResult(context.Context, *SubmitCommandResultRequest) (*SubmitCommandResultResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method SubmitCommandResult not implemented")
 }
 func (UnimplementedAgentServiceServer) mustEmbedUnimplementedAgentServiceServer() {}
 func (UnimplementedAgentServiceServer) testEmbeddedByValue()                      {}
@@ -192,6 +234,42 @@ func _AgentService_ExecuteCommand_Handler(srv interface{}, stream grpc.ServerStr
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
 type AgentService_ExecuteCommandServer = grpc.ServerStreamingServer[CommandResponse]
 
+func _AgentService_GetPendingCommands_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetPendingCommandsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AgentServiceServer).GetPendingCommands(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AgentService_GetPendingCommands_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AgentServiceServer).GetPendingCommands(ctx, req.(*GetPendingCommandsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _AgentService_SubmitCommandResult_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SubmitCommandResultRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AgentServiceServer).SubmitCommandResult(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AgentService_SubmitCommandResult_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AgentServiceServer).SubmitCommandResult(ctx, req.(*SubmitCommandResultRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // AgentService_ServiceDesc is the grpc.ServiceDesc for AgentService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -206,6 +284,14 @@ var AgentService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "Heartbeat",
 			Handler:    _AgentService_Heartbeat_Handler,
+		},
+		{
+			MethodName: "GetPendingCommands",
+			Handler:    _AgentService_GetPendingCommands_Handler,
+		},
+		{
+			MethodName: "SubmitCommandResult",
+			Handler:    _AgentService_SubmitCommandResult_Handler,
 		},
 	},
 	Streams: []grpc.StreamDesc{

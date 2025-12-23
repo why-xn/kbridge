@@ -613,6 +613,226 @@ func (x *CommandResponse) GetErrorMessage() string {
 	return ""
 }
 
+// GetPendingCommandsRequest is sent by the agent to poll for commands.
+type GetPendingCommandsRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// agent_id is the identifier assigned during registration.
+	AgentId       string `protobuf:"bytes,1,opt,name=agent_id,json=agentId,proto3" json:"agent_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetPendingCommandsRequest) Reset() {
+	*x = GetPendingCommandsRequest{}
+	mi := &file_agent_proto_msgTypes[7]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetPendingCommandsRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetPendingCommandsRequest) ProtoMessage() {}
+
+func (x *GetPendingCommandsRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_agent_proto_msgTypes[7]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetPendingCommandsRequest.ProtoReflect.Descriptor instead.
+func (*GetPendingCommandsRequest) Descriptor() ([]byte, []int) {
+	return file_agent_proto_rawDescGZIP(), []int{7}
+}
+
+func (x *GetPendingCommandsRequest) GetAgentId() string {
+	if x != nil {
+		return x.AgentId
+	}
+	return ""
+}
+
+// GetPendingCommandsResponse contains any pending commands for the agent.
+type GetPendingCommandsResponse struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// commands contains the list of pending commands to execute.
+	Commands      []*CommandRequest `protobuf:"bytes,1,rep,name=commands,proto3" json:"commands,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetPendingCommandsResponse) Reset() {
+	*x = GetPendingCommandsResponse{}
+	mi := &file_agent_proto_msgTypes[8]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetPendingCommandsResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetPendingCommandsResponse) ProtoMessage() {}
+
+func (x *GetPendingCommandsResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_agent_proto_msgTypes[8]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetPendingCommandsResponse.ProtoReflect.Descriptor instead.
+func (*GetPendingCommandsResponse) Descriptor() ([]byte, []int) {
+	return file_agent_proto_rawDescGZIP(), []int{8}
+}
+
+func (x *GetPendingCommandsResponse) GetCommands() []*CommandRequest {
+	if x != nil {
+		return x.Commands
+	}
+	return nil
+}
+
+// SubmitCommandResultRequest is sent by the agent after executing a command.
+type SubmitCommandResultRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// request_id matches the command that was executed.
+	RequestId string `protobuf:"bytes,1,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`
+	// stdout contains the standard output from the command.
+	Stdout []byte `protobuf:"bytes,2,opt,name=stdout,proto3" json:"stdout,omitempty"`
+	// stderr contains the standard error from the command.
+	Stderr []byte `protobuf:"bytes,3,opt,name=stderr,proto3" json:"stderr,omitempty"`
+	// exit_code is the command's exit code.
+	ExitCode int32 `protobuf:"varint,4,opt,name=exit_code,json=exitCode,proto3" json:"exit_code,omitempty"`
+	// error_message contains error details if the command failed to execute.
+	ErrorMessage  string `protobuf:"bytes,5,opt,name=error_message,json=errorMessage,proto3" json:"error_message,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SubmitCommandResultRequest) Reset() {
+	*x = SubmitCommandResultRequest{}
+	mi := &file_agent_proto_msgTypes[9]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SubmitCommandResultRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SubmitCommandResultRequest) ProtoMessage() {}
+
+func (x *SubmitCommandResultRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_agent_proto_msgTypes[9]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SubmitCommandResultRequest.ProtoReflect.Descriptor instead.
+func (*SubmitCommandResultRequest) Descriptor() ([]byte, []int) {
+	return file_agent_proto_rawDescGZIP(), []int{9}
+}
+
+func (x *SubmitCommandResultRequest) GetRequestId() string {
+	if x != nil {
+		return x.RequestId
+	}
+	return ""
+}
+
+func (x *SubmitCommandResultRequest) GetStdout() []byte {
+	if x != nil {
+		return x.Stdout
+	}
+	return nil
+}
+
+func (x *SubmitCommandResultRequest) GetStderr() []byte {
+	if x != nil {
+		return x.Stderr
+	}
+	return nil
+}
+
+func (x *SubmitCommandResultRequest) GetExitCode() int32 {
+	if x != nil {
+		return x.ExitCode
+	}
+	return 0
+}
+
+func (x *SubmitCommandResultRequest) GetErrorMessage() string {
+	if x != nil {
+		return x.ErrorMessage
+	}
+	return ""
+}
+
+// SubmitCommandResultResponse confirms the result was received.
+type SubmitCommandResultResponse struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// success indicates the result was accepted.
+	Success       bool `protobuf:"varint,1,opt,name=success,proto3" json:"success,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SubmitCommandResultResponse) Reset() {
+	*x = SubmitCommandResultResponse{}
+	mi := &file_agent_proto_msgTypes[10]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SubmitCommandResultResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SubmitCommandResultResponse) ProtoMessage() {}
+
+func (x *SubmitCommandResultResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_agent_proto_msgTypes[10]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SubmitCommandResultResponse.ProtoReflect.Descriptor instead.
+func (*SubmitCommandResultResponse) Descriptor() ([]byte, []int) {
+	return file_agent_proto_rawDescGZIP(), []int{10}
+}
+
+func (x *SubmitCommandResultResponse) GetSuccess() bool {
+	if x != nil {
+		return x.Success
+	}
+	return false
+}
+
 var File_agent_proto protoreflect.FileDescriptor
 
 const file_agent_proto_rawDesc = "" +
@@ -653,7 +873,20 @@ const file_agent_proto_rawDesc = "" +
 	"\x04data\x18\x03 \x01(\fR\x04data\x12\x1a\n" +
 	"\bcomplete\x18\x04 \x01(\bR\bcomplete\x12\x1b\n" +
 	"\texit_code\x18\x05 \x01(\x05R\bexitCode\x12#\n" +
-	"\rerror_message\x18\x06 \x01(\tR\ferrorMessage*\\\n" +
+	"\rerror_message\x18\x06 \x01(\tR\ferrorMessage\"6\n" +
+	"\x19GetPendingCommandsRequest\x12\x19\n" +
+	"\bagent_id\x18\x01 \x01(\tR\aagentId\"W\n" +
+	"\x1aGetPendingCommandsResponse\x129\n" +
+	"\bcommands\x18\x01 \x03(\v2\x1d.mk8s.agent.v1.CommandRequestR\bcommands\"\xad\x01\n" +
+	"\x1aSubmitCommandResultRequest\x12\x1d\n" +
+	"\n" +
+	"request_id\x18\x01 \x01(\tR\trequestId\x12\x16\n" +
+	"\x06stdout\x18\x02 \x01(\fR\x06stdout\x12\x16\n" +
+	"\x06stderr\x18\x03 \x01(\fR\x06stderr\x12\x1b\n" +
+	"\texit_code\x18\x04 \x01(\x05R\bexitCode\x12#\n" +
+	"\rerror_message\x18\x05 \x01(\tR\ferrorMessage\"7\n" +
+	"\x1bSubmitCommandResultResponse\x12\x18\n" +
+	"\asuccess\x18\x01 \x01(\bR\asuccess*\\\n" +
 	"\vAgentStatus\x12\x18\n" +
 	"\x14AGENT_STATUS_UNKNOWN\x10\x00\x12\x18\n" +
 	"\x14AGENT_STATUS_HEALTHY\x10\x01\x12\x19\n" +
@@ -662,11 +895,13 @@ const file_agent_proto_rawDesc = "" +
 	"OutputType\x12\x17\n" +
 	"\x13OUTPUT_TYPE_UNKNOWN\x10\x00\x12\x16\n" +
 	"\x12OUTPUT_TYPE_STDOUT\x10\x01\x12\x16\n" +
-	"\x12OUTPUT_TYPE_STDERR\x10\x022\xfe\x01\n" +
+	"\x12OUTPUT_TYPE_STDERR\x10\x022\xd7\x03\n" +
 	"\fAgentService\x12K\n" +
 	"\bRegister\x12\x1e.mk8s.agent.v1.RegisterRequest\x1a\x1f.mk8s.agent.v1.RegisterResponse\x12N\n" +
 	"\tHeartbeat\x12\x1f.mk8s.agent.v1.HeartbeatRequest\x1a .mk8s.agent.v1.HeartbeatResponse\x12Q\n" +
-	"\x0eExecuteCommand\x12\x1d.mk8s.agent.v1.CommandRequest\x1a\x1e.mk8s.agent.v1.CommandResponse0\x01B*Z(github.com/why-xn/mk8s/api/proto/agentpbb\x06proto3"
+	"\x0eExecuteCommand\x12\x1d.mk8s.agent.v1.CommandRequest\x1a\x1e.mk8s.agent.v1.CommandResponse0\x01\x12i\n" +
+	"\x12GetPendingCommands\x12(.mk8s.agent.v1.GetPendingCommandsRequest\x1a).mk8s.agent.v1.GetPendingCommandsResponse\x12l\n" +
+	"\x13SubmitCommandResult\x12).mk8s.agent.v1.SubmitCommandResultRequest\x1a*.mk8s.agent.v1.SubmitCommandResultResponseB*Z(github.com/why-xn/mk8s/api/proto/agentpbb\x06proto3"
 
 var (
 	file_agent_proto_rawDescOnce sync.Once
@@ -681,33 +916,42 @@ func file_agent_proto_rawDescGZIP() []byte {
 }
 
 var file_agent_proto_enumTypes = make([]protoimpl.EnumInfo, 2)
-var file_agent_proto_msgTypes = make([]protoimpl.MessageInfo, 7)
+var file_agent_proto_msgTypes = make([]protoimpl.MessageInfo, 11)
 var file_agent_proto_goTypes = []any{
-	(AgentStatus)(0),          // 0: mk8s.agent.v1.AgentStatus
-	(OutputType)(0),           // 1: mk8s.agent.v1.OutputType
-	(*RegisterRequest)(nil),   // 2: mk8s.agent.v1.RegisterRequest
-	(*ClusterMetadata)(nil),   // 3: mk8s.agent.v1.ClusterMetadata
-	(*RegisterResponse)(nil),  // 4: mk8s.agent.v1.RegisterResponse
-	(*HeartbeatRequest)(nil),  // 5: mk8s.agent.v1.HeartbeatRequest
-	(*HeartbeatResponse)(nil), // 6: mk8s.agent.v1.HeartbeatResponse
-	(*CommandRequest)(nil),    // 7: mk8s.agent.v1.CommandRequest
-	(*CommandResponse)(nil),   // 8: mk8s.agent.v1.CommandResponse
+	(AgentStatus)(0),                    // 0: mk8s.agent.v1.AgentStatus
+	(OutputType)(0),                     // 1: mk8s.agent.v1.OutputType
+	(*RegisterRequest)(nil),             // 2: mk8s.agent.v1.RegisterRequest
+	(*ClusterMetadata)(nil),             // 3: mk8s.agent.v1.ClusterMetadata
+	(*RegisterResponse)(nil),            // 4: mk8s.agent.v1.RegisterResponse
+	(*HeartbeatRequest)(nil),            // 5: mk8s.agent.v1.HeartbeatRequest
+	(*HeartbeatResponse)(nil),           // 6: mk8s.agent.v1.HeartbeatResponse
+	(*CommandRequest)(nil),              // 7: mk8s.agent.v1.CommandRequest
+	(*CommandResponse)(nil),             // 8: mk8s.agent.v1.CommandResponse
+	(*GetPendingCommandsRequest)(nil),   // 9: mk8s.agent.v1.GetPendingCommandsRequest
+	(*GetPendingCommandsResponse)(nil),  // 10: mk8s.agent.v1.GetPendingCommandsResponse
+	(*SubmitCommandResultRequest)(nil),  // 11: mk8s.agent.v1.SubmitCommandResultRequest
+	(*SubmitCommandResultResponse)(nil), // 12: mk8s.agent.v1.SubmitCommandResultResponse
 }
 var file_agent_proto_depIdxs = []int32{
-	3, // 0: mk8s.agent.v1.RegisterRequest.metadata:type_name -> mk8s.agent.v1.ClusterMetadata
-	0, // 1: mk8s.agent.v1.HeartbeatRequest.status:type_name -> mk8s.agent.v1.AgentStatus
-	1, // 2: mk8s.agent.v1.CommandResponse.type:type_name -> mk8s.agent.v1.OutputType
-	2, // 3: mk8s.agent.v1.AgentService.Register:input_type -> mk8s.agent.v1.RegisterRequest
-	5, // 4: mk8s.agent.v1.AgentService.Heartbeat:input_type -> mk8s.agent.v1.HeartbeatRequest
-	7, // 5: mk8s.agent.v1.AgentService.ExecuteCommand:input_type -> mk8s.agent.v1.CommandRequest
-	4, // 6: mk8s.agent.v1.AgentService.Register:output_type -> mk8s.agent.v1.RegisterResponse
-	6, // 7: mk8s.agent.v1.AgentService.Heartbeat:output_type -> mk8s.agent.v1.HeartbeatResponse
-	8, // 8: mk8s.agent.v1.AgentService.ExecuteCommand:output_type -> mk8s.agent.v1.CommandResponse
-	6, // [6:9] is the sub-list for method output_type
-	3, // [3:6] is the sub-list for method input_type
-	3, // [3:3] is the sub-list for extension type_name
-	3, // [3:3] is the sub-list for extension extendee
-	0, // [0:3] is the sub-list for field type_name
+	3,  // 0: mk8s.agent.v1.RegisterRequest.metadata:type_name -> mk8s.agent.v1.ClusterMetadata
+	0,  // 1: mk8s.agent.v1.HeartbeatRequest.status:type_name -> mk8s.agent.v1.AgentStatus
+	1,  // 2: mk8s.agent.v1.CommandResponse.type:type_name -> mk8s.agent.v1.OutputType
+	7,  // 3: mk8s.agent.v1.GetPendingCommandsResponse.commands:type_name -> mk8s.agent.v1.CommandRequest
+	2,  // 4: mk8s.agent.v1.AgentService.Register:input_type -> mk8s.agent.v1.RegisterRequest
+	5,  // 5: mk8s.agent.v1.AgentService.Heartbeat:input_type -> mk8s.agent.v1.HeartbeatRequest
+	7,  // 6: mk8s.agent.v1.AgentService.ExecuteCommand:input_type -> mk8s.agent.v1.CommandRequest
+	9,  // 7: mk8s.agent.v1.AgentService.GetPendingCommands:input_type -> mk8s.agent.v1.GetPendingCommandsRequest
+	11, // 8: mk8s.agent.v1.AgentService.SubmitCommandResult:input_type -> mk8s.agent.v1.SubmitCommandResultRequest
+	4,  // 9: mk8s.agent.v1.AgentService.Register:output_type -> mk8s.agent.v1.RegisterResponse
+	6,  // 10: mk8s.agent.v1.AgentService.Heartbeat:output_type -> mk8s.agent.v1.HeartbeatResponse
+	8,  // 11: mk8s.agent.v1.AgentService.ExecuteCommand:output_type -> mk8s.agent.v1.CommandResponse
+	10, // 12: mk8s.agent.v1.AgentService.GetPendingCommands:output_type -> mk8s.agent.v1.GetPendingCommandsResponse
+	12, // 13: mk8s.agent.v1.AgentService.SubmitCommandResult:output_type -> mk8s.agent.v1.SubmitCommandResultResponse
+	9,  // [9:14] is the sub-list for method output_type
+	4,  // [4:9] is the sub-list for method input_type
+	4,  // [4:4] is the sub-list for extension type_name
+	4,  // [4:4] is the sub-list for extension extendee
+	0,  // [0:4] is the sub-list for field type_name
 }
 
 func init() { file_agent_proto_init() }
@@ -721,7 +965,7 @@ func file_agent_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_agent_proto_rawDesc), len(file_agent_proto_rawDesc)),
 			NumEnums:      2,
-			NumMessages:   7,
+			NumMessages:   11,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

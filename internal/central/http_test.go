@@ -7,13 +7,14 @@ import (
 	"testing"
 )
 
-func newTestHTTPServer() (*HTTPServer, *AgentStore) {
+func newTestHTTPServer() (*HTTPServer, *AgentStore, *CommandQueue) {
 	store := NewAgentStore()
-	return NewHTTPServer(store), store
+	cmdQueue := NewCommandQueue()
+	return NewHTTPServer(store, cmdQueue), store, cmdQueue
 }
 
 func TestHTTPServer_Health(t *testing.T) {
-	srv, _ := newTestHTTPServer()
+	srv, _, _ := newTestHTTPServer()
 	req := httptest.NewRequest(http.MethodGet, "/health", nil)
 	rec := httptest.NewRecorder()
 
@@ -34,7 +35,7 @@ func TestHTTPServer_Health(t *testing.T) {
 }
 
 func TestHTTPServer_ListClusters_Empty(t *testing.T) {
-	srv, _ := newTestHTTPServer()
+	srv, _, _ := newTestHTTPServer()
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/clusters", nil)
 	rec := httptest.NewRecorder()
 
@@ -59,7 +60,7 @@ func TestHTTPServer_ListClusters_Empty(t *testing.T) {
 }
 
 func TestHTTPServer_ListClusters_WithAgents(t *testing.T) {
-	srv, store := newTestHTTPServer()
+	srv, store, _ := newTestHTTPServer()
 
 	// Register some agents
 	store.Register(&AgentInfo{
@@ -126,7 +127,7 @@ func TestHTTPServer_ListClusters_WithAgents(t *testing.T) {
 }
 
 func TestHTTPServer_ExecCommand_ClusterNotFound(t *testing.T) {
-	srv, _ := newTestHTTPServer()
+	srv, _, _ := newTestHTTPServer()
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/clusters/nonexistent/exec", nil)
 	rec := httptest.NewRecorder()
 
@@ -147,7 +148,7 @@ func TestHTTPServer_ExecCommand_ClusterNotFound(t *testing.T) {
 }
 
 func TestHTTPServer_ExecCommand_AgentDisconnected(t *testing.T) {
-	srv, store := newTestHTTPServer()
+	srv, store, _ := newTestHTTPServer()
 
 	// Register a disconnected agent
 	store.Register(&AgentInfo{
@@ -178,8 +179,8 @@ func TestHTTPServer_ExecCommand_AgentDisconnected(t *testing.T) {
 	}
 }
 
-func TestHTTPServer_ExecCommand_ConnectedAgent(t *testing.T) {
-	srv, store := newTestHTTPServer()
+func TestHTTPServer_ExecCommand_InvalidRequest(t *testing.T) {
+	srv, store, _ := newTestHTTPServer()
 
 	// Register a connected agent
 	store.Register(&AgentInfo{
@@ -187,19 +188,20 @@ func TestHTTPServer_ExecCommand_ConnectedAgent(t *testing.T) {
 		ClusterName: "test-cluster",
 	})
 
+	// Send request without body
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/clusters/test-cluster/exec", nil)
 	rec := httptest.NewRecorder()
 
 	srv.Handler().ServeHTTP(rec, req)
 
-	// Should return 501 Not Implemented (command execution not yet implemented)
-	if rec.Code != http.StatusNotImplemented {
-		t.Errorf("expected status %d, got %d", http.StatusNotImplemented, rec.Code)
+	// Should return 400 Bad Request for missing body
+	if rec.Code != http.StatusBadRequest {
+		t.Errorf("expected status %d, got %d", http.StatusBadRequest, rec.Code)
 	}
 }
 
 func TestHTTPServer_NotFound(t *testing.T) {
-	srv, _ := newTestHTTPServer()
+	srv, _, _ := newTestHTTPServer()
 	req := httptest.NewRequest(http.MethodGet, "/nonexistent", nil)
 	rec := httptest.NewRecorder()
 

@@ -12,14 +12,18 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 )
 
+// DefaultPollInterval is how often the agent polls for pending commands.
+const DefaultPollInterval = 2 * time.Second
+
 // Agent represents the mk8s agent that connects to central service.
 type Agent struct {
-	config   *Config
-	conn     *grpc.ClientConn
-	client   agentpb.AgentServiceClient
-	agentID  string
-	mu       sync.RWMutex
-	stopCh   chan struct{}
+	config    *Config
+	conn      *grpc.ClientConn
+	client    agentpb.AgentServiceClient
+	executor  *KubectlExecutor
+	agentID   string
+	mu        sync.RWMutex
+	stopCh    chan struct{}
 	stoppedCh chan struct{}
 }
 
@@ -27,6 +31,7 @@ type Agent struct {
 func New(cfg *Config) *Agent {
 	return &Agent{
 		config:    cfg,
+		executor:  NewKubectlExecutor(),
 		stopCh:    make(chan struct{}),
 		stoppedCh: make(chan struct{}),
 	}
@@ -45,7 +50,10 @@ func (a *Agent) Run(ctx context.Context) error {
 		return fmt.Errorf("registering with central: %w", err)
 	}
 
-	// Run heartbeat loop
+	// Start command polling loop in goroutine
+	go a.runCommandPollLoop(ctx)
+
+	// Run heartbeat loop (blocks until stopped)
 	a.runHeartbeatLoop(ctx)
 
 	close(a.stoppedCh)
@@ -236,4 +244,93 @@ func (a *Agent) reconnect(ctx context.Context) error {
 	}
 
 	return fmt.Errorf("failed to reconnect after %d attempts", maxRetries)
+}
+
+// runCommandPollLoop polls central for pending commands and executes them.
+func (a *Agent) runCommandPollLoop(ctx context.Context) {
+	ticker := time.NewTicker(DefaultPollInterval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ticker.C:
+			a.pollAndExecuteCommands(ctx)
+
+		case <-a.stopCh:
+			log.Printf("Command poll loop stopping")
+			return
+
+		case <-ctx.Done():
+			log.Printf("Context cancelled, stopping command poll loop")
+			return
+		}
+	}
+}
+
+// pollAndExecuteCommands polls for pending commands and executes them.
+func (a *Agent) pollAndExecuteCommands(ctx context.Context) {
+	a.mu.RLock()
+	agentID := a.agentID
+	client := a.client
+	a.mu.RUnlock()
+
+	if agentID == "" || client == nil {
+		return
+	}
+
+	// Poll for pending commands
+	pollCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+
+	resp, err := client.GetPendingCommands(pollCtx, &agentpb.GetPendingCommandsRequest{
+		AgentId: agentID,
+	})
+	if err != nil {
+		// Don't log on every poll failure - connection issues are handled by heartbeat
+		return
+	}
+
+	// Execute each command
+	for _, cmd := range resp.Commands {
+		log.Printf("Executing command %s: %v", cmd.RequestId, cmd.Command)
+		a.executeAndSubmit(ctx, cmd)
+	}
+}
+
+// executeAndSubmit executes a command and submits the result to central.
+func (a *Agent) executeAndSubmit(ctx context.Context, cmd *agentpb.CommandRequest) {
+	// Determine timeout
+	timeout := time.Duration(cmd.TimeoutSeconds) * time.Second
+	if timeout == 0 {
+		timeout = 30 * time.Second
+	}
+
+	// Execute the kubectl command
+	result := a.executor.Execute(ctx, cmd.Command, cmd.Namespace, timeout)
+
+	// Build result request
+	submitReq := &agentpb.SubmitCommandResultRequest{
+		RequestId: cmd.RequestId,
+		Stdout:    result.Stdout,
+		Stderr:    result.Stderr,
+		ExitCode:  int32(result.ExitCode),
+	}
+	if result.Error != nil {
+		submitReq.ErrorMessage = result.Error.Error()
+	}
+
+	// Submit result to central
+	a.mu.RLock()
+	client := a.client
+	a.mu.RUnlock()
+
+	submitCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+
+	_, err := client.SubmitCommandResult(submitCtx, submitReq)
+	if err != nil {
+		log.Printf("Failed to submit command result for %s: %v", cmd.RequestId, err)
+	} else {
+		log.Printf("Command %s completed with exit code %d", cmd.RequestId, result.ExitCode)
+	}
 }

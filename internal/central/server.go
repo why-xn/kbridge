@@ -19,22 +19,24 @@ const DisconnectCheckInterval = 15 * time.Second
 
 // Server is the main central service that runs both HTTP and gRPC servers.
 type Server struct {
-	config     *Config
-	httpServer *http.Server
-	grpcServer *grpc.Server
-	agentStore *AgentStore
-	stopCh     chan struct{}
+	config       *Config
+	httpServer   *http.Server
+	grpcServer   *grpc.Server
+	agentStore   *AgentStore
+	commandQueue *CommandQueue
+	stopCh       chan struct{}
 }
 
 // NewServer creates a new central server with the given configuration.
 func NewServer(cfg *Config) *Server {
 	agentStore := NewAgentStore()
+	commandQueue := NewCommandQueue()
 
 	// Add default token for development (should be configurable in production)
 	agentStore.AddValidToken("dev-token")
 
-	httpHandler := NewHTTPServer(agentStore)
-	grpcHandler := NewGRPCServer(agentStore)
+	httpHandler := NewHTTPServer(agentStore, commandQueue)
+	grpcHandler := NewGRPCServer(agentStore, commandQueue)
 
 	grpcSrv := grpc.NewServer()
 	grpcHandler.RegisterWithServer(grpcSrv)
@@ -46,17 +48,23 @@ func NewServer(cfg *Config) *Server {
 	}
 
 	return &Server{
-		config:     cfg,
-		httpServer: httpSrv,
-		grpcServer: grpcSrv,
-		agentStore: agentStore,
-		stopCh:     make(chan struct{}),
+		config:       cfg,
+		httpServer:   httpSrv,
+		grpcServer:   grpcSrv,
+		agentStore:   agentStore,
+		commandQueue: commandQueue,
+		stopCh:       make(chan struct{}),
 	}
 }
 
 // AgentStore returns the server's agent store for external access.
 func (s *Server) AgentStore() *AgentStore {
 	return s.agentStore
+}
+
+// CommandQueue returns the server's command queue for external access.
+func (s *Server) CommandQueue() *CommandQueue {
+	return s.commandQueue
 }
 
 // Run starts both HTTP and gRPC servers and handles graceful shutdown.

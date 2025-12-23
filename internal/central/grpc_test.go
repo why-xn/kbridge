@@ -10,14 +10,15 @@ import (
 	"google.golang.org/grpc/status"
 )
 
-func newTestGRPCServer() (*GRPCServer, *AgentStore) {
+func newTestGRPCServer() (*GRPCServer, *AgentStore, *CommandQueue) {
 	store := NewAgentStore()
 	store.AddValidToken("valid-token")
-	return NewGRPCServer(store), store
+	cmdQueue := NewCommandQueue()
+	return NewGRPCServer(store, cmdQueue), store, cmdQueue
 }
 
 func TestGRPCServer_Register_Success(t *testing.T) {
-	srv, store := newTestGRPCServer()
+	srv, store, _ := newTestGRPCServer()
 	ctx := context.Background()
 
 	req := &agentpb.RegisterRequest{
@@ -60,7 +61,7 @@ func TestGRPCServer_Register_Success(t *testing.T) {
 }
 
 func TestGRPCServer_Register_InvalidToken(t *testing.T) {
-	srv, _ := newTestGRPCServer()
+	srv, _, _ := newTestGRPCServer()
 	ctx := context.Background()
 
 	req := &agentpb.RegisterRequest{
@@ -83,7 +84,7 @@ func TestGRPCServer_Register_InvalidToken(t *testing.T) {
 }
 
 func TestGRPCServer_Register_MissingClusterName(t *testing.T) {
-	srv, _ := newTestGRPCServer()
+	srv, _, _ := newTestGRPCServer()
 	ctx := context.Background()
 
 	req := &agentpb.RegisterRequest{
@@ -106,7 +107,7 @@ func TestGRPCServer_Register_MissingClusterName(t *testing.T) {
 }
 
 func TestGRPCServer_Register_MultipleAgents(t *testing.T) {
-	srv, store := newTestGRPCServer()
+	srv, store, _ := newTestGRPCServer()
 	ctx := context.Background()
 
 	clusters := []string{"cluster-a", "cluster-b", "cluster-c"}
@@ -147,7 +148,7 @@ func TestGRPCServer_Register_MultipleAgents(t *testing.T) {
 }
 
 func TestGRPCServer_Heartbeat_Success(t *testing.T) {
-	srv, store := newTestGRPCServer()
+	srv, store, _ := newTestGRPCServer()
 	ctx := context.Background()
 
 	// First register an agent
@@ -186,7 +187,7 @@ func TestGRPCServer_Heartbeat_Success(t *testing.T) {
 }
 
 func TestGRPCServer_Heartbeat_UnregisteredAgent(t *testing.T) {
-	srv, _ := newTestGRPCServer()
+	srv, _, _ := newTestGRPCServer()
 	ctx := context.Background()
 
 	req := &agentpb.HeartbeatRequest{
@@ -210,7 +211,7 @@ func TestGRPCServer_Heartbeat_UnregisteredAgent(t *testing.T) {
 }
 
 func TestGRPCServer_Heartbeat_MissingAgentID(t *testing.T) {
-	srv, _ := newTestGRPCServer()
+	srv, _, _ := newTestGRPCServer()
 	ctx := context.Background()
 
 	req := &agentpb.HeartbeatRequest{
@@ -234,7 +235,7 @@ func TestGRPCServer_Heartbeat_MissingAgentID(t *testing.T) {
 }
 
 func TestGRPCServer_ExecuteCommand(t *testing.T) {
-	srv, _ := newTestGRPCServer()
+	srv, _, _ := newTestGRPCServer()
 
 	req := &agentpb.CommandRequest{
 		RequestId: "req-123",
@@ -295,5 +296,179 @@ func TestGenerateAgentID(t *testing.T) {
 			t.Errorf("duplicate ID generated: %s", id)
 		}
 		ids[id] = true
+	}
+}
+
+func TestGRPCServer_GetPendingCommands_Success(t *testing.T) {
+	srv, store, cmdQueue := newTestGRPCServer()
+	ctx := context.Background()
+
+	// Register an agent
+	regReq := &agentpb.RegisterRequest{
+		AgentToken:  "valid-token",
+		ClusterName: "test-cluster",
+	}
+	regResp, _ := srv.Register(ctx, regReq)
+	agentID := regResp.AgentId
+
+	// Queue some commands
+	cmdQueue.Enqueue(agentID, "test-cluster", []string{"get", "pods"}, "default", 30)
+	cmdQueue.Enqueue(agentID, "test-cluster", []string{"get", "services"}, "", 30)
+
+	// Get pending commands
+	req := &agentpb.GetPendingCommandsRequest{
+		AgentId: agentID,
+	}
+
+	resp, err := srv.GetPendingCommands(ctx, req)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if len(resp.Commands) != 2 {
+		t.Fatalf("expected 2 commands, got %d", len(resp.Commands))
+	}
+
+	// Verify commands are marked as running
+	pending := cmdQueue.GetPendingForAgent(agentID)
+	if len(pending) != 0 {
+		t.Errorf("expected 0 pending commands after retrieval, got %d", len(pending))
+	}
+
+	// Verify agent is registered (used to silence unused variable warning)
+	_, exists := store.Get(agentID)
+	if !exists {
+		t.Error("expected agent to be registered")
+	}
+}
+
+func TestGRPCServer_GetPendingCommands_MissingAgentID(t *testing.T) {
+	srv, _, _ := newTestGRPCServer()
+	ctx := context.Background()
+
+	req := &agentpb.GetPendingCommandsRequest{
+		AgentId: "",
+	}
+
+	_, err := srv.GetPendingCommands(ctx, req)
+	if err == nil {
+		t.Fatal("expected error for missing agent ID")
+	}
+
+	st, ok := status.FromError(err)
+	if !ok {
+		t.Fatalf("expected gRPC status error, got %v", err)
+	}
+
+	if st.Code() != codes.InvalidArgument {
+		t.Errorf("expected code %v, got %v", codes.InvalidArgument, st.Code())
+	}
+}
+
+func TestGRPCServer_GetPendingCommands_UnregisteredAgent(t *testing.T) {
+	srv, _, _ := newTestGRPCServer()
+	ctx := context.Background()
+
+	req := &agentpb.GetPendingCommandsRequest{
+		AgentId: "unknown-agent",
+	}
+
+	_, err := srv.GetPendingCommands(ctx, req)
+	if err == nil {
+		t.Fatal("expected error for unregistered agent")
+	}
+
+	st, ok := status.FromError(err)
+	if !ok {
+		t.Fatalf("expected gRPC status error, got %v", err)
+	}
+
+	if st.Code() != codes.NotFound {
+		t.Errorf("expected code %v, got %v", codes.NotFound, st.Code())
+	}
+}
+
+func TestGRPCServer_SubmitCommandResult_Success(t *testing.T) {
+	srv, _, cmdQueue := newTestGRPCServer()
+	ctx := context.Background()
+
+	// Queue a command
+	requestID, _ := cmdQueue.Enqueue("agent-1", "test-cluster", []string{"get", "pods"}, "", 30)
+	cmdQueue.MarkRunning(requestID)
+
+	// Submit result
+	req := &agentpb.SubmitCommandResultRequest{
+		RequestId: requestID,
+		Stdout:    []byte("pod-1\npod-2"),
+		Stderr:    nil,
+		ExitCode:  0,
+	}
+
+	resp, err := srv.SubmitCommandResult(ctx, req)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if !resp.Success {
+		t.Error("expected success=true")
+	}
+
+	// Verify command is marked as completed
+	cmd, _ := cmdQueue.Get(requestID)
+	if cmd.Status != CommandStatusCompleted {
+		t.Errorf("expected status %q, got %q", CommandStatusCompleted, cmd.Status)
+	}
+}
+
+func TestGRPCServer_SubmitCommandResult_WithError(t *testing.T) {
+	srv, _, cmdQueue := newTestGRPCServer()
+	ctx := context.Background()
+
+	// Queue a command
+	requestID, _ := cmdQueue.Enqueue("agent-1", "test-cluster", []string{"get", "pods"}, "", 30)
+	cmdQueue.MarkRunning(requestID)
+
+	// Submit result with error
+	req := &agentpb.SubmitCommandResultRequest{
+		RequestId:    requestID,
+		ErrorMessage: "kubectl not found",
+	}
+
+	resp, err := srv.SubmitCommandResult(ctx, req)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if !resp.Success {
+		t.Error("expected success=true")
+	}
+
+	// Verify command is marked as failed
+	cmd, _ := cmdQueue.Get(requestID)
+	if cmd.Status != CommandStatusFailed {
+		t.Errorf("expected status %q, got %q", CommandStatusFailed, cmd.Status)
+	}
+}
+
+func TestGRPCServer_SubmitCommandResult_MissingRequestID(t *testing.T) {
+	srv, _, _ := newTestGRPCServer()
+	ctx := context.Background()
+
+	req := &agentpb.SubmitCommandResultRequest{
+		RequestId: "",
+	}
+
+	_, err := srv.SubmitCommandResult(ctx, req)
+	if err == nil {
+		t.Fatal("expected error for missing request ID")
+	}
+
+	st, ok := status.FromError(err)
+	if !ok {
+		t.Fatalf("expected gRPC status error, got %v", err)
+	}
+
+	if st.Code() != codes.InvalidArgument {
+		t.Errorf("expected code %v, got %v", codes.InvalidArgument, st.Code())
 	}
 }

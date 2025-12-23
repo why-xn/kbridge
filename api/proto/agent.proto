@@ -17,7 +17,16 @@ service AgentService {
 
   // ExecuteCommand executes a kubectl command on the agent's cluster.
   // Returns a stream of output chunks as the command runs.
+  // NOTE: This is currently unused - see GetPendingCommands for agent-initiated flow.
   rpc ExecuteCommand(CommandRequest) returns (stream CommandResponse);
+
+  // GetPendingCommands is called by the agent to poll for commands to execute.
+  // Returns any pending commands for this agent.
+  rpc GetPendingCommands(GetPendingCommandsRequest) returns (GetPendingCommandsResponse);
+
+  // SubmitCommandResult is called by the agent after executing a command.
+  // Submits the command output and exit code back to central.
+  rpc SubmitCommandResult(SubmitCommandResultRequest) returns (SubmitCommandResultResponse);
 }
 
 // RegisterRequest is sent by the agent to register with central service.
@@ -140,4 +149,40 @@ enum OutputType {
 
   // OUTPUT_TYPE_STDERR indicates standard error.
   OUTPUT_TYPE_STDERR = 2;
+}
+
+// GetPendingCommandsRequest is sent by the agent to poll for commands.
+message GetPendingCommandsRequest {
+  // agent_id is the identifier assigned during registration.
+  string agent_id = 1;
+}
+
+// GetPendingCommandsResponse contains any pending commands for the agent.
+message GetPendingCommandsResponse {
+  // commands contains the list of pending commands to execute.
+  repeated CommandRequest commands = 1;
+}
+
+// SubmitCommandResultRequest is sent by the agent after executing a command.
+message SubmitCommandResultRequest {
+  // request_id matches the command that was executed.
+  string request_id = 1;
+
+  // stdout contains the standard output from the command.
+  bytes stdout = 2;
+
+  // stderr contains the standard error from the command.
+  bytes stderr = 3;
+
+  // exit_code is the command's exit code.
+  int32 exit_code = 4;
+
+  // error_message contains error details if the command failed to execute.
+  string error_message = 5;
+}
+
+// SubmitCommandResultResponse confirms the result was received.
+message SubmitCommandResultResponse {
+  // success indicates the result was accepted.
+  bool success = 1;
 }

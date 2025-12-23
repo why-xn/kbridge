@@ -19,13 +19,15 @@ const DefaultHeartbeatInterval = 30
 // GRPCServer handles gRPC requests from agents.
 type GRPCServer struct {
 	agentpb.UnimplementedAgentServiceServer
-	store *AgentStore
+	store    *AgentStore
+	cmdQueue *CommandQueue
 }
 
-// NewGRPCServer creates a new gRPC server with the given agent store.
-func NewGRPCServer(store *AgentStore) *GRPCServer {
+// NewGRPCServer creates a new gRPC server with the given agent store and command queue.
+func NewGRPCServer(store *AgentStore, cmdQueue *CommandQueue) *GRPCServer {
 	return &GRPCServer{
-		store: store,
+		store:    store,
+		cmdQueue: cmdQueue,
 	}
 }
 
@@ -112,10 +114,80 @@ func (s *GRPCServer) Heartbeat(ctx context.Context, req *agentpb.HeartbeatReques
 }
 
 // ExecuteCommand handles command execution requests.
+// NOTE: This is currently unused - see GetPendingCommands for agent-initiated flow.
 func (s *GRPCServer) ExecuteCommand(req *agentpb.CommandRequest, stream grpc.ServerStreamingServer[agentpb.CommandResponse]) error {
 	log.Printf("ExecuteCommand request: agent=%s, command=%v", req.GetAgentId(), req.GetCommand())
 
-	return status.Error(codes.Unimplemented, "ExecuteCommand not implemented")
+	return status.Error(codes.Unimplemented, "ExecuteCommand not implemented - use GetPendingCommands instead")
+}
+
+// GetPendingCommands returns any pending commands for the requesting agent.
+func (s *GRPCServer) GetPendingCommands(ctx context.Context, req *agentpb.GetPendingCommandsRequest) (*agentpb.GetPendingCommandsResponse, error) {
+	agentID := req.GetAgentId()
+	if agentID == "" {
+		return nil, status.Error(codes.InvalidArgument, "agent_id is required")
+	}
+
+	// Verify agent is registered
+	if _, exists := s.store.Get(agentID); !exists {
+		return nil, status.Error(codes.NotFound, "agent not registered")
+	}
+
+	// Get pending commands for this agent
+	pending := s.cmdQueue.GetPendingForAgent(agentID)
+
+	// Convert to protobuf format
+	commands := make([]*agentpb.CommandRequest, 0, len(pending))
+	for _, cmd := range pending {
+		// Mark as running so it's not returned again
+		s.cmdQueue.MarkRunning(cmd.RequestID)
+
+		commands = append(commands, &agentpb.CommandRequest{
+			RequestId:      cmd.RequestID,
+			AgentId:        cmd.AgentID,
+			Command:        cmd.Command,
+			Namespace:      cmd.Namespace,
+			TimeoutSeconds: cmd.TimeoutSeconds,
+		})
+	}
+
+	if len(commands) > 0 {
+		log.Printf("Returning %d pending commands for agent %s", len(commands), agentID)
+	}
+
+	return &agentpb.GetPendingCommandsResponse{
+		Commands: commands,
+	}, nil
+}
+
+// SubmitCommandResult receives the result of a command execution from an agent.
+func (s *GRPCServer) SubmitCommandResult(ctx context.Context, req *agentpb.SubmitCommandResultRequest) (*agentpb.SubmitCommandResultResponse, error) {
+	requestID := req.GetRequestId()
+	if requestID == "" {
+		return nil, status.Error(codes.InvalidArgument, "request_id is required")
+	}
+
+	log.Printf("Received command result: request_id=%s, exit_code=%d", requestID, req.GetExitCode())
+
+	result := &CommandResult{
+		RequestID:    requestID,
+		Stdout:       req.GetStdout(),
+		Stderr:       req.GetStderr(),
+		ExitCode:     req.GetExitCode(),
+		ErrorMessage: req.GetErrorMessage(),
+	}
+
+	if req.GetErrorMessage() != "" {
+		// Command failed to execute
+		s.cmdQueue.Fail(requestID, req.GetErrorMessage())
+	} else {
+		// Command completed (success or non-zero exit)
+		s.cmdQueue.Complete(requestID, result)
+	}
+
+	return &agentpb.SubmitCommandResultResponse{
+		Success: true,
+	}, nil
 }
 
 // generateAgentID creates a unique identifier for an agent using random bytes.
