@@ -1,7 +1,7 @@
 package main
 
-import "fmt"
+import "github.com/why-xn/mk8s/internal/cli"
 
 func main() {
-	fmt.Println("mk8s CLI v0.1.0")
+	cli.Execute()
 }
