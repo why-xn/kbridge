@@ -14,17 +14,27 @@ import (
 	"google.golang.org/grpc"
 )
 
+// DisconnectCheckInterval is how often to check for disconnected agents.
+const DisconnectCheckInterval = 15 * time.Second
+
 // Server is the main central service that runs both HTTP and gRPC servers.
 type Server struct {
 	config     *Config
 	httpServer *http.Server
 	grpcServer *grpc.Server
+	agentStore *AgentStore
+	stopCh     chan struct{}
 }
 
 // NewServer creates a new central server with the given configuration.
 func NewServer(cfg *Config) *Server {
-	httpHandler := NewHTTPServer()
-	grpcHandler := NewGRPCServer()
+	agentStore := NewAgentStore()
+
+	// Add default token for development (should be configurable in production)
+	agentStore.AddValidToken("dev-token")
+
+	httpHandler := NewHTTPServer(agentStore)
+	grpcHandler := NewGRPCServer(agentStore)
 
 	grpcSrv := grpc.NewServer()
 	grpcHandler.RegisterWithServer(grpcSrv)
@@ -39,12 +49,22 @@ func NewServer(cfg *Config) *Server {
 		config:     cfg,
 		httpServer: httpSrv,
 		grpcServer: grpcSrv,
+		agentStore: agentStore,
+		stopCh:     make(chan struct{}),
 	}
+}
+
+// AgentStore returns the server's agent store for external access.
+func (s *Server) AgentStore() *AgentStore {
+	return s.agentStore
 }
 
 // Run starts both HTTP and gRPC servers and handles graceful shutdown.
 func (s *Server) Run() error {
 	errCh := make(chan error, 2)
+
+	// Start disconnect checker in goroutine
+	go s.runDisconnectChecker()
 
 	// Start gRPC server in goroutine
 	go func() {
@@ -80,6 +100,21 @@ func (s *Server) startHTTP() error {
 	return s.httpServer.ListenAndServe()
 }
 
+// runDisconnectChecker periodically checks for and marks disconnected agents.
+func (s *Server) runDisconnectChecker() {
+	ticker := time.NewTicker(DisconnectCheckInterval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ticker.C:
+			s.agentStore.MarkDisconnected()
+		case <-s.stopCh:
+			return
+		}
+	}
+}
+
 func (s *Server) waitForShutdown(errCh chan error) error {
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
@@ -94,6 +129,9 @@ func (s *Server) waitForShutdown(errCh chan error) error {
 }
 
 func (s *Server) shutdown() error {
+	// Signal disconnect checker to stop
+	close(s.stopCh)
+
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 

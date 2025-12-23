@@ -2,6 +2,9 @@ package central
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
+	"fmt"
 	"log"
 
 	"github.com/why-xn/mk8s/api/proto/agentpb"
@@ -16,11 +19,14 @@ const DefaultHeartbeatInterval = 30
 // GRPCServer handles gRPC requests from agents.
 type GRPCServer struct {
 	agentpb.UnimplementedAgentServiceServer
+	store *AgentStore
 }
 
-// NewGRPCServer creates a new gRPC server.
-func NewGRPCServer() *GRPCServer {
-	return &GRPCServer{}
+// NewGRPCServer creates a new gRPC server with the given agent store.
+func NewGRPCServer(store *AgentStore) *GRPCServer {
+	return &GRPCServer{
+		store: store,
+	}
 }
 
 // RegisterWithServer registers the agent service with a gRPC server.
@@ -32,8 +38,48 @@ func (s *GRPCServer) RegisterWithServer(srv *grpc.Server) {
 func (s *GRPCServer) Register(ctx context.Context, req *agentpb.RegisterRequest) (*agentpb.RegisterResponse, error) {
 	log.Printf("Agent registration request: cluster=%s", req.GetClusterName())
 
-	// Generate a simple agent ID (will be replaced with proper implementation later)
-	agentID := generateAgentID(req.GetClusterName())
+	// Validate cluster name
+	if req.GetClusterName() == "" {
+		return &agentpb.RegisterResponse{
+			Success:      false,
+			ErrorMessage: "cluster_name is required",
+		}, nil
+	}
+
+	// Validate agent token
+	if !s.store.ValidateToken(req.GetAgentToken()) {
+		log.Printf("Invalid agent token for cluster=%s", req.GetClusterName())
+		return &agentpb.RegisterResponse{
+			Success:      false,
+			ErrorMessage: "invalid agent token",
+		}, nil
+	}
+
+	// Generate unique agent ID
+	agentID, err := generateAgentID()
+	if err != nil {
+		log.Printf("Failed to generate agent ID: %v", err)
+		return nil, status.Errorf(codes.Internal, "failed to generate agent ID")
+	}
+
+	// Build agent info from request
+	info := &AgentInfo{
+		ID:          agentID,
+		ClusterName: req.GetClusterName(),
+		Token:       req.GetAgentToken(),
+	}
+
+	// Extract metadata if provided
+	if meta := req.GetMetadata(); meta != nil {
+		info.KubernetesVersion = meta.GetKubernetesVersion()
+		info.NodeCount = meta.GetNodeCount()
+		info.Region = meta.GetRegion()
+		info.Provider = meta.GetProvider()
+	}
+
+	// Store the agent
+	s.store.Register(info)
+	log.Printf("Agent registered: id=%s, cluster=%s", agentID, req.GetClusterName())
 
 	return &agentpb.RegisterResponse{
 		Success: true,
@@ -44,6 +90,20 @@ func (s *GRPCServer) Register(ctx context.Context, req *agentpb.RegisterRequest)
 // Heartbeat handles agent heartbeat requests.
 func (s *GRPCServer) Heartbeat(ctx context.Context, req *agentpb.HeartbeatRequest) (*agentpb.HeartbeatResponse, error) {
 	log.Printf("Heartbeat from agent: id=%s, status=%s", req.GetAgentId(), req.GetStatus())
+
+	// Validate agent ID
+	if req.GetAgentId() == "" {
+		return nil, status.Error(codes.InvalidArgument, "agent_id is required")
+	}
+
+	// Convert protobuf status to string
+	agentStatus := convertAgentStatus(req.GetStatus())
+
+	// Update heartbeat in store
+	if !s.store.UpdateHeartbeat(req.GetAgentId(), agentStatus) {
+		log.Printf("Heartbeat from unknown agent: id=%s", req.GetAgentId())
+		return nil, status.Error(codes.NotFound, "agent not registered")
+	}
 
 	return &agentpb.HeartbeatResponse{
 		Acknowledged:         true,
@@ -58,8 +118,23 @@ func (s *GRPCServer) ExecuteCommand(req *agentpb.CommandRequest, stream grpc.Ser
 	return status.Error(codes.Unimplemented, "ExecuteCommand not implemented")
 }
 
-// generateAgentID creates a unique identifier for an agent.
-func generateAgentID(clusterName string) string {
-	// Simple implementation for now - will be replaced with UUID or similar
-	return "agent-" + clusterName
+// generateAgentID creates a unique identifier for an agent using random bytes.
+func generateAgentID() (string, error) {
+	bytes := make([]byte, 8)
+	if _, err := rand.Read(bytes); err != nil {
+		return "", fmt.Errorf("generating random bytes: %w", err)
+	}
+	return "agent-" + hex.EncodeToString(bytes), nil
+}
+
+// convertAgentStatus converts protobuf AgentStatus to internal status string.
+func convertAgentStatus(status agentpb.AgentStatus) string {
+	switch status {
+	case agentpb.AgentStatus_AGENT_STATUS_HEALTHY:
+		return AgentStatusConnected
+	case agentpb.AgentStatus_AGENT_STATUS_DEGRADED:
+		return AgentStatusConnected // Still connected but degraded
+	default:
+		return AgentStatusConnected
+	}
 }

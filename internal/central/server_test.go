@@ -25,6 +25,29 @@ func TestNewServer(t *testing.T) {
 	if srv.grpcServer == nil {
 		t.Error("expected grpcServer to be set")
 	}
+
+	if srv.agentStore == nil {
+		t.Error("expected agentStore to be set")
+	}
+
+	if srv.stopCh == nil {
+		t.Error("expected stopCh to be set")
+	}
+}
+
+func TestServer_AgentStore(t *testing.T) {
+	cfg := DefaultConfig()
+	srv := NewServer(cfg)
+
+	store := srv.AgentStore()
+	if store == nil {
+		t.Fatal("expected non-nil agent store")
+	}
+
+	// Verify default token is added
+	if !store.ValidateToken("dev-token") {
+		t.Error("expected dev-token to be valid")
+	}
 }
 
 func TestServer_HTTPServerAddr(t *testing.T) {
