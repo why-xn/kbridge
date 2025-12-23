@@ -58,6 +58,11 @@ func main() {
 }
 
 func loadConfig(configPath string) (*agent.Config, error) {
+	// Check for config path from flag or environment variable
+	if configPath == "" {
+		configPath = os.Getenv("MK8S_CONFIG")
+	}
+
 	if configPath != "" {
 		return agent.LoadConfig(configPath)
 	}
@@ -74,7 +79,7 @@ func loadConfig(configPath string) (*agent.Config, error) {
 		}
 	}
 
-	// Use defaults if no config file found
-	log.Println("No config file found, using defaults")
-	return agent.DefaultConfig(), nil
+	// Use defaults with environment overrides if no config file found
+	log.Println("No config file found, using defaults with environment overrides")
+	return agent.DefaultConfigWithEnv(), nil
 }

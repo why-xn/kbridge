@@ -168,3 +168,117 @@ func TestConfig_Validate(t *testing.T) {
 		})
 	}
 }
+
+func TestDefaultConfigWithEnv(t *testing.T) {
+	// Set environment variables
+	os.Setenv("MK8S_CENTRAL_URL", "central.example.com:9090")
+	os.Setenv("MK8S_AGENT_TOKEN", "env-agent-token")
+	os.Setenv("MK8S_CLUSTER_NAME", "env-cluster")
+	os.Setenv("MK8S_CLUSTER_REGION", "eu-west-1")
+	os.Setenv("MK8S_CLUSTER_PROVIDER", "gcp")
+	defer func() {
+		os.Unsetenv("MK8S_CENTRAL_URL")
+		os.Unsetenv("MK8S_AGENT_TOKEN")
+		os.Unsetenv("MK8S_CLUSTER_NAME")
+		os.Unsetenv("MK8S_CLUSTER_REGION")
+		os.Unsetenv("MK8S_CLUSTER_PROVIDER")
+	}()
+
+	cfg := DefaultConfigWithEnv()
+
+	if cfg.Central.URL != "central.example.com:9090" {
+		t.Errorf("expected URL 'central.example.com:9090', got %q", cfg.Central.URL)
+	}
+
+	if cfg.Central.Token != "env-agent-token" {
+		t.Errorf("expected token 'env-agent-token', got %q", cfg.Central.Token)
+	}
+
+	if cfg.Cluster.Name != "env-cluster" {
+		t.Errorf("expected cluster name 'env-cluster', got %q", cfg.Cluster.Name)
+	}
+
+	if cfg.Cluster.Region != "eu-west-1" {
+		t.Errorf("expected region 'eu-west-1', got %q", cfg.Cluster.Region)
+	}
+
+	if cfg.Cluster.Provider != "gcp" {
+		t.Errorf("expected provider 'gcp', got %q", cfg.Cluster.Provider)
+	}
+}
+
+func TestLoadConfig_EnvOverrides(t *testing.T) {
+	// Set environment variable that should override config file
+	os.Setenv("MK8S_CENTRAL_URL", "override.example.com:9090")
+	os.Setenv("MK8S_CLUSTER_NAME", "override-cluster")
+	defer func() {
+		os.Unsetenv("MK8S_CENTRAL_URL")
+		os.Unsetenv("MK8S_CLUSTER_NAME")
+	}()
+
+	// Create config file
+	content := `
+central:
+  url: original.example.com:9090
+  token: file-token
+cluster:
+  name: file-cluster
+`
+	tmpDir := t.TempDir()
+	configPath := filepath.Join(tmpDir, "agent.yaml")
+	if err := os.WriteFile(configPath, []byte(content), 0644); err != nil {
+		t.Fatalf("failed to write temp config: %v", err)
+	}
+
+	cfg, err := LoadConfig(configPath)
+	if err != nil {
+		t.Fatalf("failed to load config: %v", err)
+	}
+
+	// Environment variables should override file values
+	if cfg.Central.URL != "override.example.com:9090" {
+		t.Errorf("expected URL to be overridden to 'override.example.com:9090', got %q", cfg.Central.URL)
+	}
+
+	if cfg.Cluster.Name != "override-cluster" {
+		t.Errorf("expected cluster name to be overridden to 'override-cluster', got %q", cfg.Cluster.Name)
+	}
+
+	// Token should still come from file since not overridden
+	if cfg.Central.Token != "file-token" {
+		t.Errorf("expected token 'file-token', got %q", cfg.Central.Token)
+	}
+}
+
+func TestLoadConfig_MK8SAgentTokenOverridesAgentToken(t *testing.T) {
+	// MK8S_AGENT_TOKEN should take precedence over AGENT_TOKEN
+	os.Setenv("AGENT_TOKEN", "legacy-token")
+	os.Setenv("MK8S_AGENT_TOKEN", "new-token")
+	defer func() {
+		os.Unsetenv("AGENT_TOKEN")
+		os.Unsetenv("MK8S_AGENT_TOKEN")
+	}()
+
+	// Create minimal config file
+	content := `
+central:
+  url: localhost:9090
+cluster:
+  name: test
+`
+	tmpDir := t.TempDir()
+	configPath := filepath.Join(tmpDir, "agent.yaml")
+	if err := os.WriteFile(configPath, []byte(content), 0644); err != nil {
+		t.Fatalf("failed to write temp config: %v", err)
+	}
+
+	cfg, err := LoadConfig(configPath)
+	if err != nil {
+		t.Fatalf("failed to load config: %v", err)
+	}
+
+	// MK8S_AGENT_TOKEN should win
+	if cfg.Central.Token != "new-token" {
+		t.Errorf("expected token 'new-token', got %q", cfg.Central.Token)
+	}
+}

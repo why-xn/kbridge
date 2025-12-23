@@ -46,6 +46,13 @@ func DefaultConfig() *Config {
 	}
 }
 
+// DefaultConfigWithEnv returns a Config with defaults and environment variable overrides applied.
+func DefaultConfigWithEnv() *Config {
+	cfg := DefaultConfig()
+	applyEnvOverrides(cfg)
+	return cfg
+}
+
 // LoadConfig reads configuration from a YAML file at the given path.
 func LoadConfig(path string) (*Config, error) {
 	data, err := os.ReadFile(path)
@@ -58,12 +65,33 @@ func LoadConfig(path string) (*Config, error) {
 		return nil, fmt.Errorf("parsing config file: %w", err)
 	}
 
-	// Expand environment variables in token
-	if cfg.Central.Token == "" {
-		cfg.Central.Token = os.Getenv("AGENT_TOKEN")
-	}
+	// Apply environment variable overrides
+	applyEnvOverrides(cfg)
 
 	return cfg, nil
+}
+
+// applyEnvOverrides applies environment variable overrides to the config.
+func applyEnvOverrides(cfg *Config) {
+	if url := os.Getenv("MK8S_CENTRAL_URL"); url != "" {
+		cfg.Central.URL = url
+	}
+	if token := os.Getenv("MK8S_AGENT_TOKEN"); token != "" {
+		cfg.Central.Token = token
+	}
+	// Also support AGENT_TOKEN for backwards compatibility
+	if token := os.Getenv("AGENT_TOKEN"); token != "" && cfg.Central.Token == "" {
+		cfg.Central.Token = token
+	}
+	if name := os.Getenv("MK8S_CLUSTER_NAME"); name != "" {
+		cfg.Cluster.Name = name
+	}
+	if region := os.Getenv("MK8S_CLUSTER_REGION"); region != "" {
+		cfg.Cluster.Region = region
+	}
+	if provider := os.Getenv("MK8S_CLUSTER_PROVIDER"); provider != "" {
+		cfg.Cluster.Provider = provider
+	}
 }
 
 // Validate checks if the configuration is valid.
