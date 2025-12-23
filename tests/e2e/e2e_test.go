@@ -168,7 +168,7 @@ func TestAgentHeartbeat(t *testing.T) {
 }
 
 // Test: CLI clusters list
-func TestCLIClustersLis(t *testing.T) {
+func TestCLIClustersList(t *testing.T) {
 	stdout, stderr, exitCode := runCLI(t, "clusters", "list")
 
 	if exitCode != 0 {
