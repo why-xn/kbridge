@@ -1,0 +1,143 @@
+syntax = "proto3";
+
+package mk8s.agent.v1;
+
+option go_package = "github.com/why-xn/mk8s/api/proto/agentpb";
+
+// AgentService defines the gRPC service for agent-central communication.
+// Central service implements this service, agents connect as clients.
+service AgentService {
+  // Register is called by the agent when it first connects to central.
+  // It provides cluster metadata and authenticates with an agent token.
+  rpc Register(RegisterRequest) returns (RegisterResponse);
+
+  // Heartbeat is called periodically by the agent to maintain connection
+  // and report its current status.
+  rpc Heartbeat(HeartbeatRequest) returns (HeartbeatResponse);
+
+  // ExecuteCommand executes a kubectl command on the agent's cluster.
+  // Returns a stream of output chunks as the command runs.
+  rpc ExecuteCommand(CommandRequest) returns (stream CommandResponse);
+}
+
+// RegisterRequest is sent by the agent to register with central service.
+message RegisterRequest {
+  // agent_token is the pre-shared token used to authenticate the agent.
+  string agent_token = 1;
+
+  // cluster_name is the unique name identifying this cluster.
+  string cluster_name = 2;
+
+  // metadata contains additional information about the cluster.
+  ClusterMetadata metadata = 3;
+}
+
+// ClusterMetadata contains information about the Kubernetes cluster.
+message ClusterMetadata {
+  // kubernetes_version is the version of the Kubernetes cluster (e.g., "1.28.0").
+  string kubernetes_version = 1;
+
+  // node_count is the number of nodes in the cluster.
+  int32 node_count = 2;
+
+  // region is the cloud region where the cluster is deployed (e.g., "us-east-1").
+  string region = 3;
+
+  // provider is the cloud provider or platform (e.g., "aws", "gcp", "azure", "on-prem").
+  string provider = 4;
+}
+
+// RegisterResponse is returned after an agent registration attempt.
+message RegisterResponse {
+  // success indicates whether registration was successful.
+  bool success = 1;
+
+  // agent_id is a unique identifier assigned to this agent by central.
+  // Used in subsequent Heartbeat and ExecuteCommand calls.
+  string agent_id = 2;
+
+  // error_message contains details if registration failed.
+  string error_message = 3;
+}
+
+// HeartbeatRequest is sent periodically by the agent to maintain connection.
+message HeartbeatRequest {
+  // agent_id is the identifier assigned during registration.
+  string agent_id = 1;
+
+  // status indicates the current health status of the agent.
+  AgentStatus status = 2;
+}
+
+// AgentStatus represents the health status of an agent.
+enum AgentStatus {
+  // AGENT_STATUS_UNKNOWN indicates status is not known.
+  AGENT_STATUS_UNKNOWN = 0;
+
+  // AGENT_STATUS_HEALTHY indicates the agent is functioning normally.
+  AGENT_STATUS_HEALTHY = 1;
+
+  // AGENT_STATUS_DEGRADED indicates the agent is running but experiencing issues.
+  AGENT_STATUS_DEGRADED = 2;
+}
+
+// HeartbeatResponse is returned in response to a heartbeat.
+message HeartbeatResponse {
+  // acknowledged indicates the heartbeat was received.
+  bool acknowledged = 1;
+
+  // next_heartbeat_seconds indicates how long to wait before the next heartbeat.
+  int64 next_heartbeat_seconds = 2;
+}
+
+// CommandRequest represents a kubectl command to execute on the agent.
+message CommandRequest {
+  // request_id is a unique identifier for this command execution.
+  string request_id = 1;
+
+  // agent_id identifies which agent should execute this command.
+  string agent_id = 2;
+
+  // command is the kubectl command arguments (e.g., ["get", "pods", "-o", "wide"]).
+  repeated string command = 3;
+
+  // namespace is the Kubernetes namespace for the command (optional).
+  string namespace = 4;
+
+  // timeout_seconds is the maximum time to wait for command completion.
+  int32 timeout_seconds = 5;
+}
+
+// CommandResponse contains output from a command execution.
+// Multiple responses may be streamed as output is generated.
+message CommandResponse {
+  // request_id matches the request that generated this response.
+  string request_id = 1;
+
+  // type indicates whether this is stdout or stderr output.
+  OutputType type = 2;
+
+  // data contains the raw output bytes.
+  bytes data = 3;
+
+  // complete indicates this is the final response for this command.
+  bool complete = 4;
+
+  // exit_code is the command's exit code (only set when complete=true).
+  int32 exit_code = 5;
+
+  // error_message contains error details if the command failed to execute.
+  string error_message = 6;
+}
+
+// OutputType indicates the type of command output.
+enum OutputType {
+  // OUTPUT_TYPE_UNKNOWN indicates output type is not known.
+  OUTPUT_TYPE_UNKNOWN = 0;
+
+  // OUTPUT_TYPE_STDOUT indicates standard output.
+  OUTPUT_TYPE_STDOUT = 1;
+
+  // OUTPUT_TYPE_STDERR indicates standard error.
+  OUTPUT_TYPE_STDERR = 2;
+}

@@ -1,6 +1,9 @@
-.PHONY: build build-cli build-central build-agent clean
+.PHONY: build build-cli build-central build-agent clean proto
 
 build: build-cli build-central build-agent
+
+proto:
+	./scripts/generate-proto.sh
 
 build-cli:
 	go build -o bin/mk8s ./cmd/mk8s
