@@ -30,6 +30,11 @@ func NewKubectlExecutor() *KubectlExecutor {
 
 // Execute runs a kubectl command with the given arguments.
 func (e *KubectlExecutor) Execute(ctx context.Context, args []string, namespace string, timeout time.Duration) *CommandResult {
+	return e.ExecuteWithStdin(ctx, args, namespace, timeout, nil)
+}
+
+// ExecuteWithStdin runs a kubectl command with optional stdin input.
+func (e *KubectlExecutor) ExecuteWithStdin(ctx context.Context, args []string, namespace string, timeout time.Duration, stdin []byte) *CommandResult {
 	result := &CommandResult{}
 
 	// Build command arguments
@@ -51,6 +56,11 @@ func (e *KubectlExecutor) Execute(ctx context.Context, args []string, namespace 
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
+
+	// Set stdin if provided
+	if len(stdin) > 0 {
+		cmd.Stdin = bytes.NewReader(stdin)
+	}
 
 	// Run the command
 	err := cmd.Run()

@@ -24,6 +24,7 @@ type ExecRequest struct {
 	Command   []string `json:"command" binding:"required"`
 	Namespace string   `json:"namespace,omitempty"`
 	Timeout   int      `json:"timeout,omitempty"` // seconds, default 30
+	Stdin     string   `json:"stdin,omitempty"`   // optional stdin input for the command
 }
 
 // ExecResponse represents a command execution response.
@@ -158,6 +159,7 @@ func (s *HTTPServer) handleExecCommand(c *gin.Context) {
 		req.Command,
 		req.Namespace,
 		int32(timeout.Seconds()),
+		[]byte(req.Stdin),
 	)
 	if err != nil {
 		log.Printf("Failed to queue command: %v", err)

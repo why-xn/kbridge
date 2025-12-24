@@ -305,8 +305,8 @@ func (a *Agent) executeAndSubmit(ctx context.Context, cmd *agentpb.CommandReques
 		timeout = 30 * time.Second
 	}
 
-	// Execute the kubectl command
-	result := a.executor.Execute(ctx, cmd.Command, cmd.Namespace, timeout)
+	// Execute the kubectl command with optional stdin
+	result := a.executor.ExecuteWithStdin(ctx, cmd.Command, cmd.Namespace, timeout, cmd.Stdin)
 
 	// Build result request
 	submitReq := &agentpb.SubmitCommandResultRequest{

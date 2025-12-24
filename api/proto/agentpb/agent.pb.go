@@ -452,8 +452,11 @@ type CommandRequest struct {
 	Namespace string `protobuf:"bytes,4,opt,name=namespace,proto3" json:"namespace,omitempty"`
 	// timeout_seconds is the maximum time to wait for command completion.
 	TimeoutSeconds int32 `protobuf:"varint,5,opt,name=timeout_seconds,json=timeoutSeconds,proto3" json:"timeout_seconds,omitempty"`
-	unknownFields  protoimpl.UnknownFields
-	sizeCache      protoimpl.SizeCache
+	// stdin is optional input to be piped to the command's standard input.
+	// Used for commands like "kubectl apply -f -" that read from stdin.
+	Stdin         []byte `protobuf:"bytes,6,opt,name=stdin,proto3" json:"stdin,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *CommandRequest) Reset() {
@@ -519,6 +522,13 @@ func (x *CommandRequest) GetTimeoutSeconds() int32 {
 		return x.TimeoutSeconds
 	}
 	return 0
+}
+
+func (x *CommandRequest) GetStdin() []byte {
+	if x != nil {
+		return x.Stdin
+	}
+	return nil
 }
 
 // CommandResponse contains output from a command execution.
@@ -858,14 +868,15 @@ const file_agent_proto_rawDesc = "" +
 	"\x06status\x18\x02 \x01(\x0e2\x1a.mk8s.agent.v1.AgentStatusR\x06status\"m\n" +
 	"\x11HeartbeatResponse\x12\"\n" +
 	"\facknowledged\x18\x01 \x01(\bR\facknowledged\x124\n" +
-	"\x16next_heartbeat_seconds\x18\x02 \x01(\x03R\x14nextHeartbeatSeconds\"\xab\x01\n" +
+	"\x16next_heartbeat_seconds\x18\x02 \x01(\x03R\x14nextHeartbeatSeconds\"\xc1\x01\n" +
 	"\x0eCommandRequest\x12\x1d\n" +
 	"\n" +
 	"request_id\x18\x01 \x01(\tR\trequestId\x12\x19\n" +
 	"\bagent_id\x18\x02 \x01(\tR\aagentId\x12\x18\n" +
 	"\acommand\x18\x03 \x03(\tR\acommand\x12\x1c\n" +
 	"\tnamespace\x18\x04 \x01(\tR\tnamespace\x12'\n" +
-	"\x0ftimeout_seconds\x18\x05 \x01(\x05R\x0etimeoutSeconds\"\xd1\x01\n" +
+	"\x0ftimeout_seconds\x18\x05 \x01(\x05R\x0etimeoutSeconds\x12\x14\n" +
+	"\x05stdin\x18\x06 \x01(\fR\x05stdin\"\xd1\x01\n" +
 	"\x0fCommandResponse\x12\x1d\n" +
 	"\n" +
 	"request_id\x18\x01 \x01(\tR\trequestId\x12-\n" +

@@ -312,8 +312,8 @@ func TestGRPCServer_GetPendingCommands_Success(t *testing.T) {
 	agentID := regResp.AgentId
 
 	// Queue some commands
-	cmdQueue.Enqueue(agentID, "test-cluster", []string{"get", "pods"}, "default", 30)
-	cmdQueue.Enqueue(agentID, "test-cluster", []string{"get", "services"}, "", 30)
+	cmdQueue.Enqueue(agentID, "test-cluster", []string{"get", "pods"}, "default", 30, nil)
+	cmdQueue.Enqueue(agentID, "test-cluster", []string{"get", "services"}, "", 30, nil)
 
 	// Get pending commands
 	req := &agentpb.GetPendingCommandsRequest{
@@ -393,7 +393,7 @@ func TestGRPCServer_SubmitCommandResult_Success(t *testing.T) {
 	ctx := context.Background()
 
 	// Queue a command
-	requestID, _ := cmdQueue.Enqueue("agent-1", "test-cluster", []string{"get", "pods"}, "", 30)
+	requestID, _ := cmdQueue.Enqueue("agent-1", "test-cluster", []string{"get", "pods"}, "", 30, nil)
 	cmdQueue.MarkRunning(requestID)
 
 	// Submit result
@@ -425,7 +425,7 @@ func TestGRPCServer_SubmitCommandResult_WithError(t *testing.T) {
 	ctx := context.Background()
 
 	// Queue a command
-	requestID, _ := cmdQueue.Enqueue("agent-1", "test-cluster", []string{"get", "pods"}, "", 30)
+	requestID, _ := cmdQueue.Enqueue("agent-1", "test-cluster", []string{"get", "pods"}, "", 30, nil)
 	cmdQueue.MarkRunning(requestID)
 
 	// Submit result with error

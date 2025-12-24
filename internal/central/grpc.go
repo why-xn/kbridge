@@ -148,6 +148,7 @@ func (s *GRPCServer) GetPendingCommands(ctx context.Context, req *agentpb.GetPen
 			Command:        cmd.Command,
 			Namespace:      cmd.Namespace,
 			TimeoutSeconds: cmd.TimeoutSeconds,
+			Stdin:          cmd.Stdin,
 		})
 	}
 

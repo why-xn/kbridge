@@ -115,6 +115,10 @@ message CommandRequest {
 
   // timeout_seconds is the maximum time to wait for command completion.
   int32 timeout_seconds = 5;
+
+  // stdin is optional input to be piped to the command's standard input.
+  // Used for commands like "kubectl apply -f -" that read from stdin.
+  bytes stdin = 6;
 }
 
 // CommandResponse contains output from a command execution.

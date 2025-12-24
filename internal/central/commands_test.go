@@ -21,7 +21,7 @@ func TestNewCommandQueue(t *testing.T) {
 func TestCommandQueue_Enqueue(t *testing.T) {
 	q := NewCommandQueue()
 
-	requestID, err := q.Enqueue("agent-1", "cluster-1", []string{"get", "pods"}, "default", 30)
+	requestID, err := q.Enqueue("agent-1", "cluster-1", []string{"get", "pods"}, "default", 30, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -56,9 +56,9 @@ func TestCommandQueue_GetPendingForAgent(t *testing.T) {
 	q := NewCommandQueue()
 
 	// Enqueue commands for different agents
-	q.Enqueue("agent-1", "cluster-1", []string{"get", "pods"}, "", 30)
-	q.Enqueue("agent-1", "cluster-1", []string{"get", "services"}, "", 30)
-	q.Enqueue("agent-2", "cluster-2", []string{"get", "nodes"}, "", 30)
+	q.Enqueue("agent-1", "cluster-1", []string{"get", "pods"}, "", 30, nil)
+	q.Enqueue("agent-1", "cluster-1", []string{"get", "services"}, "", 30, nil)
+	q.Enqueue("agent-2", "cluster-2", []string{"get", "nodes"}, "", 30, nil)
 
 	// Get pending for agent-1
 	pending := q.GetPendingForAgent("agent-1")
@@ -82,7 +82,7 @@ func TestCommandQueue_GetPendingForAgent(t *testing.T) {
 func TestCommandQueue_MarkRunning(t *testing.T) {
 	q := NewCommandQueue()
 
-	requestID, _ := q.Enqueue("agent-1", "cluster-1", []string{"get", "pods"}, "", 30)
+	requestID, _ := q.Enqueue("agent-1", "cluster-1", []string{"get", "pods"}, "", 30, nil)
 
 	// Mark as running
 	ok := q.MarkRunning(requestID)
@@ -111,7 +111,7 @@ func TestCommandQueue_MarkRunning(t *testing.T) {
 func TestCommandQueue_Complete(t *testing.T) {
 	q := NewCommandQueue()
 
-	requestID, _ := q.Enqueue("agent-1", "cluster-1", []string{"get", "pods"}, "", 30)
+	requestID, _ := q.Enqueue("agent-1", "cluster-1", []string{"get", "pods"}, "", 30, nil)
 	q.MarkRunning(requestID)
 
 	result := &CommandResult{
@@ -140,7 +140,7 @@ func TestCommandQueue_Complete(t *testing.T) {
 func TestCommandQueue_Fail(t *testing.T) {
 	q := NewCommandQueue()
 
-	requestID, _ := q.Enqueue("agent-1", "cluster-1", []string{"get", "pods"}, "", 30)
+	requestID, _ := q.Enqueue("agent-1", "cluster-1", []string{"get", "pods"}, "", 30, nil)
 	q.MarkRunning(requestID)
 
 	ok := q.Fail(requestID, "command timed out")
@@ -163,7 +163,7 @@ func TestCommandQueue_Fail(t *testing.T) {
 func TestCommandQueue_WaitForResult_Success(t *testing.T) {
 	q := NewCommandQueue()
 
-	requestID, _ := q.Enqueue("agent-1", "cluster-1", []string{"get", "pods"}, "", 30)
+	requestID, _ := q.Enqueue("agent-1", "cluster-1", []string{"get", "pods"}, "", 30, nil)
 
 	// Complete in a goroutine
 	go func() {
@@ -195,7 +195,7 @@ func TestCommandQueue_WaitForResult_Success(t *testing.T) {
 func TestCommandQueue_WaitForResult_Timeout(t *testing.T) {
 	q := NewCommandQueue()
 
-	requestID, _ := q.Enqueue("agent-1", "cluster-1", []string{"get", "pods"}, "", 30)
+	requestID, _ := q.Enqueue("agent-1", "cluster-1", []string{"get", "pods"}, "", 30, nil)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
 	defer cancel()
@@ -233,7 +233,7 @@ func TestCommandQueue_WaitForResult_NotFound(t *testing.T) {
 func TestCommandQueue_Remove(t *testing.T) {
 	q := NewCommandQueue()
 
-	requestID, _ := q.Enqueue("agent-1", "cluster-1", []string{"get", "pods"}, "", 30)
+	requestID, _ := q.Enqueue("agent-1", "cluster-1", []string{"get", "pods"}, "", 30, nil)
 
 	q.Remove(requestID)
 
@@ -247,7 +247,7 @@ func TestCommandQueue_CleanupOld(t *testing.T) {
 	q := NewCommandQueue()
 
 	// Enqueue a command
-	requestID, _ := q.Enqueue("agent-1", "cluster-1", []string{"get", "pods"}, "", 30)
+	requestID, _ := q.Enqueue("agent-1", "cluster-1", []string{"get", "pods"}, "", 30, nil)
 
 	// Manually set created time to be old
 	q.mu.Lock()
@@ -275,7 +275,7 @@ func TestCommandQueue_Concurrent(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			_, err := q.Enqueue("agent-1", "cluster-1", []string{"get", "pods"}, "", 30)
+			_, err := q.Enqueue("agent-1", "cluster-1", []string{"get", "pods"}, "", 30, nil)
 			if err != nil {
 				t.Errorf("unexpected error: %v", err)
 			}

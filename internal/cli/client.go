@@ -174,3 +174,65 @@ func NewCentralClientWithTimeout(baseURL string, timeout time.Duration) *Central
 		},
 	}
 }
+
+// ExecRequestWithStdin represents a command execution request with stdin input.
+type ExecRequestWithStdin struct {
+	Command   []string `json:"command"`
+	Namespace string   `json:"namespace,omitempty"`
+	Timeout   int      `json:"timeout,omitempty"`
+	Stdin     string   `json:"stdin,omitempty"`
+}
+
+// ExecCommandWithStdin executes a kubectl command with stdin input.
+func (c *CentralClient) ExecCommandWithStdin(clusterName string, command []string, namespace string, timeout int, stdin string) (*ExecResponse, error) {
+	url := fmt.Sprintf("%s/api/v1/clusters/%s/exec", c.baseURL, clusterName)
+
+	reqBody := ExecRequestWithStdin{
+		Command:   command,
+		Namespace: namespace,
+		Timeout:   timeout,
+		Stdin:     stdin,
+	}
+
+	jsonBody, err := json.Marshal(reqBody)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal request: %w", err)
+	}
+
+	req, err := http.NewRequest(http.MethodPost, url, bytes.NewReader(jsonBody))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read response: %w", err)
+	}
+
+	if resp.StatusCode == http.StatusNotFound {
+		return nil, fmt.Errorf("cluster %q not found", clusterName)
+	}
+	if resp.StatusCode == http.StatusServiceUnavailable {
+		return nil, fmt.Errorf("cluster %q agent is disconnected", clusterName)
+	}
+	if resp.StatusCode == http.StatusGatewayTimeout {
+		return nil, fmt.Errorf("command execution timed out")
+	}
+
+	var execResp ExecResponse
+	if err := json.Unmarshal(body, &execResp); err != nil {
+		if resp.StatusCode != http.StatusOK {
+			return nil, fmt.Errorf("server returned %d: %s", resp.StatusCode, string(body))
+		}
+		return nil, fmt.Errorf("failed to decode response: %w", err)
+	}
+
+	return &execResp, nil
+}

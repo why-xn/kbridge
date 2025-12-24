@@ -57,6 +57,11 @@ func runKubectl(cmd *cobra.Command, args []string) error {
 		}
 	}
 
+	// Check if this is an edit command - handle specially
+	if isEditCommand(args) {
+		return runKubectlEdit(args)
+	}
+
 	// Check central URL
 	centralURL := viper.GetString(ConfigKeyCentralURL)
 	if centralURL == "" {
@@ -101,6 +106,22 @@ func runKubectl(cmd *cobra.Command, args []string) error {
 	// Exit with the same code as the remote kubectl
 	if resp.ExitCode != 0 {
 		os.Exit(int(resp.ExitCode))
+	}
+
+	return nil
+}
+
+// runKubectlEdit handles the kubectl edit command using a local editor workflow.
+func runKubectlEdit(args []string) error {
+	handler, err := NewEditHandler(args)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		return err
+	}
+
+	if err := handler.Execute(); err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		return err
 	}
 
 	return nil
