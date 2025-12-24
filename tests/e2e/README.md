@@ -79,6 +79,18 @@ The e2e tests cover:
 - `get namespaces` - List namespaces
 - Non-zero exit code handling
 
+### kubectl edit Operations
+The edit tests use mock editor scripts via the `KUBE_EDITOR` environment variable to simulate interactive editing:
+
+- **TestKubectlEditConfigMap** - Edit a ConfigMap, verify value changes are persisted
+- **TestKubectlEditDeployment** - Edit a Deployment, verify container image changes
+- **TestKubectlEditService** - Edit a Service, verify port configuration changes
+- **TestKubectlEditWithSlashFormat** - Test `edit configmap/name` syntax
+- **TestKubectlEditCancel** - Exit editor without changes, verify no modifications
+- **TestKubectlEditResourceNotFound** - Attempt to edit non-existent resource, verify error
+- **TestKubectlEditInvalidYAML** - Introduce invalid YAML, verify rejection and data preservation
+- **TestKubectlEditNamespaceFlags** - Test `--namespace=` flag format
+
 ## Logs
 
 When running tests, logs are stored in `tests/e2e/logs/`:
