@@ -13,7 +13,7 @@ import (
 var clustersCmd = &cobra.Command{
 	Use:   "clusters",
 	Short: "Manage cluster connections",
-	Long: `Manage connections to Kubernetes clusters.
+	Long: `Manage cluster connections to Kubernetes clusters.
 
 Use subcommands to list available clusters or select a cluster to use.`,
 }
@@ -23,7 +23,7 @@ var clustersListCmd = &cobra.Command{
 	Use:     "list",
 	Aliases: []string{"ls"},
 	Short:   "List available clusters",
-	Long:    `List all Kubernetes clusters available through the central service.`,
+	Long:    `List available clusters from the central service.`,
 	RunE:    runClustersList,
 }
 

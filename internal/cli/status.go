@@ -11,7 +11,7 @@ import (
 var statusCmd = &cobra.Command{
 	Use:   "status",
 	Short: "Show current connection status",
-	Long: `Display the current connection status including:
+	Long: `Show current connection status including:
   - Central service URL
   - Selected cluster
   - Connection state`,
