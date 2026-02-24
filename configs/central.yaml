@@ -1,3 +1,19 @@
 server:
   http_port: 8080
   grpc_port: 9090
+
+database:
+  driver: sqlite
+  path: kbridge.db
+
+auth:
+  jwt_secret: "dev-secret-change-in-production!!"
+  access_token_expiry: 24h
+  refresh_token_expiry: 168h
+  admin_email: admin@kbridge.local
+  admin_password: admin123
+  admin_name: Admin
+
+audit:
+  retention_days: 90
+  cleanup_interval: 24h
