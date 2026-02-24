@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/why-xn/kbridge/internal/auth"
 )
 
 // ClusterResponse represents a cluster in API responses.
@@ -45,10 +46,12 @@ type HTTPServer struct {
 	router       *gin.Engine
 	agentStore   *AgentStore
 	commandQueue *CommandQueue
+	authHandlers *AuthHandlers
+	jwtManager   *auth.JWTManager
 }
 
 // NewHTTPServer creates a new HTTP server with configured routes.
-func NewHTTPServer(store *AgentStore, cmdQueue *CommandQueue) *HTTPServer {
+func NewHTTPServer(agentStore *AgentStore, cmdQueue *CommandQueue, ah *AuthHandlers, jm *auth.JWTManager) *HTTPServer {
 	gin.SetMode(gin.ReleaseMode)
 	router := gin.New()
 	router.Use(gin.Recovery())
@@ -56,8 +59,10 @@ func NewHTTPServer(store *AgentStore, cmdQueue *CommandQueue) *HTTPServer {
 
 	s := &HTTPServer{
 		router:       router,
-		agentStore:   store,
+		agentStore:   agentStore,
 		commandQueue: cmdQueue,
+		authHandlers: ah,
+		jwtManager:   jm,
 	}
 	s.setupRoutes()
 	return s
@@ -71,10 +76,29 @@ func (s *HTTPServer) Handler() http.Handler {
 func (s *HTTPServer) setupRoutes() {
 	s.router.GET("/health", s.handleHealth)
 
+	// Auth routes (no auth required for login/refresh)
+	if s.authHandlers != nil {
+		authGroup := s.router.Group("/auth")
+		{
+			authGroup.POST("/login", s.authHandlers.HandleLogin)
+			authGroup.POST("/refresh", s.authHandlers.HandleRefresh)
+		}
+	}
+
+	// Protected API routes
 	api := s.router.Group("/api/v1")
+	if s.jwtManager != nil {
+		api.Use(auth.AuthMiddleware(s.jwtManager))
+	}
 	{
 		api.GET("/clusters", s.handleListClusters)
 		api.POST("/clusters/:name/exec", s.handleExecCommand)
+
+		// Auth routes that require authentication
+		if s.authHandlers != nil {
+			api.POST("/auth/logout", s.authHandlers.HandleLogout)
+			api.POST("/auth/change-password", s.authHandlers.HandleChangePassword)
+		}
 	}
 }
 

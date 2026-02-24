@@ -10,7 +10,7 @@ import (
 func newTestHTTPServer() (*HTTPServer, *AgentStore, *CommandQueue) {
 	store := NewAgentStore()
 	cmdQueue := NewCommandQueue()
-	return NewHTTPServer(store, cmdQueue), store, cmdQueue
+	return NewHTTPServer(store, cmdQueue, nil, nil), store, cmdQueue
 }
 
 func TestHTTPServer_Health(t *testing.T) {

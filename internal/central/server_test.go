@@ -6,9 +6,19 @@ import (
 	"time"
 )
 
-func TestNewServer(t *testing.T) {
+func testServerConfig() *Config {
 	cfg := DefaultConfig()
-	srv := NewServer(cfg)
+	cfg.Database.Path = ":memory:"
+	cfg.Auth.JWTSecret = "test-secret-at-least-32-chars!!"
+	return cfg
+}
+
+func TestNewServer(t *testing.T) {
+	cfg := testServerConfig()
+	srv, err := NewServer(cfg)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 
 	if srv == nil {
 		t.Fatal("expected non-nil server")
@@ -30,14 +40,21 @@ func TestNewServer(t *testing.T) {
 		t.Error("expected agentStore to be set")
 	}
 
+	if srv.store == nil {
+		t.Error("expected store to be set")
+	}
+
 	if srv.stopCh == nil {
 		t.Error("expected stopCh to be set")
 	}
 }
 
 func TestServer_AgentStore(t *testing.T) {
-	cfg := DefaultConfig()
-	srv := NewServer(cfg)
+	cfg := testServerConfig()
+	srv, err := NewServer(cfg)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 
 	store := srv.AgentStore()
 	if store == nil {
@@ -51,14 +68,14 @@ func TestServer_AgentStore(t *testing.T) {
 }
 
 func TestServer_HTTPServerAddr(t *testing.T) {
-	cfg := &Config{
-		Server: ServerConfig{
-			HTTPPort: 8888,
-			GRPCPort: 9999,
-		},
-	}
+	cfg := testServerConfig()
+	cfg.Server.HTTPPort = 8888
+	cfg.Server.GRPCPort = 9999
 
-	srv := NewServer(cfg)
+	srv, err := NewServer(cfg)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 
 	expectedAddr := ":8888"
 	if srv.httpServer.Addr != expectedAddr {
@@ -68,14 +85,14 @@ func TestServer_HTTPServerAddr(t *testing.T) {
 
 func TestServer_RunAndShutdown(t *testing.T) {
 	// Use high ports to avoid conflicts
-	cfg := &Config{
-		Server: ServerConfig{
-			HTTPPort: 18080,
-			GRPCPort: 19090,
-		},
-	}
+	cfg := testServerConfig()
+	cfg.Server.HTTPPort = 18080
+	cfg.Server.GRPCPort = 19090
 
-	srv := NewServer(cfg)
+	srv, err := NewServer(cfg)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 
 	// Run server in goroutine
 	errCh := make(chan error, 1)

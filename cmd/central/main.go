@@ -23,7 +23,10 @@ func main() {
 
 	log.Println("kbridge-central starting...")
 
-	server := central.NewServer(cfg)
+	server, err := central.NewServer(cfg)
+	if err != nil {
+		log.Fatalf("Failed to create server: %v", err)
+	}
 	if err := server.Run(); err != nil {
 		log.Fatalf("Server error: %v", err)
 	}

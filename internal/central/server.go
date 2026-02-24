@@ -11,6 +11,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/why-xn/kbridge/internal/auth"
 	"google.golang.org/grpc"
 )
 
@@ -23,19 +24,41 @@ type Server struct {
 	httpServer   *http.Server
 	grpcServer   *grpc.Server
 	agentStore   *AgentStore
+	store        Store
 	commandQueue *CommandQueue
 	stopCh       chan struct{}
 }
 
 // NewServer creates a new central server with the given configuration.
-func NewServer(cfg *Config) *Server {
+func NewServer(cfg *Config) (*Server, error) {
 	agentStore := NewAgentStore()
 	commandQueue := NewCommandQueue()
 
 	// Add default token for development (should be configurable in production)
 	agentStore.AddValidToken("dev-token")
 
-	httpHandler := NewHTTPServer(agentStore, commandQueue)
+	// Open SQLite store
+	dbStore, err := NewSQLiteStore(cfg.Database.Path)
+	if err != nil {
+		return nil, fmt.Errorf("opening database: %w", err)
+	}
+
+	// Run migrations
+	if err := dbStore.Migrate(context.Background()); err != nil {
+		dbStore.Close()
+		return nil, fmt.Errorf("running migrations: %w", err)
+	}
+
+	// Seed admin user if configured
+	if cfg.Auth.AdminEmail != "" && cfg.Auth.AdminPassword != "" {
+		seedAdminUser(dbStore, cfg)
+	}
+
+	// Set up auth components
+	jwtManager := auth.NewJWTManager(cfg.Auth.JWTSecret, cfg.Auth.AccessTokenExpiry)
+	authHandlers := NewAuthHandlers(dbStore, jwtManager, cfg.Auth.RefreshTokenExpiry)
+
+	httpHandler := NewHTTPServer(agentStore, commandQueue, authHandlers, jwtManager)
 	grpcHandler := NewGRPCServer(agentStore, commandQueue)
 
 	grpcSrv := grpc.NewServer()
@@ -52,8 +75,45 @@ func NewServer(cfg *Config) *Server {
 		httpServer:   httpSrv,
 		grpcServer:   grpcSrv,
 		agentStore:   agentStore,
+		store:        dbStore,
 		commandQueue: commandQueue,
 		stopCh:       make(chan struct{}),
+	}, nil
+}
+
+func seedAdminUser(store *SQLiteStore, cfg *Config) {
+	ctx := context.Background()
+	existing, _ := store.GetUserByEmail(ctx, cfg.Auth.AdminEmail)
+	if existing != nil {
+		return
+	}
+
+	hash, err := auth.HashPassword(cfg.Auth.AdminPassword)
+	if err != nil {
+		log.Printf("Warning: failed to hash admin password: %v", err)
+		return
+	}
+
+	name := cfg.Auth.AdminName
+	if name == "" {
+		name = "Admin"
+	}
+
+	user := &User{
+		Email:        cfg.Auth.AdminEmail,
+		PasswordHash: hash,
+		Name:         name,
+		IsActive:     true,
+	}
+	if err := store.CreateUser(ctx, user); err != nil {
+		log.Printf("Warning: failed to create admin user: %v", err)
+		return
+	}
+
+	// Assign admin role
+	adminRoleID := "00000000-0000-0000-0000-000000000001"
+	if err := store.AssignRole(ctx, user.ID, adminRoleID, ""); err != nil {
+		log.Printf("Warning: failed to assign admin role: %v", err)
 	}
 }
 
@@ -152,6 +212,11 @@ func (s *Server) shutdown() error {
 		return fmt.Errorf("HTTP server shutdown error: %w", err)
 	}
 	log.Println("HTTP server stopped")
+
+	// Close database
+	if s.store != nil {
+		s.store.Close()
+	}
 
 	return nil
 }
