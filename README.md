@@ -250,4 +250,4 @@ Agents authenticate with pre-shared tokens during registration. TLS for all comm
 
 ## License
 
-MIT
+[Elastic License 2.0 (ELv2)](LICENSE) — free to use and modify. Commercial distribution and offering as a hosted/managed service are not permitted.
