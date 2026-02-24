@@ -48,7 +48,7 @@ func runClustersList(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("central URL not configured. Run 'kbridge login' first or set %s", ConfigKeyCentralURL)
 	}
 
-	client := NewCentralClient(centralURL)
+	client := newAuthenticatedClient(centralURL)
 	clusters, err := client.ListClusters()
 	if err != nil {
 		return fmt.Errorf("failed to list clusters: %w", err)
@@ -108,7 +108,7 @@ func runClustersUse(cmd *cobra.Command, args []string) error {
 	}
 
 	// Verify cluster exists and is connected
-	client := NewCentralClient(centralURL)
+	client := newAuthenticatedClient(centralURL)
 	cluster, err := client.GetCluster(clusterName)
 	if err != nil {
 		return fmt.Errorf("failed to verify cluster: %w", err)

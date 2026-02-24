@@ -38,7 +38,7 @@ func NewEditHandler(args []string) (*EditHandler, error) {
 	}
 
 	h := &EditHandler{
-		client:       NewCentralClientWithTimeout(centralURL, defaultKubectlTimeout+10*time.Second),
+		client:       newAuthenticatedClientWithTimeout(centralURL, defaultKubectlTimeout+10*time.Second),
 		clusterName:  clusterName,
 		timeout:      defaultKubectlTimeout,
 		originalArgs: args,

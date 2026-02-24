@@ -7,6 +7,8 @@ import (
 	"io"
 	"net/http"
 	"time"
+
+	"github.com/spf13/viper"
 )
 
 // CentralClient is an HTTP client for the central service API.
@@ -239,6 +241,24 @@ func NewCentralClientWithTimeout(baseURL string, timeout time.Duration) *Central
 			Timeout: timeout,
 		},
 	}
+}
+
+// newAuthenticatedClient creates a client with the stored auth token.
+func newAuthenticatedClient(baseURL string) *CentralClient {
+	c := NewCentralClient(baseURL)
+	if token := viper.GetString(ConfigKeyToken); token != "" {
+		c.SetToken(token)
+	}
+	return c
+}
+
+// newAuthenticatedClientWithTimeout creates a client with auth token and custom timeout.
+func newAuthenticatedClientWithTimeout(baseURL string, timeout time.Duration) *CentralClient {
+	c := NewCentralClientWithTimeout(baseURL, timeout)
+	if token := viper.GetString(ConfigKeyToken); token != "" {
+		c.SetToken(token)
+	}
+	return c
 }
 
 // ExecRequestWithStdin represents a command execution request with stdin input.

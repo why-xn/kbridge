@@ -107,6 +107,19 @@ start_central() {
 server:
   http_port: ${CENTRAL_PORT}
   grpc_port: ${GRPC_PORT}
+database:
+  driver: sqlite
+  path: /tmp/kbridge-e2e.db
+auth:
+  jwt_secret: "e2e-test-secret-not-for-production"
+  access_token_expiry: 24h
+  refresh_token_expiry: 168h
+  admin_email: admin@e2e.test
+  admin_password: e2e-password
+  admin_name: E2E Admin
+audit:
+  retention_days: 1
+  cleanup_interval: 24h
 EOF
 
     # Start central service in background
@@ -127,6 +140,19 @@ EOF
     log_error "Central service failed to start. Check ${LOG_DIR}/central.log"
     cat "${LOG_DIR}/central.log"
     exit 1
+}
+
+login_central() {
+    log_info "Logging in to central service..."
+    RESPONSE=$(curl -s -X POST "http://localhost:${CENTRAL_PORT}/auth/login" \
+        -H "Content-Type: application/json" \
+        -d '{"email":"admin@e2e.test","password":"e2e-password"}')
+    AUTH_TOKEN=$(echo "${RESPONSE}" | grep -o '"access_token":"[^"]*"' | cut -d'"' -f4)
+    if [ -z "${AUTH_TOKEN}" ]; then
+        log_error "Failed to login. Response: ${RESPONSE}"
+        exit 1
+    fi
+    log_info "Login successful."
 }
 
 stop_central() {
@@ -167,7 +193,7 @@ EOF
     log_info "Waiting for agent to register..."
     for i in {1..30}; do
         # Check if agent appears in clusters list
-        CLUSTERS=$(curl -s "http://localhost:${CENTRAL_PORT}/api/v1/clusters" 2>/dev/null || echo "{}")
+        CLUSTERS=$(curl -s -H "Authorization: Bearer ${AUTH_TOKEN}" "http://localhost:${CENTRAL_PORT}/api/v1/clusters" 2>/dev/null || echo "{}")
         if echo "${CLUSTERS}" | grep -q "${CLUSTER_NAME}"; then
             log_info "Agent registered successfully (PID: ${AGENT_PID})."
             return 0
@@ -210,7 +236,8 @@ setup_cli_config() {
     cat > "${HOME}/.kbridge/config.yaml" <<EOF
 central_url: "http://localhost:${CENTRAL_PORT}"
 current_cluster: ""
-token: ""
+token: "${AUTH_TOKEN}"
+refresh_token: ""
 EOF
 
     log_info "CLI config created."
@@ -234,6 +261,7 @@ cleanup() {
     stop_central
     restore_cli_config
     delete_cluster
+    rm -f /tmp/kbridge-e2e.db
     rm -rf "${LOG_DIR}" "${CONFIG_DIR}"
     log_info "Cleanup complete."
 }
@@ -257,6 +285,7 @@ main() {
             create_cluster
             build_binaries
             start_central
+            login_central
             start_agent
             setup_cli_config
             log_info "E2E environment is ready!"
@@ -277,6 +306,7 @@ main() {
             create_cluster
             build_binaries
             start_central
+            login_central
             start_agent
             setup_cli_config
             run_tests

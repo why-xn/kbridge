@@ -36,7 +36,7 @@ func runStatus(cmd *cobra.Command, args []string) error {
 		fmt.Printf("Central:  %s\n", centralURL)
 
 		// Check connection
-		client := NewCentralClient(centralURL)
+		client := newAuthenticatedClient(centralURL)
 		if err := client.CheckHealth(); err != nil {
 			fmt.Println("Status:   Disconnected")
 		} else {
@@ -52,7 +52,7 @@ func runStatus(cmd *cobra.Command, args []string) error {
 
 		// If we have central URL, fetch cluster status
 		if centralURL != "" {
-			client := NewCentralClient(centralURL)
+			client := newAuthenticatedClient(centralURL)
 			cluster, err := client.GetCluster(currentCluster)
 			if err != nil {
 				fmt.Printf("          (cluster not found: %v)\n", err)

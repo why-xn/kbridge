@@ -84,7 +84,7 @@ func runKubectl(cmd *cobra.Command, args []string) error {
 	}
 
 	// Create client with longer timeout for command execution
-	client := NewCentralClientWithTimeout(centralURL, defaultKubectlTimeout+10*time.Second)
+	client := newAuthenticatedClientWithTimeout(centralURL, defaultKubectlTimeout+10*time.Second)
 
 	// Execute the command
 	resp, err := client.ExecCommand(currentCluster, args, namespace, int(defaultKubectlTimeout.Seconds()))

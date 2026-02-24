@@ -24,10 +24,44 @@ var (
 	binDir      = flag.String("bin-dir", "../../bin", "Directory containing binaries")
 )
 
+var authToken string
+
 // TestMain handles flag parsing
 func TestMain(m *testing.M) {
 	flag.Parse()
+	authToken = loginForTests()
 	os.Exit(m.Run())
+}
+
+func loginForTests() string {
+	body, _ := json.Marshal(map[string]string{
+		"email":    "admin@e2e.test",
+		"password": "e2e-password",
+	})
+
+	client := &http.Client{Timeout: 10 * time.Second}
+	resp, err := client.Post(fmt.Sprintf("%s/auth/login", *centralURL), "application/json", bytes.NewReader(body))
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Failed to login for tests: %v\n", err)
+		os.Exit(1)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		respBody, _ := io.ReadAll(resp.Body)
+		fmt.Fprintf(os.Stderr, "Login failed with status %d: %s\n", resp.StatusCode, string(respBody))
+		os.Exit(1)
+	}
+
+	var loginResp struct {
+		AccessToken string `json:"access_token"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&loginResp); err != nil {
+		fmt.Fprintf(os.Stderr, "Failed to decode login response: %v\n", err)
+		os.Exit(1)
+	}
+
+	return loginResp.AccessToken
 }
 
 // Helper functions
@@ -75,6 +109,30 @@ func httpGet(t *testing.T, url string) ([]byte, int) {
 	return body, resp.StatusCode
 }
 
+func httpGetAuth(t *testing.T, url, token string) ([]byte, int) {
+	t.Helper()
+
+	client := &http.Client{Timeout: 10 * time.Second}
+	req, err := http.NewRequest(http.MethodGet, url, nil)
+	if err != nil {
+		t.Fatalf("Failed to create request: %v", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
+
+	resp, err := client.Do(req)
+	if err != nil {
+		t.Fatalf("HTTP GET failed: %v", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatalf("Failed to read response: %v", err)
+	}
+
+	return body, resp.StatusCode
+}
+
 // Test: Central service health check
 func TestCentralServiceHealth(t *testing.T) {
 	url := fmt.Sprintf("%s/health", *centralURL)
@@ -97,7 +155,7 @@ func TestCentralServiceHealth(t *testing.T) {
 // Test: Agent registers with central
 func TestAgentRegistration(t *testing.T) {
 	url := fmt.Sprintf("%s/api/v1/clusters", *centralURL)
-	body, statusCode := httpGet(t, url)
+	body, statusCode := httpGetAuth(t, url, authToken)
 
 	if statusCode != http.StatusOK {
 		t.Fatalf("Expected status 200, got %d", statusCode)
@@ -137,7 +195,7 @@ func TestAgentHeartbeat(t *testing.T) {
 	time.Sleep(5 * time.Second)
 
 	url := fmt.Sprintf("%s/api/v1/clusters", *centralURL)
-	body, statusCode := httpGet(t, url)
+	body, statusCode := httpGetAuth(t, url, authToken)
 
 	if statusCode != http.StatusOK {
 		t.Fatalf("Expected status 200, got %d", statusCode)
