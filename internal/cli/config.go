@@ -13,6 +13,7 @@ const (
 	ConfigKeyCentralURL     = "central_url"
 	ConfigKeyCurrentCluster = "current_cluster"
 	ConfigKeyToken          = "token"
+	ConfigKeyRefreshToken   = "refresh_token"
 )
 
 // configDir returns the kbridge config directory path
@@ -45,6 +46,7 @@ func initConfig() {
 	viper.SetDefault(ConfigKeyCentralURL, "")
 	viper.SetDefault(ConfigKeyCurrentCluster, "")
 	viper.SetDefault(ConfigKeyToken, "")
+	viper.SetDefault(ConfigKeyRefreshToken, "")
 
 	// Read config file if it exists
 	if err := viper.ReadInConfig(); err != nil {

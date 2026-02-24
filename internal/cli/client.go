@@ -13,6 +13,14 @@ import (
 type CentralClient struct {
 	baseURL    string
 	httpClient *http.Client
+	token      string
+}
+
+// LoginResponse is the response from POST /auth/login.
+type LoginResponse struct {
+	AccessToken  string `json:"access_token"`
+	RefreshToken string `json:"refresh_token"`
+	ExpiresIn    int    `json:"expires_in"`
 }
 
 // ClusterInfo represents a cluster returned by the API.
@@ -40,13 +48,96 @@ func NewCentralClient(baseURL string) *CentralClient {
 	}
 }
 
+// SetToken sets the auth token for authenticated requests.
+func (c *CentralClient) SetToken(token string) {
+	c.token = token
+}
+
+// doRequest executes an HTTP request with the auth token if set.
+func (c *CentralClient) doRequest(req *http.Request) (*http.Response, error) {
+	if c.token != "" {
+		req.Header.Set("Authorization", "Bearer "+c.token)
+	}
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	if resp.StatusCode == http.StatusUnauthorized {
+		resp.Body.Close()
+		return nil, fmt.Errorf("authentication required: run 'kbridge login' first")
+	}
+	return resp, nil
+}
+
+// Login authenticates with the central service and returns tokens.
+func (c *CentralClient) Login(email, password string) (*LoginResponse, error) {
+	body, _ := json.Marshal(map[string]string{
+		"email":    email,
+		"password": password,
+	})
+
+	req, err := http.NewRequest(http.MethodPost, c.baseURL+"/auth/login", bytes.NewReader(body))
+	if err != nil {
+		return nil, fmt.Errorf("creating request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode == http.StatusUnauthorized {
+		return nil, fmt.Errorf("invalid email or password")
+	}
+	if resp.StatusCode == http.StatusForbidden {
+		return nil, fmt.Errorf("account is disabled")
+	}
+	if resp.StatusCode != http.StatusOK {
+		respBody, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("login failed: %s", string(respBody))
+	}
+
+	var loginResp LoginResponse
+	if err := json.NewDecoder(resp.Body).Decode(&loginResp); err != nil {
+		return nil, fmt.Errorf("decoding response: %w", err)
+	}
+	return &loginResp, nil
+}
+
+// Logout invalidates the refresh token on the server.
+func (c *CentralClient) Logout(refreshToken string) error {
+	body, _ := json.Marshal(map[string]string{
+		"refresh_token": refreshToken,
+	})
+
+	req, err := http.NewRequest(http.MethodPost, c.baseURL+"/api/v1/auth/logout", bytes.NewReader(body))
+	if err != nil {
+		return fmt.Errorf("creating request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := c.doRequest(req)
+	if err != nil {
+		return err
+	}
+	resp.Body.Close()
+	return nil
+}
+
 // ListClusters fetches the list of clusters from the central service.
 func (c *CentralClient) ListClusters() ([]ClusterInfo, error) {
 	url := fmt.Sprintf("%s/api/v1/clusters", c.baseURL)
 
-	resp, err := c.httpClient.Get(url)
+	req, err := http.NewRequest(http.MethodGet, url, nil)
 	if err != nil {
-		return nil, fmt.Errorf("request failed: %w", err)
+		return nil, fmt.Errorf("creating request: %w", err)
+	}
+
+	resp, err := c.doRequest(req)
+	if err != nil {
+		return nil, err
 	}
 	defer resp.Body.Close()
 
@@ -131,38 +222,13 @@ func (c *CentralClient) ExecCommand(clusterName string, command []string, namesp
 	}
 	req.Header.Set("Content-Type", "application/json")
 
-	resp, err := c.httpClient.Do(req)
+	resp, err := c.doRequest(req)
 	if err != nil {
-		return nil, fmt.Errorf("request failed: %w", err)
+		return nil, err
 	}
 	defer resp.Body.Close()
 
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read response: %w", err)
-	}
-
-	// Handle specific error cases
-	if resp.StatusCode == http.StatusNotFound {
-		return nil, fmt.Errorf("cluster %q not found", clusterName)
-	}
-	if resp.StatusCode == http.StatusServiceUnavailable {
-		return nil, fmt.Errorf("cluster %q agent is disconnected", clusterName)
-	}
-	if resp.StatusCode == http.StatusGatewayTimeout {
-		return nil, fmt.Errorf("command execution timed out")
-	}
-
-	var execResp ExecResponse
-	if err := json.Unmarshal(body, &execResp); err != nil {
-		// If we can't parse as JSON, return raw error
-		if resp.StatusCode != http.StatusOK {
-			return nil, fmt.Errorf("server returned %d: %s", resp.StatusCode, string(body))
-		}
-		return nil, fmt.Errorf("failed to decode response: %w", err)
-	}
-
-	return &execResp, nil
+	return c.parseExecResponse(resp, clusterName)
 }
 
 // NewCentralClientWithTimeout creates a client with a custom timeout.
@@ -205,12 +271,16 @@ func (c *CentralClient) ExecCommandWithStdin(clusterName string, command []strin
 	}
 	req.Header.Set("Content-Type", "application/json")
 
-	resp, err := c.httpClient.Do(req)
+	resp, err := c.doRequest(req)
 	if err != nil {
-		return nil, fmt.Errorf("request failed: %w", err)
+		return nil, err
 	}
 	defer resp.Body.Close()
 
+	return c.parseExecResponse(resp, clusterName)
+}
+
+func (c *CentralClient) parseExecResponse(resp *http.Response, clusterName string) (*ExecResponse, error) {
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read response: %w", err)
