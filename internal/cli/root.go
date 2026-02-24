@@ -14,9 +14,9 @@ var (
 
 // rootCmd represents the base command when called without any subcommands
 var rootCmd = &cobra.Command{
-	Use:     "mk8s",
+	Use:     "kbridge",
 	Short:   "A CLI tool for managing multiple Kubernetes clusters",
-	Long: `mk8s is a command-line interface for managing and accessing
+	Long: `kbridge is a command-line interface for managing and accessing
 multiple Kubernetes clusters through a central service.
 
 It provides a unified way to:
@@ -39,5 +39,5 @@ func init() {
 	cobra.OnInitialize(initConfig)
 
 	// Add version flag template
-	rootCmd.SetVersionTemplate("mk8s version {{.Version}}\n")
+	rootCmd.SetVersionTemplate("kbridge version {{.Version}}\n")
 }

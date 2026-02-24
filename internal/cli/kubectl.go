@@ -21,10 +21,10 @@ var kubectlCmd = &cobra.Command{
 All arguments are passed through to kubectl on the remote cluster.
 
 Examples:
-  mk8s kubectl get pods
-  mk8s kubectl get pods -n kube-system
-  mk8s kubectl describe node my-node
-  mk8s kubectl logs my-pod -f`,
+  kbridge kubectl get pods
+  kbridge kubectl get pods -n kube-system
+  kbridge kubectl describe node my-node
+  kbridge kubectl logs my-pod -f`,
 	DisableFlagParsing: true,
 	RunE:               runKubectl,
 }
@@ -38,8 +38,8 @@ var kCmd = &cobra.Command{
 All arguments are passed through to kubectl on the remote cluster.
 
 Examples:
-  mk8s k get pods
-  mk8s k get svc -A`,
+  kbridge k get pods
+  kbridge k get svc -A`,
 	DisableFlagParsing: true,
 	RunE:               runKubectl,
 }
@@ -65,13 +65,13 @@ func runKubectl(cmd *cobra.Command, args []string) error {
 	// Check central URL
 	centralURL := viper.GetString(ConfigKeyCentralURL)
 	if centralURL == "" {
-		return fmt.Errorf("central URL not configured. Run 'mk8s login' first")
+		return fmt.Errorf("central URL not configured. Run 'kbridge login' first")
 	}
 
 	// Check current cluster
 	currentCluster := viper.GetString(ConfigKeyCurrentCluster)
 	if currentCluster == "" {
-		return fmt.Errorf("no cluster selected. Run 'mk8s clusters use <name>' first")
+		return fmt.Errorf("no cluster selected. Run 'kbridge clusters use <name>' first")
 	}
 
 	// Extract namespace from args if -n or --namespace is provided

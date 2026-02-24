@@ -1,4 +1,4 @@
-// Package agent provides the mk8s agent implementation that connects to the central service.
+// Package agent provides the kbridge agent implementation that connects to the central service.
 package agent
 
 import (
@@ -73,23 +73,23 @@ func LoadConfig(path string) (*Config, error) {
 
 // applyEnvOverrides applies environment variable overrides to the config.
 func applyEnvOverrides(cfg *Config) {
-	if url := os.Getenv("MK8S_CENTRAL_URL"); url != "" {
+	if url := os.Getenv("KBRIDGE_CENTRAL_URL"); url != "" {
 		cfg.Central.URL = url
 	}
-	if token := os.Getenv("MK8S_AGENT_TOKEN"); token != "" {
+	if token := os.Getenv("KBRIDGE_AGENT_TOKEN"); token != "" {
 		cfg.Central.Token = token
 	}
 	// Also support AGENT_TOKEN for backwards compatibility
 	if token := os.Getenv("AGENT_TOKEN"); token != "" && cfg.Central.Token == "" {
 		cfg.Central.Token = token
 	}
-	if name := os.Getenv("MK8S_CLUSTER_NAME"); name != "" {
+	if name := os.Getenv("KBRIDGE_CLUSTER_NAME"); name != "" {
 		cfg.Cluster.Name = name
 	}
-	if region := os.Getenv("MK8S_CLUSTER_REGION"); region != "" {
+	if region := os.Getenv("KBRIDGE_CLUSTER_REGION"); region != "" {
 		cfg.Cluster.Region = region
 	}
-	if provider := os.Getenv("MK8S_CLUSTER_PROVIDER"); provider != "" {
+	if provider := os.Getenv("KBRIDGE_CLUSTER_PROVIDER"); provider != "" {
 		cfg.Cluster.Provider = provider
 	}
 }

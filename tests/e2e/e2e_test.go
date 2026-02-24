@@ -20,7 +20,7 @@ import (
 
 var (
 	centralURL  = flag.String("central-url", "http://localhost:8080", "Central service URL")
-	clusterName = flag.String("cluster-name", "mk8s-e2e-test", "Kind cluster name")
+	clusterName = flag.String("cluster-name", "kbridge-e2e-test", "Kind cluster name")
 	binDir      = flag.String("bin-dir", "../../bin", "Directory containing binaries")
 )
 
@@ -33,7 +33,7 @@ func TestMain(m *testing.M) {
 // Helper functions
 
 func getCLIPath() string {
-	return filepath.Join(*binDir, "mk8s")
+	return filepath.Join(*binDir, "kbridge")
 }
 
 func runCLI(t *testing.T, args ...string) (string, string, int) {
@@ -225,8 +225,8 @@ func TestCLIStatus(t *testing.T) {
 		t.Fatalf("Expected exit code 0, got %d. Stderr: %s", exitCode, stderr)
 	}
 
-	if !strings.Contains(stdout, "mk8s Status") {
-		t.Error("Expected 'mk8s Status' header")
+	if !strings.Contains(stdout, "kbridge Status") {
+		t.Error("Expected 'kbridge Status' header")
 	}
 
 	if !strings.Contains(stdout, *clusterName) {
@@ -298,7 +298,7 @@ func TestKubectlGetNodes(t *testing.T) {
 	}
 }
 
-// Test: kubectl alias (mk8s k)
+// Test: kubectl alias (kbridge k)
 func TestKubectlAlias(t *testing.T) {
 	// Ensure cluster is selected
 	_, _, exitCode := runCLI(t, "clusters", "use", *clusterName)
@@ -359,7 +359,7 @@ func TestHelpCommands(t *testing.T) {
 		args []string
 		want string
 	}{
-		{[]string{"--help"}, "mk8s is a command-line interface"},
+		{[]string{"--help"}, "kbridge is a command-line interface"},
 		{[]string{"clusters", "--help"}, "Manage cluster connections"},
 		{[]string{"clusters", "list", "--help"}, "List available clusters"},
 		{[]string{"kubectl", "--help"}, "Execute kubectl commands"},

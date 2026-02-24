@@ -26,7 +26,7 @@ func runStatus(cmd *cobra.Command, args []string) error {
 	centralURL := viper.GetString(ConfigKeyCentralURL)
 	currentCluster := viper.GetString(ConfigKeyCurrentCluster)
 
-	fmt.Println("mk8s Status")
+	fmt.Println("kbridge Status")
 	fmt.Println("-----------")
 
 	// Central service status

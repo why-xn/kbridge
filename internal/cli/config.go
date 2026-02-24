@@ -15,14 +15,14 @@ const (
 	ConfigKeyToken          = "token"
 )
 
-// configDir returns the mk8s config directory path
+// configDir returns the kbridge config directory path
 func configDir() string {
 	home, err := os.UserHomeDir()
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "Error: unable to find home directory:", err)
 		os.Exit(1)
 	}
-	return filepath.Join(home, ".mk8s")
+	return filepath.Join(home, ".kbridge")
 }
 
 // configFile returns the full path to the config file

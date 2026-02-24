@@ -171,17 +171,17 @@ func TestConfig_Validate(t *testing.T) {
 
 func TestDefaultConfigWithEnv(t *testing.T) {
 	// Set environment variables
-	os.Setenv("MK8S_CENTRAL_URL", "central.example.com:9090")
-	os.Setenv("MK8S_AGENT_TOKEN", "env-agent-token")
-	os.Setenv("MK8S_CLUSTER_NAME", "env-cluster")
-	os.Setenv("MK8S_CLUSTER_REGION", "eu-west-1")
-	os.Setenv("MK8S_CLUSTER_PROVIDER", "gcp")
+	os.Setenv("KBRIDGE_CENTRAL_URL", "central.example.com:9090")
+	os.Setenv("KBRIDGE_AGENT_TOKEN", "env-agent-token")
+	os.Setenv("KBRIDGE_CLUSTER_NAME", "env-cluster")
+	os.Setenv("KBRIDGE_CLUSTER_REGION", "eu-west-1")
+	os.Setenv("KBRIDGE_CLUSTER_PROVIDER", "gcp")
 	defer func() {
-		os.Unsetenv("MK8S_CENTRAL_URL")
-		os.Unsetenv("MK8S_AGENT_TOKEN")
-		os.Unsetenv("MK8S_CLUSTER_NAME")
-		os.Unsetenv("MK8S_CLUSTER_REGION")
-		os.Unsetenv("MK8S_CLUSTER_PROVIDER")
+		os.Unsetenv("KBRIDGE_CENTRAL_URL")
+		os.Unsetenv("KBRIDGE_AGENT_TOKEN")
+		os.Unsetenv("KBRIDGE_CLUSTER_NAME")
+		os.Unsetenv("KBRIDGE_CLUSTER_REGION")
+		os.Unsetenv("KBRIDGE_CLUSTER_PROVIDER")
 	}()
 
 	cfg := DefaultConfigWithEnv()
@@ -209,11 +209,11 @@ func TestDefaultConfigWithEnv(t *testing.T) {
 
 func TestLoadConfig_EnvOverrides(t *testing.T) {
 	// Set environment variable that should override config file
-	os.Setenv("MK8S_CENTRAL_URL", "override.example.com:9090")
-	os.Setenv("MK8S_CLUSTER_NAME", "override-cluster")
+	os.Setenv("KBRIDGE_CENTRAL_URL", "override.example.com:9090")
+	os.Setenv("KBRIDGE_CLUSTER_NAME", "override-cluster")
 	defer func() {
-		os.Unsetenv("MK8S_CENTRAL_URL")
-		os.Unsetenv("MK8S_CLUSTER_NAME")
+		os.Unsetenv("KBRIDGE_CENTRAL_URL")
+		os.Unsetenv("KBRIDGE_CLUSTER_NAME")
 	}()
 
 	// Create config file
@@ -250,13 +250,13 @@ cluster:
 	}
 }
 
-func TestLoadConfig_MK8SAgentTokenOverridesAgentToken(t *testing.T) {
-	// MK8S_AGENT_TOKEN should take precedence over AGENT_TOKEN
+func TestLoadConfig_KBRIDGEAgentTokenOverridesAgentToken(t *testing.T) {
+	// KBRIDGE_AGENT_TOKEN should take precedence over AGENT_TOKEN
 	os.Setenv("AGENT_TOKEN", "legacy-token")
-	os.Setenv("MK8S_AGENT_TOKEN", "new-token")
+	os.Setenv("KBRIDGE_AGENT_TOKEN", "new-token")
 	defer func() {
 		os.Unsetenv("AGENT_TOKEN")
-		os.Unsetenv("MK8S_AGENT_TOKEN")
+		os.Unsetenv("KBRIDGE_AGENT_TOKEN")
 	}()
 
 	// Create minimal config file
@@ -277,7 +277,7 @@ cluster:
 		t.Fatalf("failed to load config: %v", err)
 	}
 
-	// MK8S_AGENT_TOKEN should win
+	// KBRIDGE_AGENT_TOKEN should win
 	if cfg.Central.Token != "new-token" {
 		t.Errorf("expected token 'new-token', got %q", cfg.Central.Token)
 	}

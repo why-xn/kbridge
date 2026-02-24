@@ -1,4 +1,4 @@
-module github.com/why-xn/mk8s
+module github.com/why-xn/kbridge
 
 go 1.25.5
 

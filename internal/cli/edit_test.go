@@ -258,8 +258,8 @@ func TestEditHandler_createTempFile(t *testing.T) {
 	}
 
 	// Verify filename contains resource info
-	if !contains(tmpPath, "mk8s-edit") {
-		t.Errorf("temp file path %q should contain 'mk8s-edit'", tmpPath)
+	if !contains(tmpPath, "kbridge-edit") {
+		t.Errorf("temp file path %q should contain 'kbridge-edit'", tmpPath)
 	}
 }
 

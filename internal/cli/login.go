@@ -10,7 +10,7 @@ import (
 var loginCmd = &cobra.Command{
 	Use:   "login",
 	Short: "Authenticate with the central service",
-	Long: `Authenticate with the mk8s central service.
+	Long: `Authenticate with the kbridge central service.
 
 This command will prompt for the central server URL (if not configured),
 email, and password to authenticate and obtain an access token.`,

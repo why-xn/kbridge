@@ -1,4 +1,4 @@
-// Package central provides the central service implementation for mk8s.
+// Package central provides the central service implementation for kbridge.
 // It includes HTTP REST API for CLI communication and gRPC server for agent communication.
 package central
 

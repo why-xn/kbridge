@@ -335,7 +335,7 @@ type HeartbeatRequest struct {
 	// agent_id is the identifier assigned during registration.
 	AgentId string `protobuf:"bytes,1,opt,name=agent_id,json=agentId,proto3" json:"agent_id,omitempty"`
 	// status indicates the current health status of the agent.
-	Status        AgentStatus `protobuf:"varint,2,opt,name=status,proto3,enum=mk8s.agent.v1.AgentStatus" json:"status,omitempty"`
+	Status        AgentStatus `protobuf:"varint,2,opt,name=status,proto3,enum=kbridge.agent.v1.AgentStatus" json:"status,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -538,7 +538,7 @@ type CommandResponse struct {
 	// request_id matches the request that generated this response.
 	RequestId string `protobuf:"bytes,1,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`
 	// type indicates whether this is stdout or stderr output.
-	Type OutputType `protobuf:"varint,2,opt,name=type,proto3,enum=mk8s.agent.v1.OutputType" json:"type,omitempty"`
+	Type OutputType `protobuf:"varint,2,opt,name=type,proto3,enum=kbridge.agent.v1.OutputType" json:"type,omitempty"`
 	// data contains the raw output bytes.
 	Data []byte `protobuf:"bytes,3,opt,name=data,proto3" json:"data,omitempty"`
 	// complete indicates this is the final response for this command.
@@ -847,12 +847,12 @@ var File_agent_proto protoreflect.FileDescriptor
 
 const file_agent_proto_rawDesc = "" +
 	"\n" +
-	"\vagent.proto\x12\rmk8s.agent.v1\"\x91\x01\n" +
+	"\vagent.proto\x12\x10kbridge.agent.v1\"\x94\x01\n" +
 	"\x0fRegisterRequest\x12\x1f\n" +
 	"\vagent_token\x18\x01 \x01(\tR\n" +
 	"agentToken\x12!\n" +
-	"\fcluster_name\x18\x02 \x01(\tR\vclusterName\x12:\n" +
-	"\bmetadata\x18\x03 \x01(\v2\x1e.mk8s.agent.v1.ClusterMetadataR\bmetadata\"\x93\x01\n" +
+	"\fcluster_name\x18\x02 \x01(\tR\vclusterName\x12=\n" +
+	"\bmetadata\x18\x03 \x01(\v2!.kbridge.agent.v1.ClusterMetadataR\bmetadata\"\x93\x01\n" +
 	"\x0fClusterMetadata\x12-\n" +
 	"\x12kubernetes_version\x18\x01 \x01(\tR\x11kubernetesVersion\x12\x1d\n" +
 	"\n" +
@@ -862,10 +862,10 @@ const file_agent_proto_rawDesc = "" +
 	"\x10RegisterResponse\x12\x18\n" +
 	"\asuccess\x18\x01 \x01(\bR\asuccess\x12\x19\n" +
 	"\bagent_id\x18\x02 \x01(\tR\aagentId\x12#\n" +
-	"\rerror_message\x18\x03 \x01(\tR\ferrorMessage\"a\n" +
+	"\rerror_message\x18\x03 \x01(\tR\ferrorMessage\"d\n" +
 	"\x10HeartbeatRequest\x12\x19\n" +
-	"\bagent_id\x18\x01 \x01(\tR\aagentId\x122\n" +
-	"\x06status\x18\x02 \x01(\x0e2\x1a.mk8s.agent.v1.AgentStatusR\x06status\"m\n" +
+	"\bagent_id\x18\x01 \x01(\tR\aagentId\x125\n" +
+	"\x06status\x18\x02 \x01(\x0e2\x1d.kbridge.agent.v1.AgentStatusR\x06status\"m\n" +
 	"\x11HeartbeatResponse\x12\"\n" +
 	"\facknowledged\x18\x01 \x01(\bR\facknowledged\x124\n" +
 	"\x16next_heartbeat_seconds\x18\x02 \x01(\x03R\x14nextHeartbeatSeconds\"\xc1\x01\n" +
@@ -876,19 +876,19 @@ const file_agent_proto_rawDesc = "" +
 	"\acommand\x18\x03 \x03(\tR\acommand\x12\x1c\n" +
 	"\tnamespace\x18\x04 \x01(\tR\tnamespace\x12'\n" +
 	"\x0ftimeout_seconds\x18\x05 \x01(\x05R\x0etimeoutSeconds\x12\x14\n" +
-	"\x05stdin\x18\x06 \x01(\fR\x05stdin\"\xd1\x01\n" +
+	"\x05stdin\x18\x06 \x01(\fR\x05stdin\"\xd4\x01\n" +
 	"\x0fCommandResponse\x12\x1d\n" +
 	"\n" +
-	"request_id\x18\x01 \x01(\tR\trequestId\x12-\n" +
-	"\x04type\x18\x02 \x01(\x0e2\x19.mk8s.agent.v1.OutputTypeR\x04type\x12\x12\n" +
+	"request_id\x18\x01 \x01(\tR\trequestId\x120\n" +
+	"\x04type\x18\x02 \x01(\x0e2\x1c.kbridge.agent.v1.OutputTypeR\x04type\x12\x12\n" +
 	"\x04data\x18\x03 \x01(\fR\x04data\x12\x1a\n" +
 	"\bcomplete\x18\x04 \x01(\bR\bcomplete\x12\x1b\n" +
 	"\texit_code\x18\x05 \x01(\x05R\bexitCode\x12#\n" +
 	"\rerror_message\x18\x06 \x01(\tR\ferrorMessage\"6\n" +
 	"\x19GetPendingCommandsRequest\x12\x19\n" +
-	"\bagent_id\x18\x01 \x01(\tR\aagentId\"W\n" +
-	"\x1aGetPendingCommandsResponse\x129\n" +
-	"\bcommands\x18\x01 \x03(\v2\x1d.mk8s.agent.v1.CommandRequestR\bcommands\"\xad\x01\n" +
+	"\bagent_id\x18\x01 \x01(\tR\aagentId\"Z\n" +
+	"\x1aGetPendingCommandsResponse\x12<\n" +
+	"\bcommands\x18\x01 \x03(\v2 .kbridge.agent.v1.CommandRequestR\bcommands\"\xad\x01\n" +
 	"\x1aSubmitCommandResultRequest\x12\x1d\n" +
 	"\n" +
 	"request_id\x18\x01 \x01(\tR\trequestId\x12\x16\n" +
@@ -906,13 +906,13 @@ const file_agent_proto_rawDesc = "" +
 	"OutputType\x12\x17\n" +
 	"\x13OUTPUT_TYPE_UNKNOWN\x10\x00\x12\x16\n" +
 	"\x12OUTPUT_TYPE_STDOUT\x10\x01\x12\x16\n" +
-	"\x12OUTPUT_TYPE_STDERR\x10\x022\xd7\x03\n" +
-	"\fAgentService\x12K\n" +
-	"\bRegister\x12\x1e.mk8s.agent.v1.RegisterRequest\x1a\x1f.mk8s.agent.v1.RegisterResponse\x12N\n" +
-	"\tHeartbeat\x12\x1f.mk8s.agent.v1.HeartbeatRequest\x1a .mk8s.agent.v1.HeartbeatResponse\x12Q\n" +
-	"\x0eExecuteCommand\x12\x1d.mk8s.agent.v1.CommandRequest\x1a\x1e.mk8s.agent.v1.CommandResponse0\x01\x12i\n" +
-	"\x12GetPendingCommands\x12(.mk8s.agent.v1.GetPendingCommandsRequest\x1a).mk8s.agent.v1.GetPendingCommandsResponse\x12l\n" +
-	"\x13SubmitCommandResult\x12).mk8s.agent.v1.SubmitCommandResultRequest\x1a*.mk8s.agent.v1.SubmitCommandResultResponseB*Z(github.com/why-xn/mk8s/api/proto/agentpbb\x06proto3"
+	"\x12OUTPUT_TYPE_STDERR\x10\x022\xf5\x03\n" +
+	"\fAgentService\x12Q\n" +
+	"\bRegister\x12!.kbridge.agent.v1.RegisterRequest\x1a\".kbridge.agent.v1.RegisterResponse\x12T\n" +
+	"\tHeartbeat\x12\".kbridge.agent.v1.HeartbeatRequest\x1a#.kbridge.agent.v1.HeartbeatResponse\x12W\n" +
+	"\x0eExecuteCommand\x12 .kbridge.agent.v1.CommandRequest\x1a!.kbridge.agent.v1.CommandResponse0\x01\x12o\n" +
+	"\x12GetPendingCommands\x12+.kbridge.agent.v1.GetPendingCommandsRequest\x1a,.kbridge.agent.v1.GetPendingCommandsResponse\x12r\n" +
+	"\x13SubmitCommandResult\x12,.kbridge.agent.v1.SubmitCommandResultRequest\x1a-.kbridge.agent.v1.SubmitCommandResultResponseB-Z+github.com/why-xn/kbridge/api/proto/agentpbb\x06proto3"
 
 var (
 	file_agent_proto_rawDescOnce sync.Once
@@ -929,35 +929,35 @@ func file_agent_proto_rawDescGZIP() []byte {
 var file_agent_proto_enumTypes = make([]protoimpl.EnumInfo, 2)
 var file_agent_proto_msgTypes = make([]protoimpl.MessageInfo, 11)
 var file_agent_proto_goTypes = []any{
-	(AgentStatus)(0),                    // 0: mk8s.agent.v1.AgentStatus
-	(OutputType)(0),                     // 1: mk8s.agent.v1.OutputType
-	(*RegisterRequest)(nil),             // 2: mk8s.agent.v1.RegisterRequest
-	(*ClusterMetadata)(nil),             // 3: mk8s.agent.v1.ClusterMetadata
-	(*RegisterResponse)(nil),            // 4: mk8s.agent.v1.RegisterResponse
-	(*HeartbeatRequest)(nil),            // 5: mk8s.agent.v1.HeartbeatRequest
-	(*HeartbeatResponse)(nil),           // 6: mk8s.agent.v1.HeartbeatResponse
-	(*CommandRequest)(nil),              // 7: mk8s.agent.v1.CommandRequest
-	(*CommandResponse)(nil),             // 8: mk8s.agent.v1.CommandResponse
-	(*GetPendingCommandsRequest)(nil),   // 9: mk8s.agent.v1.GetPendingCommandsRequest
-	(*GetPendingCommandsResponse)(nil),  // 10: mk8s.agent.v1.GetPendingCommandsResponse
-	(*SubmitCommandResultRequest)(nil),  // 11: mk8s.agent.v1.SubmitCommandResultRequest
-	(*SubmitCommandResultResponse)(nil), // 12: mk8s.agent.v1.SubmitCommandResultResponse
+	(AgentStatus)(0),                    // 0: kbridge.agent.v1.AgentStatus
+	(OutputType)(0),                     // 1: kbridge.agent.v1.OutputType
+	(*RegisterRequest)(nil),             // 2: kbridge.agent.v1.RegisterRequest
+	(*ClusterMetadata)(nil),             // 3: kbridge.agent.v1.ClusterMetadata
+	(*RegisterResponse)(nil),            // 4: kbridge.agent.v1.RegisterResponse
+	(*HeartbeatRequest)(nil),            // 5: kbridge.agent.v1.HeartbeatRequest
+	(*HeartbeatResponse)(nil),           // 6: kbridge.agent.v1.HeartbeatResponse
+	(*CommandRequest)(nil),              // 7: kbridge.agent.v1.CommandRequest
+	(*CommandResponse)(nil),             // 8: kbridge.agent.v1.CommandResponse
+	(*GetPendingCommandsRequest)(nil),   // 9: kbridge.agent.v1.GetPendingCommandsRequest
+	(*GetPendingCommandsResponse)(nil),  // 10: kbridge.agent.v1.GetPendingCommandsResponse
+	(*SubmitCommandResultRequest)(nil),  // 11: kbridge.agent.v1.SubmitCommandResultRequest
+	(*SubmitCommandResultResponse)(nil), // 12: kbridge.agent.v1.SubmitCommandResultResponse
 }
 var file_agent_proto_depIdxs = []int32{
-	3,  // 0: mk8s.agent.v1.RegisterRequest.metadata:type_name -> mk8s.agent.v1.ClusterMetadata
-	0,  // 1: mk8s.agent.v1.HeartbeatRequest.status:type_name -> mk8s.agent.v1.AgentStatus
-	1,  // 2: mk8s.agent.v1.CommandResponse.type:type_name -> mk8s.agent.v1.OutputType
-	7,  // 3: mk8s.agent.v1.GetPendingCommandsResponse.commands:type_name -> mk8s.agent.v1.CommandRequest
-	2,  // 4: mk8s.agent.v1.AgentService.Register:input_type -> mk8s.agent.v1.RegisterRequest
-	5,  // 5: mk8s.agent.v1.AgentService.Heartbeat:input_type -> mk8s.agent.v1.HeartbeatRequest
-	7,  // 6: mk8s.agent.v1.AgentService.ExecuteCommand:input_type -> mk8s.agent.v1.CommandRequest
-	9,  // 7: mk8s.agent.v1.AgentService.GetPendingCommands:input_type -> mk8s.agent.v1.GetPendingCommandsRequest
-	11, // 8: mk8s.agent.v1.AgentService.SubmitCommandResult:input_type -> mk8s.agent.v1.SubmitCommandResultRequest
-	4,  // 9: mk8s.agent.v1.AgentService.Register:output_type -> mk8s.agent.v1.RegisterResponse
-	6,  // 10: mk8s.agent.v1.AgentService.Heartbeat:output_type -> mk8s.agent.v1.HeartbeatResponse
-	8,  // 11: mk8s.agent.v1.AgentService.ExecuteCommand:output_type -> mk8s.agent.v1.CommandResponse
-	10, // 12: mk8s.agent.v1.AgentService.GetPendingCommands:output_type -> mk8s.agent.v1.GetPendingCommandsResponse
-	12, // 13: mk8s.agent.v1.AgentService.SubmitCommandResult:output_type -> mk8s.agent.v1.SubmitCommandResultResponse
+	3,  // 0: kbridge.agent.v1.RegisterRequest.metadata:type_name -> kbridge.agent.v1.ClusterMetadata
+	0,  // 1: kbridge.agent.v1.HeartbeatRequest.status:type_name -> kbridge.agent.v1.AgentStatus
+	1,  // 2: kbridge.agent.v1.CommandResponse.type:type_name -> kbridge.agent.v1.OutputType
+	7,  // 3: kbridge.agent.v1.GetPendingCommandsResponse.commands:type_name -> kbridge.agent.v1.CommandRequest
+	2,  // 4: kbridge.agent.v1.AgentService.Register:input_type -> kbridge.agent.v1.RegisterRequest
+	5,  // 5: kbridge.agent.v1.AgentService.Heartbeat:input_type -> kbridge.agent.v1.HeartbeatRequest
+	7,  // 6: kbridge.agent.v1.AgentService.ExecuteCommand:input_type -> kbridge.agent.v1.CommandRequest
+	9,  // 7: kbridge.agent.v1.AgentService.GetPendingCommands:input_type -> kbridge.agent.v1.GetPendingCommandsRequest
+	11, // 8: kbridge.agent.v1.AgentService.SubmitCommandResult:input_type -> kbridge.agent.v1.SubmitCommandResultRequest
+	4,  // 9: kbridge.agent.v1.AgentService.Register:output_type -> kbridge.agent.v1.RegisterResponse
+	6,  // 10: kbridge.agent.v1.AgentService.Heartbeat:output_type -> kbridge.agent.v1.HeartbeatResponse
+	8,  // 11: kbridge.agent.v1.AgentService.ExecuteCommand:output_type -> kbridge.agent.v1.CommandResponse
+	10, // 12: kbridge.agent.v1.AgentService.GetPendingCommands:output_type -> kbridge.agent.v1.GetPendingCommandsResponse
+	12, // 13: kbridge.agent.v1.AgentService.SubmitCommandResult:output_type -> kbridge.agent.v1.SubmitCommandResultResponse
 	9,  // [9:14] is the sub-list for method output_type
 	4,  // [4:9] is the sub-list for method input_type
 	4,  // [4:4] is the sub-list for extension type_name

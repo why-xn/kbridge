@@ -29,12 +29,12 @@ type EditHandler struct {
 func NewEditHandler(args []string) (*EditHandler, error) {
 	centralURL := viper.GetString(ConfigKeyCentralURL)
 	if centralURL == "" {
-		return nil, fmt.Errorf("central URL not configured. Run 'mk8s login' first")
+		return nil, fmt.Errorf("central URL not configured. Run 'kbridge login' first")
 	}
 
 	clusterName := viper.GetString(ConfigKeyCurrentCluster)
 	if clusterName == "" {
-		return nil, fmt.Errorf("no cluster selected. Run 'mk8s clusters use <name>' first")
+		return nil, fmt.Errorf("no cluster selected. Run 'kbridge clusters use <name>' first")
 	}
 
 	h := &EditHandler{
@@ -190,7 +190,7 @@ func (h *EditHandler) fetchResource() (string, error) {
 // createTempFile creates a temporary file with the resource YAML.
 func (h *EditHandler) createTempFile(content string) (string, error) {
 	// Create temp file with descriptive name
-	filename := fmt.Sprintf("mk8s-edit-%s-%s-*.yaml", h.resourceType, h.resourceName)
+	filename := fmt.Sprintf("kbridge-edit-%s-%s-*.yaml", h.resourceType, h.resourceName)
 	tmpFile, err := os.CreateTemp("", filename)
 	if err != nil {
 		return "", err
@@ -241,7 +241,7 @@ func getEditor() string {
 // applyChanges applies the modified YAML to the cluster.
 func (h *EditHandler) applyChanges(content []byte) error {
 	// Create temp file for apply
-	tmpFile, err := os.CreateTemp("", "mk8s-apply-*.yaml")
+	tmpFile, err := os.CreateTemp("", "kbridge-apply-*.yaml")
 	if err != nil {
 		return fmt.Errorf("failed to create temp file: %w", err)
 	}
@@ -318,5 +318,5 @@ func (h *EditHandler) resourceIdentifier() string {
 func (h *EditHandler) TempFilePath() string {
 	safeName := strings.ReplaceAll(h.resourceName, "/", "-")
 	safeType := strings.ReplaceAll(h.resourceType, "/", "-")
-	return filepath.Join(os.TempDir(), fmt.Sprintf("mk8s-edit-%s-%s.yaml", safeType, safeName))
+	return filepath.Join(os.TempDir(), fmt.Sprintf("kbridge-edit-%s-%s.yaml", safeType, safeName))
 }

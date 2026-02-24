@@ -5,7 +5,7 @@ import (
 	"log"
 	"os"
 
-	"github.com/why-xn/mk8s/internal/central"
+	"github.com/why-xn/kbridge/internal/central"
 )
 
 func main() {
@@ -21,7 +21,7 @@ func main() {
 		log.Fatalf("Invalid configuration: %v", err)
 	}
 
-	log.Println("mk8s-central starting...")
+	log.Println("kbridge-central starting...")
 
 	server := central.NewServer(cfg)
 	if err := server.Run(); err != nil {
@@ -31,7 +31,7 @@ func main() {
 
 func loadConfig(path string) (*central.Config, error) {
 	if path == "" {
-		path = os.Getenv("MK8S_CONFIG")
+		path = os.Getenv("KBRIDGE_CONFIG")
 	}
 
 	if path == "" {

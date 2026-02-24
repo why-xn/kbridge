@@ -1,6 +1,6 @@
 # End-to-End Tests
 
-This directory contains end-to-end tests for mk8s using Kind (Kubernetes in Docker).
+This directory contains end-to-end tests for kbridge using Kind (Kubernetes in Docker).
 
 ## Prerequisites
 
@@ -36,9 +36,9 @@ For manual testing or debugging, you can set up the environment without running 
 make e2e-setup
 
 # Now you can manually run CLI commands
-./bin/mk8s clusters list
-./bin/mk8s clusters use mk8s-e2e-test
-./bin/mk8s kubectl get pods -A
+./bin/kbridge clusters list
+./bin/kbridge clusters use kbridge-e2e-test
+./bin/kbridge kubectl get pods -A
 
 # When done, tear down the environment
 make e2e-teardown
@@ -49,7 +49,7 @@ make e2e-teardown
 With the environment set up via `make e2e-setup`, you can run individual tests:
 
 ```bash
-go test -v -tags=e2e ./tests/e2e/... -run TestCLIClustersLis
+go test -v -tags=e2e ./tests/e2e/... -run TestCLIClustersList
 ```
 
 ## Test Coverage
@@ -65,12 +65,12 @@ The e2e tests cover:
 - Heartbeat keeping connection alive
 
 ### CLI Commands
-- `mk8s clusters list` - Lists all clusters
-- `mk8s clusters ls` - Alias for list
-- `mk8s clusters use <name>` - Selects a cluster
-- `mk8s status` - Shows current status
-- `mk8s kubectl <args>` - Executes kubectl commands
-- `mk8s k <args>` - Alias for kubectl
+- `kbridge clusters list` - Lists all clusters
+- `kbridge clusters ls` - Alias for list
+- `kbridge clusters use <name>` - Selects a cluster
+- `kbridge status` - Shows current status
+- `kbridge kubectl <args>` - Executes kubectl commands
+- `kbridge k <args>` - Alias for kubectl
 - Help commands for all subcommands
 
 ### kubectl Operations
@@ -120,7 +120,7 @@ These directories are cleaned up automatically after tests.
 kind get clusters
 
 # Delete stale cluster manually
-kind delete cluster --name mk8s-e2e-test
+kind delete cluster --name kbridge-e2e-test
 ```
 
 ### View test logs

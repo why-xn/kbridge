@@ -8,7 +8,7 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/why-xn/mk8s/internal/agent"
+	"github.com/why-xn/kbridge/internal/agent"
 )
 
 func main() {
@@ -24,7 +24,7 @@ func main() {
 		log.Fatalf("Invalid config: %v", err)
 	}
 
-	log.Printf("mk8s-agent starting...")
+	log.Printf("kbridge-agent starting...")
 
 	// Create context that cancels on interrupt
 	ctx, cancel := context.WithCancel(context.Background())
@@ -54,13 +54,13 @@ func main() {
 		}
 	}
 
-	log.Println("mk8s-agent stopped")
+	log.Println("kbridge-agent stopped")
 }
 
 func loadConfig(configPath string) (*agent.Config, error) {
 	// Check for config path from flag or environment variable
 	if configPath == "" {
-		configPath = os.Getenv("MK8S_CONFIG")
+		configPath = os.Getenv("KBRIDGE_CONFIG")
 	}
 
 	if configPath != "" {
@@ -70,7 +70,7 @@ func loadConfig(configPath string) (*agent.Config, error) {
 	// Try default config paths
 	defaultPaths := []string{
 		"configs/agent.yaml",
-		"/etc/mk8s/agent.yaml",
+		"/etc/kbridge/agent.yaml",
 	}
 
 	for _, path := range defaultPaths {

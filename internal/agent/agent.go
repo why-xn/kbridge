@@ -7,7 +7,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/why-xn/mk8s/api/proto/agentpb"
+	"github.com/why-xn/kbridge/api/proto/agentpb"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 )
@@ -15,7 +15,7 @@ import (
 // DefaultPollInterval is how often the agent polls for pending commands.
 const DefaultPollInterval = 2 * time.Second
 
-// Agent represents the mk8s agent that connects to central service.
+// Agent represents the kbridge agent that connects to central service.
 type Agent struct {
 	config    *Config
 	conn      *grpc.ClientConn

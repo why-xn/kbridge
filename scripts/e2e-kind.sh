@@ -4,7 +4,7 @@
 
 set -e
 
-CLUSTER_NAME="mk8s-e2e-test"
+CLUSTER_NAME="kbridge-e2e-test"
 CENTRAL_PORT=8080
 GRPC_PORT=9090
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -110,7 +110,7 @@ server:
 EOF
 
     # Start central service in background
-    "${BIN_DIR}/mk8s-central" --config "${CONFIG_DIR}/central.yaml" > "${LOG_DIR}/central.log" 2>&1 &
+    "${BIN_DIR}/kbridge-central" --config "${CONFIG_DIR}/central.yaml" > "${LOG_DIR}/central.log" 2>&1 &
     CENTRAL_PID=$!
     echo "${CENTRAL_PID}" > "${LOG_DIR}/central.pid"
 
@@ -159,7 +159,7 @@ cluster:
 EOF
 
     # Start agent in background
-    "${BIN_DIR}/mk8s-agent" --config "${CONFIG_DIR}/agent.yaml" > "${LOG_DIR}/agent.log" 2>&1 &
+    "${BIN_DIR}/kbridge-agent" --config "${CONFIG_DIR}/agent.yaml" > "${LOG_DIR}/agent.log" 2>&1 &
     AGENT_PID=$!
     echo "${AGENT_PID}" > "${LOG_DIR}/agent.pid"
 
@@ -199,15 +199,15 @@ setup_cli_config() {
     log_info "Setting up CLI config..."
 
     # Create CLI config directory
-    mkdir -p "${HOME}/.mk8s"
+    mkdir -p "${HOME}/.kbridge"
 
     # Backup existing config if present
-    if [ -f "${HOME}/.mk8s/config.yaml" ]; then
-        cp "${HOME}/.mk8s/config.yaml" "${HOME}/.mk8s/config.yaml.backup"
+    if [ -f "${HOME}/.kbridge/config.yaml" ]; then
+        cp "${HOME}/.kbridge/config.yaml" "${HOME}/.kbridge/config.yaml.backup"
     fi
 
     # Create CLI config for e2e tests
-    cat > "${HOME}/.mk8s/config.yaml" <<EOF
+    cat > "${HOME}/.kbridge/config.yaml" <<EOF
 central_url: "http://localhost:${CENTRAL_PORT}"
 current_cluster: ""
 token: ""
@@ -219,11 +219,11 @@ EOF
 restore_cli_config() {
     log_info "Restoring CLI config..."
 
-    if [ -f "${HOME}/.mk8s/config.yaml.backup" ]; then
-        mv "${HOME}/.mk8s/config.yaml.backup" "${HOME}/.mk8s/config.yaml"
+    if [ -f "${HOME}/.kbridge/config.yaml.backup" ]; then
+        mv "${HOME}/.kbridge/config.yaml.backup" "${HOME}/.kbridge/config.yaml"
         log_info "CLI config restored from backup."
     else
-        rm -f "${HOME}/.mk8s/config.yaml"
+        rm -f "${HOME}/.kbridge/config.yaml"
         log_info "CLI config removed (no backup existed)."
     fi
 }

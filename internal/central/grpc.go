@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"log"
 
-	"github.com/why-xn/mk8s/api/proto/agentpb"
+	"github.com/why-xn/kbridge/api/proto/agentpb"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"

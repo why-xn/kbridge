@@ -6,13 +6,13 @@ proto:
 	./scripts/generate-proto.sh
 
 build-cli:
-	go build -o bin/mk8s ./cmd/mk8s
+	go build -o bin/kbridge ./cmd/kbridge
 
 build-central:
-	go build -o bin/mk8s-central ./cmd/central
+	go build -o bin/kbridge-central ./cmd/central
 
 build-agent:
-	go build -o bin/mk8s-agent ./cmd/agent
+	go build -o bin/kbridge-agent ./cmd/agent
 
 clean:
 	rm -rf bin/

@@ -45,7 +45,7 @@ func init() {
 func runClustersList(cmd *cobra.Command, args []string) error {
 	centralURL := viper.GetString(ConfigKeyCentralURL)
 	if centralURL == "" {
-		return fmt.Errorf("central URL not configured. Run 'mk8s login' first or set %s", ConfigKeyCentralURL)
+		return fmt.Errorf("central URL not configured. Run 'kbridge login' first or set %s", ConfigKeyCentralURL)
 	}
 
 	client := NewCentralClient(centralURL)
@@ -104,7 +104,7 @@ func runClustersUse(cmd *cobra.Command, args []string) error {
 
 	centralURL := viper.GetString(ConfigKeyCentralURL)
 	if centralURL == "" {
-		return fmt.Errorf("central URL not configured. Run 'mk8s login' first or set %s", ConfigKeyCentralURL)
+		return fmt.Errorf("central URL not configured. Run 'kbridge login' first or set %s", ConfigKeyCentralURL)
 	}
 
 	// Verify cluster exists and is connected
