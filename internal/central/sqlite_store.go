@@ -145,8 +145,8 @@ func (s *SQLiteStore) scanUsers(rows *sql.Rows) ([]*User, error) {
 func (s *SQLiteStore) UpdateUser(ctx context.Context, user *User) error {
 	now := time.Now().UTC().Format(timeFormat)
 	_, err := s.db.ExecContext(ctx,
-		`UPDATE users SET email = ?, name = ?, is_active = ?, updated_at = ? WHERE id = ?`,
-		user.Email, user.Name, user.IsActive, now, user.ID,
+		`UPDATE users SET email = ?, name = ?, password_hash = ?, is_active = ?, updated_at = ? WHERE id = ?`,
+		user.Email, user.Name, user.PasswordHash, user.IsActive, now, user.ID,
 	)
 	if err != nil {
 		return fmt.Errorf("update user: %w", err)
