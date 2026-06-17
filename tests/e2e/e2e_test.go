@@ -133,6 +133,85 @@ func httpGetAuth(t *testing.T, url, token string) ([]byte, int) {
 	return body, resp.StatusCode
 }
 
+func httpPostAuth(t *testing.T, url, token string, payload any) ([]byte, int) {
+	t.Helper()
+
+	b, _ := json.Marshal(payload)
+	client := &http.Client{Timeout: 35 * time.Second}
+	req, err := http.NewRequest(http.MethodPost, url, bytes.NewReader(b))
+	if err != nil {
+		t.Fatalf("Failed to create request: %v", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	if token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
+
+	resp, err := client.Do(req)
+	if err != nil {
+		t.Fatalf("HTTP POST failed: %v", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatalf("Failed to read response: %v", err)
+	}
+	return body, resp.StatusCode
+}
+
+func loginAs(t *testing.T, email, password string) string {
+	t.Helper()
+	body, code := httpPostAuth(t, fmt.Sprintf("%s/auth/login", *centralURL), "",
+		map[string]string{"email": email, "password": password})
+	if code != http.StatusOK {
+		t.Fatalf("login as %s failed: %d %s", email, code, string(body))
+	}
+	var lr struct {
+		AccessToken string `json:"access_token"`
+	}
+	if err := json.Unmarshal(body, &lr); err != nil || lr.AccessToken == "" {
+		t.Fatalf("no access token for %s: %v", email, err)
+	}
+	return lr.AccessToken
+}
+
+// Test: RBAC enforces a non-admin (viewer) role. The e2e policy binds only the
+// admin; any other user falls through to the default `viewer` role, which is
+// read-only. So a created user can read but not write.
+func TestRBACNonAdminRoleEnforced(t *testing.T) {
+	// Admin creates a plain user (no binding -> default viewer).
+	_, code := httpPostAuth(t, fmt.Sprintf("%s/api/v1/admin/users", *centralURL), authToken,
+		map[string]string{"email": "viewer@e2e.test", "name": "Viewer", "password": "viewer-password"})
+	if code != http.StatusCreated && code != http.StatusConflict {
+		t.Fatalf("create viewer user: unexpected status %d", code)
+	}
+
+	viewerToken := loginAs(t, "viewer@e2e.test", "viewer-password")
+	execURL := fmt.Sprintf("%s/api/v1/clusters/%s/exec", *centralURL, *clusterName)
+
+	// Read (get) is allowed for the viewer role.
+	body, code := httpPostAuth(t, execURL, viewerToken,
+		map[string]any{"command": []string{"get", "pods", "-n", "kube-system"}})
+	if code != http.StatusOK {
+		t.Errorf("viewer read: want 200, got %d (%s)", code, string(body))
+	}
+
+	// Write (delete) is denied with 403 before reaching the agent.
+	body, code = httpPostAuth(t, execURL, viewerToken,
+		map[string]any{"command": []string{"delete", "pods", "doesnotexist", "-n", "kube-system"}})
+	if code != http.StatusForbidden {
+		t.Errorf("viewer write: want 403, got %d (%s)", code, string(body))
+	}
+
+	// Admin can perform the same write (passes RBAC; reaches the agent).
+	_, code = httpPostAuth(t, execURL, authToken,
+		map[string]any{"command": []string{"get", "pods", "-n", "kube-system"}})
+	if code != http.StatusOK {
+		t.Errorf("admin read: want 200, got %d", code)
+	}
+}
+
 // Test: Central service health check
 func TestCentralServiceHealth(t *testing.T) {
 	url := fmt.Sprintf("%s/health", *centralURL)

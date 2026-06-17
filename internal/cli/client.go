@@ -172,6 +172,78 @@ func (c *CentralClient) GetCluster(name string) (*ClusterInfo, error) {
 	return nil, fmt.Errorf("cluster %q not found", name)
 }
 
+// UserInfo represents a user returned by the admin API.
+type UserInfo struct {
+	ID        string `json:"id"`
+	Email     string `json:"email"`
+	Name      string `json:"name"`
+	IsActive  bool   `json:"is_active"`
+	CreatedAt string `json:"created_at"`
+}
+
+// ListUsers fetches all users via the admin API.
+func (c *CentralClient) ListUsers() ([]UserInfo, error) {
+	req, err := http.NewRequest(http.MethodGet, c.baseURL+"/api/v1/admin/users", nil)
+	if err != nil {
+		return nil, fmt.Errorf("creating request: %w", err)
+	}
+	resp, err := c.doRequest(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode == http.StatusForbidden {
+		return nil, fmt.Errorf("admin role required")
+	}
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("server returned %d: %s", resp.StatusCode, string(body))
+	}
+
+	var out struct {
+		Users []UserInfo `json:"users"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		return nil, fmt.Errorf("decoding response: %w", err)
+	}
+	return out.Users, nil
+}
+
+// CreateUser creates a new user via the admin API.
+func (c *CentralClient) CreateUser(email, name, password string) (*UserInfo, error) {
+	body, _ := json.Marshal(map[string]string{
+		"email": email, "name": name, "password": password,
+	})
+	req, err := http.NewRequest(http.MethodPost, c.baseURL+"/api/v1/admin/users", bytes.NewReader(body))
+	if err != nil {
+		return nil, fmt.Errorf("creating request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := c.doRequest(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	switch resp.StatusCode {
+	case http.StatusCreated:
+		var u UserInfo
+		if err := json.NewDecoder(resp.Body).Decode(&u); err != nil {
+			return nil, fmt.Errorf("decoding response: %w", err)
+		}
+		return &u, nil
+	case http.StatusConflict:
+		return nil, fmt.Errorf("a user with email %q already exists", email)
+	case http.StatusForbidden:
+		return nil, fmt.Errorf("admin role required")
+	default:
+		b, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("server returned %d: %s", resp.StatusCode, string(b))
+	}
+}
+
 // CheckHealth checks if the central service is healthy.
 func (c *CentralClient) CheckHealth() error {
 	url := fmt.Sprintf("%s/health", c.baseURL)

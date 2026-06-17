@@ -114,6 +114,11 @@ func (s *HTTPServer) setupRoutes() {
 				admin.POST("/agent-tokens", s.adminHandlers.HandleCreateAgentToken)
 				admin.GET("/agent-tokens", s.adminHandlers.HandleListAgentTokens)
 				admin.DELETE("/agent-tokens/:id", s.adminHandlers.HandleRevokeAgentToken)
+
+				admin.GET("/users", s.adminHandlers.HandleListUsers)
+				admin.POST("/users", s.adminHandlers.HandleCreateUser)
+				admin.PUT("/users/:id", s.adminHandlers.HandleUpdateUser)
+				admin.DELETE("/users/:id", s.adminHandlers.HandleDeleteUser)
 			}
 		}
 	}

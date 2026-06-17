@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/why-xn/kbridge/internal/auth"
 )
 
 // agentTokenPrefixLen is how many leading characters of a token are stored
@@ -138,6 +139,112 @@ func (h *AdminHandlers) HandleListAgentTokens(c *gin.Context) {
 		out = append(out, toAgentTokenResponses(tokens, cluster.Name)...)
 	}
 	c.JSON(http.StatusOK, gin.H{"tokens": out})
+}
+
+type createUserRequest struct {
+	Email    string `json:"email" binding:"required,email"`
+	Name     string `json:"name" binding:"required"`
+	Password string `json:"password" binding:"required"`
+	IsActive *bool  `json:"is_active"`
+}
+
+type updateUserRequest struct {
+	Name     *string `json:"name"`
+	IsActive *bool   `json:"is_active"`
+	Password *string `json:"password"`
+}
+
+// HandleListUsers lists all users.
+func (h *AdminHandlers) HandleListUsers(c *gin.Context) {
+	users, err := h.store.ListUsers(c.Request.Context())
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"users": users})
+}
+
+// HandleCreateUser creates a new user with a hashed password.
+func (h *AdminHandlers) HandleCreateUser(c *gin.Context) {
+	var req createUserRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request"})
+		return
+	}
+
+	ctx := c.Request.Context()
+	if existing, _ := h.store.GetUserByEmail(ctx, req.Email); existing != nil {
+		c.JSON(http.StatusConflict, gin.H{"error": "email already in use"})
+		return
+	}
+
+	hash, err := auth.HashPassword(req.Password)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
+		return
+	}
+
+	user := &User{
+		Email:        req.Email,
+		Name:         req.Name,
+		PasswordHash: hash,
+		IsActive:     req.IsActive == nil || *req.IsActive,
+	}
+	if err := h.store.CreateUser(ctx, user); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
+		return
+	}
+	c.JSON(http.StatusCreated, user)
+}
+
+// HandleUpdateUser updates a user's name, active state, and/or password.
+func (h *AdminHandlers) HandleUpdateUser(c *gin.Context) {
+	var req updateUserRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request"})
+		return
+	}
+
+	ctx := c.Request.Context()
+	user, err := h.store.GetUserByID(ctx, c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
+		return
+	}
+	if user == nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "user not found"})
+		return
+	}
+
+	if req.Name != nil {
+		user.Name = *req.Name
+	}
+	if req.IsActive != nil {
+		user.IsActive = *req.IsActive
+	}
+	if req.Password != nil {
+		hash, err := auth.HashPassword(*req.Password)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
+			return
+		}
+		user.PasswordHash = hash
+	}
+
+	if err := h.store.UpdateUser(ctx, user); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
+		return
+	}
+	c.JSON(http.StatusOK, user)
+}
+
+// HandleDeleteUser deletes a user by ID.
+func (h *AdminHandlers) HandleDeleteUser(c *gin.Context) {
+	if err := h.store.DeleteUser(c.Request.Context(), c.Param("id")); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"message": "user deleted"})
 }
 
 // HandleRevokeAgentToken revokes an agent token by ID. Revocation is idempotent.

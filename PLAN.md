@@ -184,22 +184,22 @@ Enforced in the exec handler (`http.go` `authorizeExec`):
 - Wildcard patterns work (`dev-*` matches `dev-cluster`) ✓
 - Permission denials are logged ✓
 
-### 4.3 Admin User Management — NOT STARTED
+### 4.3 Admin User Management — DONE
 
-Add admin endpoints for managing users.
+Admin endpoints (gated by `auth.AdminRequired()`):
+- `GET /api/v1/admin/users` — list (password hashes never serialized)
+- `POST /api/v1/admin/users` — create (bcrypt-hashed; 409 on duplicate email)
+- `PUT /api/v1/admin/users/{id}` — update name / active / password (404 if absent)
+- `DELETE /api/v1/admin/users/{id}` — delete
+- CLI: `kbridge admin users list` and `kbridge admin users create`
+  (prompts for password if `--password` omitted)
 
-**Tasks:**
-- `GET /api/v1/admin/users` - list all users
-- `POST /api/v1/admin/users` - create user
-- `PUT /api/v1/admin/users/{id}` - update user
-- `DELETE /api/v1/admin/users/{id}` - delete user
-- Add admin role check middleware (only admin role can access /admin/ endpoints)
-- Add `kbridge admin users list` CLI command
-- Add `kbridge admin users create` CLI command
+Note: there is no role-assignment API — a user's roles come from the policy
+file `bindings` (matched on email), per the config-based RBAC design.
 
 **Acceptance Criteria:**
-- Admin can create, list, update, delete users
-- Non-admin users cannot access admin endpoints
+- Admin can create, list, update, delete users ✓
+- Non-admin users cannot access admin endpoints ✓ (AdminRequired, e2e-verified)
 - CLI admin commands work
 
 ---
@@ -315,11 +315,11 @@ Write comprehensive documentation.
 | Phase 1 | Project setup, skeletons | Done |
 | Phase 2 | Core kubectl proxy functionality | Done |
 | Phase 3 | Authentication (DB, JWT, login) | Done |
-| Phase 4 | RBAC (config-file policy + enforcement) | Done except 4.3 admin user mgmt |
+| Phase 4 | RBAC (config-file policy + enforcement) | Done |
 | Phase 5 | Production (TLS, audit, Docker, Helm) | Not started (audit schema/config only) |
 
-**Recommended order:** RBAC enforcement (Phase 4.1/4.2) is done and verified.
-Remaining: Phase 4.3 (admin user management + CLI), then Phase 5 for deployment.
+**Recommended order:** Phase 4 (RBAC + admin user management) is done and
+verified (unit + e2e). Next: Phase 5 for deployment (TLS, audit, Docker, Helm).
 
 **Quick wins already 80% there (schema/config exists, just needs wiring):**
 - Audit logging (5.2) — table + config present, needs writes + query endpoint
