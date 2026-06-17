@@ -2,9 +2,9 @@
 
 kbridge authorization is **declarative**: a single YAML policy file defines roles
 and who they apply to. The file is pointed to by `rbac.policy_file` in
-`central.yaml` and is **hot-reloaded** when it changes (no restart needed). When
-`rbac.policy_file` is empty, enforcement is disabled and every authenticated
-user is allowed.
+`central.yaml` and is **hot-reloaded** (no restart needed) — see
+[Reloading](#reloading) below. When `rbac.policy_file` is empty, enforcement is
+disabled and every authenticated user is allowed.
 
 Authentication (who you are) is separate from authorization (what you can do):
 identity comes from the JWT; permissions come from this file.
@@ -85,11 +85,29 @@ With this policy: `admin@corp.com` can do anything; anyone at `dev.corp.com`
 gets developer access on dev/staging; everyone else falls back to read-only
 `viewer`.
 
+## Reloading
+
+The policy is reloaded by two mechanisms, whichever fires first:
+
+- **File watch** — central watches the policy file's directory and reloads
+  automatically on change. Note this relies on filesystem change events
+  (inotify), which some filesystems (e.g. 9p/NFS or WSL `/mnt/*` mounts) do not
+  deliver reliably.
+- **SIGHUP** — sending `SIGHUP` to the central process reloads the policy on
+  demand. This always works, and is the recommended trigger in environments
+  where the file watch may not fire:
+
+  ```bash
+  kill -HUP "$(pidof kbridge-central)"
+  ```
+
+A reload that fails to parse or validate is logged and the previous policy
+stays active, so a bad edit never takes down enforcement.
+
 ## Operational notes
 
 - Denied commands return `403` and are recorded in the audit log with status
   `denied` — useful for spotting over-broad expectations.
 - Validation runs at load time: a binding or `default` that names an undefined
-  role is rejected, and a bad hot-reload is logged while the previous policy
-  stays active.
+  role is rejected.
 - Keep `default` least-privilege (or omit it to deny unbound users entirely).

@@ -4,6 +4,10 @@ Administrative operations require a user with the `admin` role (granted via the
 [RBAC policy](rbac.md) bindings). The first admin is seeded from `auth.admin_*`
 in `central.yaml` on first startup.
 
+These tasks are driven primarily through the `kbridge admin …` CLI (run
+`kbridge login` as an admin first); the equivalent HTTP API is shown as a
+secondary option. See the [CLI reference](cli.md) and [API reference](api.md).
+
 ## Users
 
 Users authenticate to central; their permissions come from the policy file
@@ -28,18 +32,26 @@ Passwords are bcrypt-hashed and never returned. Update name/active/password with
 
 ## Agent tokens
 
-Each agent registers with a token bound to exactly one cluster. Generate one,
-then configure the agent with it (the plaintext is shown only once):
+Each agent registers with a token bound to exactly one cluster. Generate one
+with the CLI, then set it as the agent's `central.token` (the plaintext is shown
+only once):
+
+```bash
+kbridge admin agent-tokens create --cluster prod-us-east --description "prod agent" --expires-in-days 90
+kbridge admin agent-tokens list --cluster prod-us-east   # prefixes only, never the secret
+kbridge admin agent-tokens revoke <id>
+```
+
+Via the API instead:
 
 ```bash
 curl -X POST https://central:8080/api/v1/admin/agent-tokens \
   -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
   -d '{"cluster_name":"prod-us-east","description":"prod agent","expires_in_days":90}'
 # -> {"id":"...","token":"kbat_...","cluster_name":"prod-us-east",...}
+# list:   GET    /api/v1/admin/agent-tokens[?cluster=<name>]
+# revoke: DELETE /api/v1/admin/agent-tokens/{id}
 ```
-
-- List metadata: `GET /api/v1/admin/agent-tokens[?cluster=<name>]`
-- Revoke: `DELETE /api/v1/admin/agent-tokens/{id}`
 
 **Rotation:** issue a new token, update the agent, then revoke the old one. The
 agent re-registers on its next connection.
@@ -65,6 +77,8 @@ Logs older than `audit.retention_days` are pruned automatically every
 
 ## RBAC changes
 
-Edit the policy file referenced by `rbac.policy_file`; central hot-reloads it.
-A policy that fails to parse is rejected and the previous one stays active (the
-error is logged). See the [RBAC reference](rbac.md).
+Edit the policy file referenced by `rbac.policy_file`. Central reloads it
+automatically (file watch) or on demand via `SIGHUP`
+(`kill -HUP <central-pid>`) — use the latter where the filesystem doesn't
+deliver change events. A policy that fails to parse is rejected and the previous
+one stays active (the error is logged). See the [RBAC reference](rbac.md#reloading).

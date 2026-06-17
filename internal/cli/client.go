@@ -310,6 +310,111 @@ func (c *CentralClient) ListAuditLogs(filters map[string]string) ([]AuditLogInfo
 	return out.Logs, out.Total, nil
 }
 
+// AgentTokenInfo represents an agent token returned by the admin API. The
+// plaintext Token is only populated by CreateAgentToken.
+type AgentTokenInfo struct {
+	ID          string `json:"id"`
+	ClusterName string `json:"cluster_name"`
+	TokenPrefix string `json:"token_prefix"`
+	Description string `json:"description,omitempty"`
+	IsRevoked   bool   `json:"is_revoked"`
+	Token       string `json:"token,omitempty"`
+	CreatedAt   string `json:"created_at"`
+}
+
+// CreateAgentToken generates a new agent token for a cluster. The returned
+// Token is the plaintext secret, shown only once.
+func (c *CentralClient) CreateAgentToken(cluster, description string, expiresInDays int) (*AgentTokenInfo, error) {
+	payload := map[string]any{"cluster_name": cluster}
+	if description != "" {
+		payload["description"] = description
+	}
+	if expiresInDays > 0 {
+		payload["expires_in_days"] = expiresInDays
+	}
+	body, _ := json.Marshal(payload)
+
+	req, err := http.NewRequest(http.MethodPost, c.baseURL+"/api/v1/admin/agent-tokens", bytes.NewReader(body))
+	if err != nil {
+		return nil, fmt.Errorf("creating request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := c.doRequest(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	switch resp.StatusCode {
+	case http.StatusCreated:
+		var tok AgentTokenInfo
+		if err := json.NewDecoder(resp.Body).Decode(&tok); err != nil {
+			return nil, fmt.Errorf("decoding response: %w", err)
+		}
+		return &tok, nil
+	case http.StatusForbidden:
+		return nil, fmt.Errorf("admin role required")
+	default:
+		b, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("server returned %d: %s", resp.StatusCode, string(b))
+	}
+}
+
+// ListAgentTokens lists agent tokens, optionally filtered by cluster.
+func (c *CentralClient) ListAgentTokens(cluster string) ([]AgentTokenInfo, error) {
+	reqURL := c.baseURL + "/api/v1/admin/agent-tokens"
+	if cluster != "" {
+		reqURL += "?cluster=" + url.QueryEscape(cluster)
+	}
+	req, err := http.NewRequest(http.MethodGet, reqURL, nil)
+	if err != nil {
+		return nil, fmt.Errorf("creating request: %w", err)
+	}
+	resp, err := c.doRequest(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode == http.StatusForbidden {
+		return nil, fmt.Errorf("admin role required")
+	}
+	if resp.StatusCode != http.StatusOK {
+		b, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("server returned %d: %s", resp.StatusCode, string(b))
+	}
+	var out struct {
+		Tokens []AgentTokenInfo `json:"tokens"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		return nil, fmt.Errorf("decoding response: %w", err)
+	}
+	return out.Tokens, nil
+}
+
+// RevokeAgentToken revokes an agent token by ID.
+func (c *CentralClient) RevokeAgentToken(id string) error {
+	req, err := http.NewRequest(http.MethodDelete, c.baseURL+"/api/v1/admin/agent-tokens/"+url.PathEscape(id), nil)
+	if err != nil {
+		return fmt.Errorf("creating request: %w", err)
+	}
+	resp, err := c.doRequest(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode == http.StatusForbidden {
+		return fmt.Errorf("admin role required")
+	}
+	if resp.StatusCode != http.StatusOK {
+		b, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("server returned %d: %s", resp.StatusCode, string(b))
+	}
+	return nil
+}
+
 // CheckHealth checks if the central service is healthy.
 func (c *CentralClient) CheckHealth() error {
 	url := fmt.Sprintf("%s/health", c.baseURL)

@@ -111,8 +111,9 @@ Secure agent registration with database-backed tokens.
 
 Implemented:
 - Admin endpoints `POST/GET/DELETE /api/v1/admin/agent-tokens`, gated by
-  `auth.AdminRequired()` (`internal/central/admin_handlers.go`). Create returns
-  the plaintext token once; only the SHA-256 hash + prefix are stored.
+  `auth.AdminRequired()` (`internal/central/admin_handlers.go`), and the
+  `kbridge admin agent-tokens create/list/revoke` CLI. Create returns the
+  plaintext token once; only the SHA-256 hash + prefix are stored.
 - gRPC `Register` now validates the agent token against the DB via the
   `AgentAuthenticator` domain service (`internal/central/agent_auth.go`):
   hash lookup, revoked + expiry checks, and cluster-binding enforcement
@@ -192,7 +193,8 @@ Admin endpoints (gated by `auth.AdminRequired()`):
 - `POST /api/v1/admin/users` — create (bcrypt-hashed; 409 on duplicate email)
 - `PUT /api/v1/admin/users/{id}` — update name / active / password (404 if absent)
 - `DELETE /api/v1/admin/users/{id}` — delete
-- CLI: `kbridge admin users list` and `kbridge admin users create`
+- CLI: `kbridge admin users list`/`create`, `kbridge admin agent-tokens
+  create`/`list`/`revoke`, and `kbridge admin audit`
   (prompts for password if `--password` omitted)
 
 Note: there is no role-assignment API — a user's roles come from the policy

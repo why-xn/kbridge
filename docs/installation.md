@@ -56,8 +56,10 @@ helm install kbridge-agent ./charts/agent \
   --set cluster.name=prod-us-east
 ```
 
-Generate an agent token first with `kbridge admin agent-tokens` (see the
-[admin guide](admin.md)) or seed one via central's `bootstrap` config.
+Generate an agent token first with
+`kbridge admin agent-tokens create --cluster <name>` (see the
+[admin guide](admin.md)) — or via the `POST /api/v1/admin/agent-tokens` API, or
+by seeding one through central's `bootstrap` config.
 
 Key chart values are documented in each chart's `values.yaml`. The agent chart
 creates a ServiceAccount + ClusterRole; scope `rbac.rules` down to what your

@@ -307,3 +307,59 @@ func TestCentralClient_ExecCommand_WithNamespace(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }
+
+func TestCentralClient_CreateAgentToken(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Path != "/api/v1/admin/agent-tokens" {
+			t.Errorf("unexpected %s %s", r.Method, r.URL.Path)
+		}
+		w.WriteHeader(http.StatusCreated)
+		json.NewEncoder(w).Encode(map[string]any{
+			"id": "tok-1", "cluster_name": "prod", "token_prefix": "kbat_abc12",
+			"token": "kbat_abc1234567890", "created_at": "now",
+		})
+	}))
+	defer server.Close()
+
+	tok, err := NewCentralClient(server.URL).CreateAgentToken("prod", "ci token", 90)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if tok.Token != "kbat_abc1234567890" || tok.ID != "tok-1" || tok.ClusterName != "prod" {
+		t.Errorf("unexpected token: %+v", tok)
+	}
+}
+
+func TestCentralClient_ListAgentTokens(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Query().Get("cluster") != "prod" {
+			t.Errorf("expected cluster filter, got %q", r.URL.RawQuery)
+		}
+		json.NewEncoder(w).Encode(map[string]any{
+			"tokens": []map[string]any{{"id": "tok-1", "cluster_name": "prod", "token_prefix": "kbat_abc12", "is_revoked": false}},
+		})
+	}))
+	defer server.Close()
+
+	tokens, err := NewCentralClient(server.URL).ListAgentTokens("prod")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(tokens) != 1 || tokens[0].ID != "tok-1" {
+		t.Errorf("unexpected tokens: %+v", tokens)
+	}
+}
+
+func TestCentralClient_RevokeAgentToken(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodDelete || r.URL.Path != "/api/v1/admin/agent-tokens/tok-1" {
+			t.Errorf("unexpected %s %s", r.Method, r.URL.Path)
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	if err := NewCentralClient(server.URL).RevokeAgentToken("tok-1"); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}

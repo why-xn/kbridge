@@ -79,9 +79,10 @@ kbridge k get pods                 # 'k' alias for kubectl
 kbridge status                     # Show current context
 
 # Admin (requires the admin role)
-kbridge admin users list           # List users
+kbridge admin users list                          # List users
 kbridge admin users create --email dev@corp.com --name Dev
-kbridge admin audit --user dev@corp.com   # View the command audit log
+kbridge admin agent-tokens create --cluster prod  # Generate an agent token
+kbridge admin audit --user dev@corp.com           # View the command audit log
 ```
 
 ### Central Service (`kbridge-central`)
@@ -142,9 +143,23 @@ installs, and the [Documentation](#documentation) section below for full referen
 
 ```yaml
 server:
-  http_port: 8080    # REST API port
-  grpc_port: 9090    # gRPC server port
+  http_port: 8080                  # REST API port
+  grpc_port: 9090                  # gRPC server port
+database:
+  driver: sqlite
+  path: kbridge.db
+auth:
+  jwt_secret: "change-me"          # required
+  admin_email: admin@kbridge.local # seeded on first start
+  admin_password: changeme
+rbac:
+  policy_file: configs/rbac.yaml   # empty = enforcement disabled
+tls:
+  enabled: false                   # see docs/configuration.md#tls
 ```
+
+See [docs/configuration.md](docs/configuration.md) for the complete reference
+(audit, bootstrap, TLS, env vars).
 
 ### Agent (`agent.yaml`)
 

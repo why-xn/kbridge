@@ -496,6 +496,55 @@ func TestAgentTokenLifecycle(t *testing.T) {
 	}
 }
 
+// TestCLIAdminAgentTokens exercises the full agent-token lifecycle through the
+// kbridge CLI (create -> list -> revoke), as an admin would in practice.
+func TestCLIAdminAgentTokens(t *testing.T) {
+	cluster := "edge-cli-token-cluster"
+
+	stdout, stderr, code := runCLI(t, "admin", "agent-tokens", "create",
+		"--cluster", cluster, "--description", "cli test")
+	if code != 0 {
+		t.Fatalf("create: exit %d, stderr=%s", code, stderr)
+	}
+	if !strings.Contains(stdout, "kbat_") {
+		t.Fatalf("create output missing token: %s", stdout)
+	}
+
+	stdout, stderr, code = runCLI(t, "admin", "agent-tokens", "list", "--cluster", cluster)
+	if code != 0 {
+		t.Fatalf("list: exit %d, stderr=%s", code, stderr)
+	}
+	if !strings.Contains(stdout, cluster) {
+		t.Fatalf("list missing cluster %q: %s", cluster, stdout)
+	}
+
+	// Pull the token ID out of the list table (first column of the data row).
+	id := ""
+	for _, line := range strings.Split(stdout, "\n") {
+		if strings.Contains(line, cluster) {
+			if fields := strings.Fields(line); len(fields) > 0 {
+				id = fields[0]
+			}
+			break
+		}
+	}
+	if id == "" {
+		t.Fatalf("could not parse token id from list output: %s", stdout)
+	}
+
+	if _, stderr, code = runCLI(t, "admin", "agent-tokens", "revoke", id); code != 0 {
+		t.Fatalf("revoke: exit %d, stderr=%s", code, stderr)
+	}
+
+	// After revoke the token is listed as revoked.
+	stdout, _, _ = runCLI(t, "admin", "agent-tokens", "list", "--cluster", cluster)
+	for _, line := range strings.Split(stdout, "\n") {
+		if strings.Contains(line, id) && !strings.Contains(line, "true") {
+			t.Errorf("expected token %s to be revoked: %s", id, line)
+		}
+	}
+}
+
 // --- Exec edge cases ---
 
 func TestExecEdgeCases(t *testing.T) {

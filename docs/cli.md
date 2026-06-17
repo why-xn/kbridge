@@ -67,6 +67,28 @@ kbridge admin users create --email ci@corp.com --name CI --password "$TOKEN"
 | `--name` | Display name (required) |
 | `--password` | Password (prompted if omitted) |
 
+### `kbridge admin agent-tokens` (alias `tokens`)
+Manage the tokens agents use to register. Subcommands: `create`, `list`, `revoke`.
+
+```bash
+# Generate a token for a cluster (printed once — set it as the agent's central.token)
+kbridge admin agent-tokens create --cluster prod-us-east --description "prod agent"
+kbridge admin agent-tokens create --cluster dev --expires-in-days 90
+
+# List tokens (shows the prefix, never the secret)
+kbridge admin agent-tokens list
+kbridge admin agent-tokens list --cluster prod-us-east
+
+# Revoke a token by ID
+kbridge admin agent-tokens revoke <id>
+```
+
+| `create` flag | Description |
+|---------------|-------------|
+| `--cluster` | Cluster the token is bound to (required) |
+| `--description` | Optional description |
+| `--expires-in-days` | Optional expiry in days (0 = no expiry) |
+
 ### `kbridge admin audit`
 Shows the command audit log, newest first.
 

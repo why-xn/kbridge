@@ -46,6 +46,39 @@ var adminUsersCreateCmd = &cobra.Command{
 	RunE:  runAdminUsersCreate,
 }
 
+var adminTokensCmd = &cobra.Command{
+	Use:     "agent-tokens",
+	Aliases: []string{"agent-token", "tokens"},
+	Short:   "Manage agent registration tokens",
+}
+
+var (
+	tokenCluster     string
+	tokenDescription string
+	tokenExpiresDays int
+)
+
+var adminTokensCreateCmd = &cobra.Command{
+	Use:   "create",
+	Short: "Generate an agent token for a cluster",
+	Long:  `Generate an agent token bound to a cluster. The token is printed once and cannot be retrieved again.`,
+	RunE:  runAdminTokensCreate,
+}
+
+var adminTokensListCmd = &cobra.Command{
+	Use:     "list",
+	Aliases: []string{"ls"},
+	Short:   "List agent tokens",
+	RunE:    runAdminTokensList,
+}
+
+var adminTokensRevokeCmd = &cobra.Command{
+	Use:   "revoke <id>",
+	Short: "Revoke an agent token by ID",
+	Args:  cobra.ExactArgs(1),
+	RunE:  runAdminTokensRevoke,
+}
+
 var (
 	auditUser    string
 	auditCluster string
@@ -66,6 +99,16 @@ func init() {
 	adminUsersCmd.AddCommand(adminUsersListCmd)
 	adminUsersCmd.AddCommand(adminUsersCreateCmd)
 	adminCmd.AddCommand(adminAuditCmd)
+
+	adminCmd.AddCommand(adminTokensCmd)
+	adminTokensCmd.AddCommand(adminTokensCreateCmd)
+	adminTokensCmd.AddCommand(adminTokensListCmd)
+	adminTokensCmd.AddCommand(adminTokensRevokeCmd)
+	adminTokensCreateCmd.Flags().StringVar(&tokenCluster, "cluster", "", "cluster the token is bound to (required)")
+	adminTokensCreateCmd.Flags().StringVar(&tokenDescription, "description", "", "optional description")
+	adminTokensCreateCmd.Flags().IntVar(&tokenExpiresDays, "expires-in-days", 0, "optional expiry in days (0 = no expiry)")
+	adminTokensCreateCmd.MarkFlagRequired("cluster")
+	adminTokensListCmd.Flags().StringVar(&tokenCluster, "cluster", "", "filter by cluster name")
 
 	adminUsersCreateCmd.Flags().StringVar(&createUserEmail, "email", "", "user email (required)")
 	adminUsersCreateCmd.Flags().StringVar(&createUserName, "name", "", "user display name (required)")
@@ -167,6 +210,55 @@ func runAdminAudit(cmd *cobra.Command, args []string) error {
 	}
 	w.Flush()
 	fmt.Printf("\nShowing %d of %d entries.\n", len(logs), total)
+	return nil
+}
+
+func runAdminTokensCreate(cmd *cobra.Command, args []string) error {
+	client, err := adminClient()
+	if err != nil {
+		return err
+	}
+	tok, err := client.CreateAgentToken(tokenCluster, tokenDescription, tokenExpiresDays)
+	if err != nil {
+		return fmt.Errorf("failed to create agent token: %w", err)
+	}
+	fmt.Printf("Agent token for cluster %q created.\n\n", tok.ClusterName)
+	fmt.Printf("  %s\n\n", tok.Token)
+	fmt.Println("Store it now — it cannot be retrieved again. Set it as the agent's central.token.")
+	return nil
+}
+
+func runAdminTokensList(cmd *cobra.Command, args []string) error {
+	client, err := adminClient()
+	if err != nil {
+		return err
+	}
+	tokens, err := client.ListAgentTokens(tokenCluster)
+	if err != nil {
+		return fmt.Errorf("failed to list agent tokens: %w", err)
+	}
+	if len(tokens) == 0 {
+		fmt.Println("No agent tokens found.")
+		return nil
+	}
+	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
+	fmt.Fprintln(w, "ID\tCLUSTER\tPREFIX\tREVOKED\tDESCRIPTION")
+	for _, tok := range tokens {
+		fmt.Fprintf(w, "%s\t%s\t%s\t%t\t%s\n",
+			tok.ID, tok.ClusterName, tok.TokenPrefix, tok.IsRevoked, tok.Description)
+	}
+	return w.Flush()
+}
+
+func runAdminTokensRevoke(cmd *cobra.Command, args []string) error {
+	client, err := adminClient()
+	if err != nil {
+		return err
+	}
+	if err := client.RevokeAgentToken(args[0]); err != nil {
+		return fmt.Errorf("failed to revoke agent token: %w", err)
+	}
+	fmt.Printf("Agent token %q revoked.\n", args[0])
 	return nil
 }
 
