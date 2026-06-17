@@ -10,15 +10,23 @@ import (
 	"google.golang.org/grpc/status"
 )
 
-func newTestGRPCServer() (*GRPCServer, *AgentStore, *CommandQueue) {
-	store := NewAgentStore()
-	store.AddValidToken("valid-token")
+const (
+	testAgentToken  = "valid-token"
+	testClusterName = "test-cluster"
+)
+
+func newTestGRPCServer(t *testing.T) (*GRPCServer, *AgentStore, *CommandQueue) {
+	t.Helper()
+	agents := NewAgentStore()
 	cmdQueue := NewCommandQueue()
-	return NewGRPCServer(store, cmdQueue), store, cmdQueue
+	db := newTestStore(t)
+	seedClusterToken(t, db, testClusterName, testAgentToken, nil)
+	authn := NewAgentAuthenticator(db)
+	return NewGRPCServer(agents, cmdQueue, authn), agents, cmdQueue
 }
 
 func TestGRPCServer_Register_Success(t *testing.T) {
-	srv, store, _ := newTestGRPCServer()
+	srv, store, _ := newTestGRPCServer(t)
 	ctx := context.Background()
 
 	req := &agentpb.RegisterRequest{
@@ -60,8 +68,59 @@ func TestGRPCServer_Register_Success(t *testing.T) {
 	}
 }
 
+func TestGRPCServer_Register_PersistsClusterConnected(t *testing.T) {
+	ctx := context.Background()
+	db := newTestStore(t)
+	cluster := seedClusterToken(t, db, "edge", "edge-token", nil)
+	srv := NewGRPCServer(NewAgentStore(), NewCommandQueue(), NewAgentAuthenticator(db))
+
+	resp, err := srv.Register(ctx, &agentpb.RegisterRequest{
+		AgentToken:  "edge-token",
+		ClusterName: "edge",
+		Metadata:    &agentpb.ClusterMetadata{KubernetesVersion: "1.30.0", NodeCount: 5},
+	})
+	if err != nil || !resp.Success {
+		t.Fatalf("register failed: err=%v resp=%+v", err, resp)
+	}
+
+	got, err := db.GetClusterByID(ctx, cluster.ID)
+	if err != nil {
+		t.Fatalf("get cluster: %v", err)
+	}
+	if got.Status != AgentStatusConnected {
+		t.Errorf("want status connected, got %q", got.Status)
+	}
+	if got.AgentID != resp.AgentId {
+		t.Errorf("want agent id %q, got %q", resp.AgentId, got.AgentID)
+	}
+	if got.KubernetesVersion != "1.30.0" || got.LastSeenAt == nil {
+		t.Errorf("expected metadata and last_seen persisted, got %+v", got)
+	}
+}
+
+func TestGRPCServer_Register_RevokedToken(t *testing.T) {
+	ctx := context.Background()
+	db := newTestStore(t)
+	seedClusterToken(t, db, "edge", "edge-token", func(at *AgentToken) { at.IsRevoked = true })
+	srv := NewGRPCServer(NewAgentStore(), NewCommandQueue(), NewAgentAuthenticator(db))
+
+	resp, err := srv.Register(ctx, &agentpb.RegisterRequest{
+		AgentToken:  "edge-token",
+		ClusterName: "edge",
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if resp.Success {
+		t.Fatal("expected revoked token to be rejected")
+	}
+	if resp.ErrorMessage != "agent token revoked" {
+		t.Errorf("want 'agent token revoked', got %q", resp.ErrorMessage)
+	}
+}
+
 func TestGRPCServer_Register_InvalidToken(t *testing.T) {
-	srv, _, _ := newTestGRPCServer()
+	srv, _, _ := newTestGRPCServer(t)
 	ctx := context.Background()
 
 	req := &agentpb.RegisterRequest{
@@ -84,7 +143,7 @@ func TestGRPCServer_Register_InvalidToken(t *testing.T) {
 }
 
 func TestGRPCServer_Register_MissingClusterName(t *testing.T) {
-	srv, _, _ := newTestGRPCServer()
+	srv, _, _ := newTestGRPCServer(t)
 	ctx := context.Background()
 
 	req := &agentpb.RegisterRequest{
@@ -107,15 +166,21 @@ func TestGRPCServer_Register_MissingClusterName(t *testing.T) {
 }
 
 func TestGRPCServer_Register_MultipleAgents(t *testing.T) {
-	srv, store, _ := newTestGRPCServer()
 	ctx := context.Background()
+	db := newTestStore(t)
+	store := NewAgentStore()
+	srv := NewGRPCServer(store, NewCommandQueue(), NewAgentAuthenticator(db))
 
+	// Each cluster has its own token: a token authorizes exactly one cluster.
 	clusters := []string{"cluster-a", "cluster-b", "cluster-c"}
 	agentIDs := make([]string, len(clusters))
 
 	for i, cluster := range clusters {
+		token := "token-" + cluster
+		seedClusterToken(t, db, cluster, token, nil)
+
 		req := &agentpb.RegisterRequest{
-			AgentToken:  "valid-token",
+			AgentToken:  token,
 			ClusterName: cluster,
 		}
 
@@ -148,7 +213,7 @@ func TestGRPCServer_Register_MultipleAgents(t *testing.T) {
 }
 
 func TestGRPCServer_Heartbeat_Success(t *testing.T) {
-	srv, store, _ := newTestGRPCServer()
+	srv, store, _ := newTestGRPCServer(t)
 	ctx := context.Background()
 
 	// First register an agent
@@ -187,7 +252,7 @@ func TestGRPCServer_Heartbeat_Success(t *testing.T) {
 }
 
 func TestGRPCServer_Heartbeat_UnregisteredAgent(t *testing.T) {
-	srv, _, _ := newTestGRPCServer()
+	srv, _, _ := newTestGRPCServer(t)
 	ctx := context.Background()
 
 	req := &agentpb.HeartbeatRequest{
@@ -211,7 +276,7 @@ func TestGRPCServer_Heartbeat_UnregisteredAgent(t *testing.T) {
 }
 
 func TestGRPCServer_Heartbeat_MissingAgentID(t *testing.T) {
-	srv, _, _ := newTestGRPCServer()
+	srv, _, _ := newTestGRPCServer(t)
 	ctx := context.Background()
 
 	req := &agentpb.HeartbeatRequest{
@@ -235,7 +300,7 @@ func TestGRPCServer_Heartbeat_MissingAgentID(t *testing.T) {
 }
 
 func TestGRPCServer_ExecuteCommand(t *testing.T) {
-	srv, _, _ := newTestGRPCServer()
+	srv, _, _ := newTestGRPCServer(t)
 
 	req := &agentpb.CommandRequest{
 		RequestId: "req-123",
@@ -300,7 +365,7 @@ func TestGenerateAgentID(t *testing.T) {
 }
 
 func TestGRPCServer_GetPendingCommands_Success(t *testing.T) {
-	srv, store, cmdQueue := newTestGRPCServer()
+	srv, store, cmdQueue := newTestGRPCServer(t)
 	ctx := context.Background()
 
 	// Register an agent
@@ -343,7 +408,7 @@ func TestGRPCServer_GetPendingCommands_Success(t *testing.T) {
 }
 
 func TestGRPCServer_GetPendingCommands_MissingAgentID(t *testing.T) {
-	srv, _, _ := newTestGRPCServer()
+	srv, _, _ := newTestGRPCServer(t)
 	ctx := context.Background()
 
 	req := &agentpb.GetPendingCommandsRequest{
@@ -366,7 +431,7 @@ func TestGRPCServer_GetPendingCommands_MissingAgentID(t *testing.T) {
 }
 
 func TestGRPCServer_GetPendingCommands_UnregisteredAgent(t *testing.T) {
-	srv, _, _ := newTestGRPCServer()
+	srv, _, _ := newTestGRPCServer(t)
 	ctx := context.Background()
 
 	req := &agentpb.GetPendingCommandsRequest{
@@ -389,7 +454,7 @@ func TestGRPCServer_GetPendingCommands_UnregisteredAgent(t *testing.T) {
 }
 
 func TestGRPCServer_SubmitCommandResult_Success(t *testing.T) {
-	srv, _, cmdQueue := newTestGRPCServer()
+	srv, _, cmdQueue := newTestGRPCServer(t)
 	ctx := context.Background()
 
 	// Queue a command
@@ -421,7 +486,7 @@ func TestGRPCServer_SubmitCommandResult_Success(t *testing.T) {
 }
 
 func TestGRPCServer_SubmitCommandResult_WithError(t *testing.T) {
-	srv, _, cmdQueue := newTestGRPCServer()
+	srv, _, cmdQueue := newTestGRPCServer(t)
 	ctx := context.Background()
 
 	// Queue a command
@@ -451,7 +516,7 @@ func TestGRPCServer_SubmitCommandResult_WithError(t *testing.T) {
 }
 
 func TestGRPCServer_SubmitCommandResult_MissingRequestID(t *testing.T) {
-	srv, _, _ := newTestGRPCServer()
+	srv, _, _ := newTestGRPCServer(t)
 	ctx := context.Background()
 
 	req := &agentpb.SubmitCommandResultRequest{

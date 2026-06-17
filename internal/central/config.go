@@ -12,10 +12,19 @@ import (
 
 // Config holds the complete configuration for the central service.
 type Config struct {
-	Server   ServerConfig   `yaml:"server"`
-	Database DatabaseConfig `yaml:"database"`
-	Auth     AuthConfig     `yaml:"auth"`
-	Audit    AuditConfig    `yaml:"audit"`
+	Server    ServerConfig    `yaml:"server"`
+	Database  DatabaseConfig  `yaml:"database"`
+	Auth      AuthConfig      `yaml:"auth"`
+	Audit     AuditConfig     `yaml:"audit"`
+	Bootstrap BootstrapConfig `yaml:"bootstrap"`
+}
+
+// BootstrapConfig optionally seeds an agent token on startup for development
+// and bootstrapping. When AgentToken is empty no token is seeded; in production
+// tokens should be created via the admin API.
+type BootstrapConfig struct {
+	AgentToken   string `yaml:"agent_token"`
+	AgentCluster string `yaml:"agent_cluster"`
 }
 
 // ServerConfig holds the server-related configuration.

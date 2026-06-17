@@ -17,3 +17,10 @@ auth:
 audit:
   retention_days: 90
   cleanup_interval: 24h
+
+# bootstrap optionally seeds an agent token on startup for local development.
+# Leave empty in production and create agent tokens via the admin API
+# (POST /api/v1/admin/agent-tokens) instead.
+bootstrap:
+  agent_token: "dev-token"
+  agent_cluster: "dev-cluster"

@@ -1,4 +1,4 @@
-.PHONY: build build-cli build-central build-agent clean proto test test-e2e e2e-setup e2e-teardown
+.PHONY: build build-cli build-central build-agent clean proto test test-e2e e2e-setup e2e-teardown kind-up kind-down
 
 build: build-cli build-central build-agent
 
@@ -32,3 +32,11 @@ e2e-setup:
 # Teardown e2e environment
 e2e-teardown:
 	./scripts/e2e-kind.sh teardown
+
+# Spin up the Kind cluster only (no services)
+kind-up:
+	./scripts/e2e-kind.sh cluster-up
+
+# Delete the Kind cluster only
+kind-down:
+	./scripts/e2e-kind.sh cluster-down

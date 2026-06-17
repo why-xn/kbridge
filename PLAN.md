@@ -2,16 +2,34 @@
 
 ## Current Status
 
-Phases 1 and 2 are complete. The core system is functional:
+Phases 1, 2, and most of Phase 3 are complete.
+
+**Phases 1 & 2 (core system):**
 - CLI, Central, and Agent binaries build and work end-to-end
 - Agent registration, heartbeat, and command polling implemented
 - kubectl passthrough and kubectl edit supported
 - E2E tests passing with Kind clusters
-- In-memory agent store and command queue
+
+**Phase 3 (authentication) — done except 3.4 admin token management:**
+- SQLite-backed store with auto-migration replaces the in-memory store
+- Full schema exists: users, clusters, agent_tokens, roles, permissions,
+  user_roles, audit_logs, refresh_tokens
+- JWT auth (`internal/auth/`: jwt, middleware, password/bcrypt)
+- HTTP endpoints: `/auth/login`, `/auth/refresh`, `/auth/logout`,
+  `/auth/change-password`; `/api/v1/clusters` protected by auth middleware
+- CLI `login`/`logout` with token storage; client sends Authorization header
+- Agent token validated against the store during Register RPC
+
+> Note: several DB tables (roles, permissions, user_roles, audit_logs) and an
+> `audit:` config block already exist but are NOT yet wired to any logic — the
+> schema is ahead of the feature work in Phases 4 and 5.
 
 ## Phase 3: Authentication
 
-### 3.1 Database Setup
+Status: 3.1, 3.2, 3.3 DONE. 3.4 partially done (token validated on Register,
+but no admin endpoints to generate/list/revoke tokens, no rotation).
+
+### 3.1 Database Setup — DONE (PostgreSQL alt driver not added)
 
 Add persistent storage to the central service.
 
@@ -34,7 +52,7 @@ Add persistent storage to the central service.
 - Database driver is configurable (sqlite/postgres)
 - Tables created automatically on first run
 
-### 3.2 User Authentication
+### 3.2 User Authentication — DONE
 
 Implement JWT-based user authentication.
 
@@ -65,7 +83,7 @@ Implement JWT-based user authentication.
 - Invalid/expired tokens return 401
 - First startup creates admin user
 
-### 3.3 CLI Login Flow
+### 3.3 CLI Login Flow — DONE
 
 Connect the CLI to the authentication system.
 
@@ -87,12 +105,28 @@ Connect the CLI to the authentication system.
 - All API calls include Authorization header
 - 401 responses show helpful message
 
-### 3.4 Agent Token Authentication
+### 3.4 Agent Token Authentication — DONE (token rotation: see note)
 
 Secure agent registration with database-backed tokens.
 
+Implemented:
+- Admin endpoints `POST/GET/DELETE /api/v1/admin/agent-tokens`, gated by
+  `auth.AdminRequired()` (`internal/central/admin_handlers.go`). Create returns
+  the plaintext token once; only the SHA-256 hash + prefix are stored.
+- gRPC `Register` now validates the agent token against the DB via the
+  `AgentAuthenticator` domain service (`internal/central/agent_auth.go`):
+  hash lookup, revoked + expiry checks, and cluster-binding enforcement
+  (a token authorizes exactly one cluster). On success the cluster row is
+  persisted as connected; the in-memory store still drives live command routing.
+- Optional `bootstrap` config seeds a dev agent token on startup; production
+  uses the admin API.
+
+Token rotation works operationally today: an admin issues a new token and
+revokes the old one; the agent re-registers with the new token. Hot rotation
+without any agent reconnect is not implemented.
+
 **Tasks:**
-- Store hashed agent tokens in database instead of in-memory
+- ~~Store hashed agent tokens in database instead of in-memory~~ (DONE)
 - Add admin API endpoint `POST /api/v1/admin/agent-tokens` to generate tokens
 - Add admin API endpoint `GET /api/v1/admin/agent-tokens` to list tokens
 - Add admin API endpoint `DELETE /api/v1/admin/agent-tokens/{id}` to revoke tokens
@@ -106,11 +140,18 @@ Secure agent registration with database-backed tokens.
 
 ---
 
-## Phase 4: RBAC
+## Phase 4: RBAC — NOT STARTED (schema exists, no logic)
 
-### 4.1 Role Definitions
+The `roles`, `permissions`, and `user_roles` tables exist and `admin` +
+`viewer` roles are seeded on startup. Everything below is unimplemented:
+no `internal/auth/rbac.go`, no permission checks in the exec handler, no
+admin endpoints.
+
+### 4.1 Role Definitions — NOT STARTED
 
 Implement the role-based access control model.
+Gap: only `admin` and `viewer` are seeded; the `developer` role from the
+acceptance criteria is missing. No role CRUD endpoints exist.
 
 **Tasks:**
 - Create Role model with JSON permissions:
@@ -139,9 +180,11 @@ Implement the role-based access control model.
 - Wildcard patterns match correctly
 - Default roles exist on startup
 
-### 4.2 Permission Enforcement
+### 4.2 Permission Enforcement — NOT STARTED
 
 Enforce RBAC on all kubectl command executions.
+This is the biggest open security gap: any authenticated user can currently
+run any kubectl command on any cluster.
 
 **Tasks:**
 - Parse kubectl command args to extract:
@@ -161,7 +204,7 @@ Enforce RBAC on all kubectl command executions.
 - Wildcard patterns work (dev-* matches dev-cluster)
 - Permission denials are logged
 
-### 4.3 Admin User Management
+### 4.3 Admin User Management — NOT STARTED
 
 Add admin endpoints for managing users.
 
@@ -181,11 +224,12 @@ Add admin endpoints for managing users.
 
 ---
 
-## Phase 5: Production Readiness
+## Phase 5: Production Readiness — NOT STARTED
 
-### 5.1 TLS/mTLS
+### 5.1 TLS/mTLS — NOT STARTED
 
 Secure all communication with TLS.
+Gap: no `tls:` block in `central.yaml`, no TLS fields in any config.go.
 
 **Tasks:**
 - Central: Add TLS config for HTTP server (cert_file, key_file)
@@ -207,12 +251,15 @@ Secure all communication with TLS.
 - Invalid certificates rejected
 - Insecure mode available for development
 
-### 5.2 Audit Logging
+### 5.2 Audit Logging — PARTIAL (schema + config only)
 
 Log all kubectl commands for compliance and debugging.
+Done: `audit_logs` table exists and an `audit:` config block (retention_days,
+cleanup_interval) is present in `central.yaml`. Remaining: nothing writes to
+the table, no query endpoint, no CLI, no retention/cleanup job.
 
 **Tasks:**
-- Create audit_logs table (user, cluster, command, timestamp, duration, status, exit_code)
+- ~~Create audit_logs table (user, cluster, command, timestamp, duration, status, exit_code)~~ (DONE)
 - Log every command execution in the exec handler
 - Add `GET /api/v1/admin/audit` endpoint with filtering (user, cluster, date range)
 - Add `kbridge admin audit` CLI command
@@ -223,7 +270,7 @@ Log all kubectl commands for compliance and debugging.
 - Audit log queryable via API and CLI
 - Old logs cleaned up automatically
 
-### 5.3 Docker Images
+### 5.3 Docker Images — NOT STARTED
 
 Containerize all components.
 
@@ -240,7 +287,7 @@ Containerize all components.
 - Images are minimal (<50MB)
 - Images work correctly
 
-### 5.4 Helm Charts
+### 5.4 Helm Charts — NOT STARTED
 
 Create Helm charts for Kubernetes deployment.
 
@@ -260,7 +307,7 @@ Create Helm charts for Kubernetes deployment.
 - `helm install kbridge-agent ./charts/agent` works
 - All config values are customizable
 
-### 5.5 Documentation
+### 5.5 Documentation — NOT STARTED
 
 Write comprehensive documentation.
 
@@ -287,8 +334,14 @@ Write comprehensive documentation.
 |-------|-------|--------|
 | Phase 1 | Project setup, skeletons | Done |
 | Phase 2 | Core kubectl proxy functionality | Done |
-| Phase 3 | Authentication (DB, JWT, login) | Next |
-| Phase 4 | RBAC (roles, permissions, admin) | Planned |
-| Phase 5 | Production (TLS, audit, Docker, Helm) | Planned |
+| Phase 3 | Authentication (DB, JWT, login) | Done |
+| Phase 4 | RBAC (roles, permissions, admin) | Not started (schema exists) |
+| Phase 5 | Production (TLS, audit, Docker, Helm) | Not started (audit schema/config only) |
 
-**Recommended order:** Complete Phase 3 first to secure the system, then Phase 4 for access control, then Phase 5 for deployment readiness.
+**Recommended order:** Phase 4 next — RBAC enforcement is the biggest open
+security gap (any authenticated user can run any command on any cluster).
+Then Phase 5 for deployment.
+
+**Quick wins already 80% there (schema/config exists, just needs wiring):**
+- Audit logging (5.2) — table + config present, needs writes + query endpoint
+- RBAC (4.x) — tables + 2 of 3 default roles seeded, needs rbac.go + enforcement

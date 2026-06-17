@@ -30,3 +30,9 @@
 # OS generated files
 .DS_Store
 Thumbs.db
+
+docs/plans
+
+# Claude Code local artifacts (CLAUDE.md is intentionally tracked)
+.claude/settings.local.json
+.claude/*.local.json

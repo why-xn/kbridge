@@ -25,8 +25,12 @@ tests/e2e/            # End-to-end tests (require Kind + Docker)
 - `make test-e2e` — run E2E tests (requires Docker and Kind)
 - `make proto` — regenerate gRPC code from `api/proto/agent.proto`
 
+## Important
+- Think, plan and execute as a Staff Software, DevOps and Site Reliability Engineer
+
 ## Code Style
 
+- Write codes in domain driven style
 - Keep functions small (under 20 lines)
 - Prefer composition over inheritance
 - Write unit tests with table-driven test cases

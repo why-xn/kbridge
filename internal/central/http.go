@@ -43,26 +43,28 @@ const MaxExecTimeout = 5 * time.Minute
 
 // HTTPServer handles REST API requests from CLI clients.
 type HTTPServer struct {
-	router       *gin.Engine
-	agentStore   *AgentStore
-	commandQueue *CommandQueue
-	authHandlers *AuthHandlers
-	jwtManager   *auth.JWTManager
+	router        *gin.Engine
+	agentStore    *AgentStore
+	commandQueue  *CommandQueue
+	authHandlers  *AuthHandlers
+	adminHandlers *AdminHandlers
+	jwtManager    *auth.JWTManager
 }
 
 // NewHTTPServer creates a new HTTP server with configured routes.
-func NewHTTPServer(agentStore *AgentStore, cmdQueue *CommandQueue, ah *AuthHandlers, jm *auth.JWTManager) *HTTPServer {
+func NewHTTPServer(agentStore *AgentStore, cmdQueue *CommandQueue, ah *AuthHandlers, adminH *AdminHandlers, jm *auth.JWTManager) *HTTPServer {
 	gin.SetMode(gin.ReleaseMode)
 	router := gin.New()
 	router.Use(gin.Recovery())
 	router.Use(requestLogger())
 
 	s := &HTTPServer{
-		router:       router,
-		agentStore:   agentStore,
-		commandQueue: cmdQueue,
-		authHandlers: ah,
-		jwtManager:   jm,
+		router:        router,
+		agentStore:    agentStore,
+		commandQueue:  cmdQueue,
+		authHandlers:  ah,
+		adminHandlers: adminH,
+		jwtManager:    jm,
 	}
 	s.setupRoutes()
 	return s
@@ -98,6 +100,19 @@ func (s *HTTPServer) setupRoutes() {
 		if s.authHandlers != nil {
 			api.POST("/auth/logout", s.authHandlers.HandleLogout)
 			api.POST("/auth/change-password", s.authHandlers.HandleChangePassword)
+		}
+
+		// Admin routes require the admin role.
+		if s.adminHandlers != nil {
+			admin := api.Group("/admin")
+			if s.jwtManager != nil {
+				admin.Use(auth.AdminRequired())
+			}
+			{
+				admin.POST("/agent-tokens", s.adminHandlers.HandleCreateAgentToken)
+				admin.GET("/agent-tokens", s.adminHandlers.HandleListAgentTokens)
+				admin.DELETE("/agent-tokens/:id", s.adminHandlers.HandleRevokeAgentToken)
+			}
 		}
 	}
 }

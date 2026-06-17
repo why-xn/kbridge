@@ -1,6 +1,7 @@
 package central
 
 import (
+	"context"
 	"net/http"
 	"testing"
 	"time"
@@ -10,6 +11,8 @@ func testServerConfig() *Config {
 	cfg := DefaultConfig()
 	cfg.Database.Path = ":memory:"
 	cfg.Auth.JWTSecret = "test-secret-at-least-32-chars!!"
+	cfg.Bootstrap.AgentToken = "dev-token"
+	cfg.Bootstrap.AgentCluster = "dev-cluster"
 	return cfg
 }
 
@@ -60,10 +63,23 @@ func TestServer_AgentStore(t *testing.T) {
 	if store == nil {
 		t.Fatal("expected non-nil agent store")
 	}
+}
 
-	// Verify default token is added
-	if !store.ValidateToken("dev-token") {
-		t.Error("expected dev-token to be valid")
+func TestServer_SeedsBootstrapAgentToken(t *testing.T) {
+	cfg := testServerConfig()
+	srv, err := NewServer(cfg)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// The bootstrap token should be validatable via the persistent store.
+	cluster, err := NewAgentAuthenticator(srv.store).Authenticate(
+		context.Background(), "dev-token", "dev-cluster")
+	if err != nil {
+		t.Fatalf("expected bootstrap token to authenticate: %v", err)
+	}
+	if cluster.Name != "dev-cluster" {
+		t.Errorf("want cluster dev-cluster, got %q", cluster.Name)
 	}
 }
 

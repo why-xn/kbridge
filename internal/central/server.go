@@ -34,9 +34,6 @@ func NewServer(cfg *Config) (*Server, error) {
 	agentStore := NewAgentStore()
 	commandQueue := NewCommandQueue()
 
-	// Add default token for development (should be configurable in production)
-	agentStore.AddValidToken("dev-token")
-
 	// Open SQLite store
 	dbStore, err := NewSQLiteStore(cfg.Database.Path)
 	if err != nil {
@@ -54,12 +51,19 @@ func NewServer(cfg *Config) (*Server, error) {
 		seedAdminUser(dbStore, cfg)
 	}
 
+	// Seed a bootstrap agent token if configured (development convenience)
+	if cfg.Bootstrap.AgentToken != "" && cfg.Bootstrap.AgentCluster != "" {
+		seedAgentToken(dbStore, cfg)
+	}
+
 	// Set up auth components
 	jwtManager := auth.NewJWTManager(cfg.Auth.JWTSecret, cfg.Auth.AccessTokenExpiry)
 	authHandlers := NewAuthHandlers(dbStore, jwtManager, cfg.Auth.RefreshTokenExpiry)
+	adminHandlers := NewAdminHandlers(dbStore)
+	authenticator := NewAgentAuthenticator(dbStore)
 
-	httpHandler := NewHTTPServer(agentStore, commandQueue, authHandlers, jwtManager)
-	grpcHandler := NewGRPCServer(agentStore, commandQueue)
+	httpHandler := NewHTTPServer(agentStore, commandQueue, authHandlers, adminHandlers, jwtManager)
+	grpcHandler := NewGRPCServer(agentStore, commandQueue, authenticator)
 
 	grpcSrv := grpc.NewServer()
 	grpcHandler.RegisterWithServer(grpcSrv)
@@ -114,6 +118,39 @@ func seedAdminUser(store *SQLiteStore, cfg *Config) {
 	adminRoleID := "00000000-0000-0000-0000-000000000001"
 	if err := store.AssignRole(ctx, user.ID, adminRoleID, ""); err != nil {
 		log.Printf("Warning: failed to assign admin role: %v", err)
+	}
+}
+
+// seedAgentToken creates a bootstrap agent token (and its cluster) if one with
+// the same value does not already exist. Idempotent across restarts.
+func seedAgentToken(store *SQLiteStore, cfg *Config) {
+	ctx := context.Background()
+	hash := hashToken(cfg.Bootstrap.AgentToken)
+	if existing, _ := store.GetAgentTokenByHash(ctx, hash); existing != nil {
+		return
+	}
+
+	cluster, err := store.GetClusterByName(ctx, cfg.Bootstrap.AgentCluster)
+	if err != nil {
+		log.Printf("Warning: failed to look up bootstrap cluster: %v", err)
+		return
+	}
+	if cluster == nil {
+		cluster = &Cluster{Name: cfg.Bootstrap.AgentCluster, Status: ClusterStatusPending}
+		if err := store.CreateCluster(ctx, cluster); err != nil {
+			log.Printf("Warning: failed to create bootstrap cluster: %v", err)
+			return
+		}
+	}
+
+	token := &AgentToken{
+		ClusterID:   cluster.ID,
+		TokenHash:   hash,
+		TokenPrefix: cfg.Bootstrap.AgentToken[:min(len(cfg.Bootstrap.AgentToken), agentTokenPrefixLen)],
+		Description: "bootstrap token (seeded from config)",
+	}
+	if err := store.CreateAgentToken(ctx, token); err != nil {
+		log.Printf("Warning: failed to seed bootstrap agent token: %v", err)
 	}
 }
 

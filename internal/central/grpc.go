@@ -4,8 +4,10 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"log"
+	"time"
 
 	"github.com/why-xn/kbridge/api/proto/agentpb"
 	"google.golang.org/grpc"
@@ -19,15 +21,19 @@ const DefaultHeartbeatInterval = 30
 // GRPCServer handles gRPC requests from agents.
 type GRPCServer struct {
 	agentpb.UnimplementedAgentServiceServer
-	store    *AgentStore
+	agents   *AgentStore
 	cmdQueue *CommandQueue
+	authn    *AgentAuthenticator
 }
 
-// NewGRPCServer creates a new gRPC server with the given agent store and command queue.
-func NewGRPCServer(store *AgentStore, cmdQueue *CommandQueue) *GRPCServer {
+// NewGRPCServer creates a new gRPC server. agents tracks live agent state for
+// command routing; authn validates registration tokens against the persistent
+// store and resolves their bound cluster.
+func NewGRPCServer(agents *AgentStore, cmdQueue *CommandQueue, authn *AgentAuthenticator) *GRPCServer {
 	return &GRPCServer{
-		store:    store,
+		agents:   agents,
 		cmdQueue: cmdQueue,
+		authn:    authn,
 	}
 }
 
@@ -48,12 +54,13 @@ func (s *GRPCServer) Register(ctx context.Context, req *agentpb.RegisterRequest)
 		}, nil
 	}
 
-	// Validate agent token
-	if !s.store.ValidateToken(req.GetAgentToken()) {
-		log.Printf("Invalid agent token for cluster=%s", req.GetClusterName())
+	// Validate agent token against the persistent store and resolve its cluster.
+	cluster, err := s.authn.Authenticate(ctx, req.GetAgentToken(), req.GetClusterName())
+	if err != nil {
+		log.Printf("Agent token rejected for cluster=%s: %v", req.GetClusterName(), err)
 		return &agentpb.RegisterResponse{
 			Success:      false,
-			ErrorMessage: "invalid agent token",
+			ErrorMessage: registrationErrorMessage(err),
 		}, nil
 	}
 
@@ -67,7 +74,7 @@ func (s *GRPCServer) Register(ctx context.Context, req *agentpb.RegisterRequest)
 	// Build agent info from request
 	info := &AgentInfo{
 		ID:          agentID,
-		ClusterName: req.GetClusterName(),
+		ClusterName: cluster.Name,
 		Token:       req.GetAgentToken(),
 	}
 
@@ -79,14 +86,46 @@ func (s *GRPCServer) Register(ctx context.Context, req *agentpb.RegisterRequest)
 		info.Provider = meta.GetProvider()
 	}
 
-	// Store the agent
-	s.store.Register(info)
-	log.Printf("Agent registered: id=%s, cluster=%s", agentID, req.GetClusterName())
+	// Persist the cluster's connected state, then track the agent in memory
+	// for live command routing.
+	s.markClusterConnected(ctx, cluster, agentID, info)
+	s.agents.Register(info)
+	log.Printf("Agent registered: id=%s, cluster=%s", agentID, cluster.Name)
 
 	return &agentpb.RegisterResponse{
 		Success: true,
 		AgentId: agentID,
 	}, nil
+}
+
+// markClusterConnected updates the persisted cluster record to reflect a freshly
+// registered agent. Persistence failures are logged but do not fail registration.
+func (s *GRPCServer) markClusterConnected(ctx context.Context, cluster *Cluster, agentID string, info *AgentInfo) {
+	now := time.Now().UTC()
+	cluster.Status = AgentStatusConnected
+	cluster.AgentID = agentID
+	cluster.KubernetesVersion = info.KubernetesVersion
+	cluster.NodeCount = info.NodeCount
+	cluster.Region = info.Region
+	cluster.Provider = info.Provider
+	cluster.LastSeenAt = &now
+	if err := s.authn.store.UpdateCluster(ctx, cluster); err != nil {
+		log.Printf("Warning: failed to persist cluster %s state: %v", cluster.Name, err)
+	}
+}
+
+// registrationErrorMessage maps an authentication error to a client-facing message.
+func registrationErrorMessage(err error) string {
+	switch {
+	case errors.Is(err, ErrRevokedAgentToken):
+		return "agent token revoked"
+	case errors.Is(err, ErrExpiredAgentToken):
+		return "agent token expired"
+	case errors.Is(err, ErrClusterMismatch):
+		return "token not valid for requested cluster"
+	default:
+		return "invalid agent token"
+	}
 }
 
 // Heartbeat handles agent heartbeat requests.
@@ -102,7 +141,7 @@ func (s *GRPCServer) Heartbeat(ctx context.Context, req *agentpb.HeartbeatReques
 	agentStatus := convertAgentStatus(req.GetStatus())
 
 	// Update heartbeat in store
-	if !s.store.UpdateHeartbeat(req.GetAgentId(), agentStatus) {
+	if !s.agents.UpdateHeartbeat(req.GetAgentId(), agentStatus) {
 		log.Printf("Heartbeat from unknown agent: id=%s", req.GetAgentId())
 		return nil, status.Error(codes.NotFound, "agent not registered")
 	}
@@ -129,7 +168,7 @@ func (s *GRPCServer) GetPendingCommands(ctx context.Context, req *agentpb.GetPen
 	}
 
 	// Verify agent is registered
-	if _, exists := s.store.Get(agentID); !exists {
+	if _, exists := s.agents.Get(agentID); !exists {
 		return nil, status.Error(codes.NotFound, "agent not registered")
 	}
 

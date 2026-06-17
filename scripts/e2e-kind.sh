@@ -120,6 +120,9 @@ auth:
 audit:
   retention_days: 1
   cleanup_interval: 24h
+bootstrap:
+  agent_token: "dev-token"
+  agent_cluster: "${CLUSTER_NAME}"
 EOF
 
     # Start central service in background
@@ -299,6 +302,16 @@ main() {
             trap - EXIT
             cleanup
             ;;
+        cluster-up)
+            # Create the Kind cluster only (no services)
+            check_dependencies
+            create_cluster
+            ;;
+        cluster-down)
+            # Delete the Kind cluster only
+            trap - EXIT
+            delete_cluster
+            ;;
         test)
             # Set trap for cleanup on exit
             trap cleanup EXIT
@@ -316,9 +329,11 @@ main() {
             echo "Usage: $0 {setup|teardown|test}"
             echo ""
             echo "Commands:"
-            echo "  setup     - Create Kind cluster and start services (for manual testing)"
-            echo "  teardown  - Stop services and delete Kind cluster"
-            echo "  test      - Run full e2e test suite"
+            echo "  setup         - Create Kind cluster and start services (for manual testing)"
+            echo "  teardown      - Stop services and delete Kind cluster"
+            echo "  test          - Run full e2e test suite"
+            echo "  cluster-up    - Create the Kind cluster only"
+            echo "  cluster-down  - Delete the Kind cluster only"
             exit 1
             ;;
     esac
