@@ -24,3 +24,8 @@ audit:
 bootstrap:
   agent_token: "dev-token"
   agent_cluster: "dev-cluster"
+
+# rbac points at a declarative policy file (hot-reloaded on change). Leave
+# policy_file empty to disable enforcement (all authenticated users allowed).
+rbac:
+  policy_file: "configs/rbac.yaml"

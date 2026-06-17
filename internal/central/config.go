@@ -17,6 +17,13 @@ type Config struct {
 	Auth      AuthConfig      `yaml:"auth"`
 	Audit     AuditConfig     `yaml:"audit"`
 	Bootstrap BootstrapConfig `yaml:"bootstrap"`
+	RBAC      RBACConfig      `yaml:"rbac"`
+}
+
+// RBACConfig configures policy-file-based access control. When PolicyFile is
+// empty, RBAC enforcement is disabled (all authenticated users are allowed).
+type RBACConfig struct {
+	PolicyFile string `yaml:"policy_file"`
 }
 
 // BootstrapConfig optionally seeds an agent token on startup for development

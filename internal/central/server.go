@@ -26,6 +26,7 @@ type Server struct {
 	agentStore   *AgentStore
 	store        Store
 	commandQueue *CommandQueue
+	policy       *PolicyEngine
 	stopCh       chan struct{}
 }
 
@@ -62,7 +63,20 @@ func NewServer(cfg *Config) (*Server, error) {
 	adminHandlers := NewAdminHandlers(dbStore)
 	authenticator := NewAgentAuthenticator(dbStore)
 
-	httpHandler := NewHTTPServer(agentStore, commandQueue, authHandlers, adminHandlers, jwtManager)
+	// Load the RBAC policy if configured; nil engine means enforcement is off.
+	var policy *PolicyEngine
+	if cfg.RBAC.PolicyFile != "" {
+		policy, err = NewPolicyEngineFromFile(cfg.RBAC.PolicyFile)
+		if err != nil {
+			dbStore.Close()
+			return nil, fmt.Errorf("loading rbac policy: %w", err)
+		}
+		log.Printf("RBAC enforcement enabled from %s", cfg.RBAC.PolicyFile)
+	} else {
+		log.Printf("RBAC enforcement disabled (no rbac.policy_file configured)")
+	}
+
+	httpHandler := NewHTTPServer(agentStore, commandQueue, authHandlers, adminHandlers, policy, jwtManager)
 	grpcHandler := NewGRPCServer(agentStore, commandQueue, authenticator)
 
 	grpcSrv := grpc.NewServer()
@@ -81,6 +95,7 @@ func NewServer(cfg *Config) (*Server, error) {
 		agentStore:   agentStore,
 		store:        dbStore,
 		commandQueue: commandQueue,
+		policy:       policy,
 		stopCh:       make(chan struct{}),
 	}, nil
 }
@@ -170,6 +185,11 @@ func (s *Server) Run() error {
 
 	// Start disconnect checker in goroutine
 	go s.runDisconnectChecker()
+
+	// Start RBAC policy hot-reload watcher if enabled
+	if s.policy != nil {
+		s.policy.Watch(s.stopCh)
+	}
 
 	// Start gRPC server in goroutine
 	go func() {

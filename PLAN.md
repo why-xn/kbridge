@@ -140,69 +140,49 @@ without any agent reconnect is not implemented.
 
 ---
 
-## Phase 4: RBAC — NOT STARTED (schema exists, no logic)
+## Phase 4: RBAC — config-file based (ArgoCD-style)
 
-The `roles`, `permissions`, and `user_roles` tables exist and `admin` +
-`viewer` roles are seeded on startup. Everything below is unimplemented:
-no `internal/auth/rbac.go`, no permission checks in the exec handler, no
-admin endpoints.
+**Design change:** RBAC is defined declaratively in a YAML policy file
+(hot-reloaded), NOT stored/CRUD'd in the database. This is GitOps-friendly,
+version-controlled, and drops the role/permission CRUD endpoints and the
+`roles`/`permissions`/`user_roles` tables from the authz path. The DB keeps
+users only, for authentication. Modeled on ArgoCD's `argocd-rbac-cm`.
 
-### 4.1 Role Definitions — NOT STARTED
+### 4.1 Role Definitions — DONE (config-based)
 
-Implement the role-based access control model.
-Gap: only `admin` and `viewer` are seeded; the `developer` role from the
-acceptance criteria is missing. No role CRUD endpoints exist.
+Implemented in `internal/central/policy.go` + `rbac.go`:
+- Policy YAML: `default` role, `roles` (each with `rules` of
+  clusters/namespaces/resources/verbs), and `bindings` (subject→roles, subject
+  matched against the JWT email, wildcards supported). Example: `configs/rbac.yaml`.
+- Wildcard matching (`matchPattern`) and verb matching, fully unit-tested.
+- `PolicyEngine` holds the policy in an `atomic.Pointer` and hot-reloads on file
+  change via fsnotify (watches the containing dir; bad reloads are logged and the
+  previous policy is kept).
+- Default roles ship in the example policy (admin / developer / viewer).
+- `rbac.policy_file` config; empty = enforcement disabled (allow-all).
 
-**Tasks:**
-- Create Role model with JSON permissions:
-  ```json
-  {
-    "clusters": ["dev-*", "staging"],
-    "namespaces": ["default", "app-*"],
-    "resources": ["pods", "services", "deployments"],
-    "verbs": ["get", "list", "logs"]
-  }
-  ```
-- Create `internal/auth/rbac.go` with permission checking logic
-- Support wildcard matching for clusters, namespaces, resources
-- Create default roles on startup:
-  - `admin` - full access to all clusters
-  - `developer` - read/write on dev clusters
-  - `viewer` - read-only on all clusters
-- Add admin API endpoints:
-  - `GET /api/v1/admin/roles` - list roles
-  - `POST /api/v1/admin/roles` - create role
-  - `PUT /api/v1/admin/roles/{id}` - update role
-  - `DELETE /api/v1/admin/roles/{id}` - delete role
+Role CRUD endpoints are intentionally NOT implemented — roles live in the file.
 
 **Acceptance Criteria:**
-- Roles can be created with cluster/namespace/resource permissions
-- Wildcard patterns match correctly
-- Default roles exist on startup
+- Roles defined with cluster/namespace/resource/verb permissions ✓
+- Wildcard patterns match correctly (`dev-*` matches `dev-cluster`) ✓
+- Default roles exist (in the example policy) ✓
+- Policy changes take effect without restart (hot-reload) ✓
 
-### 4.2 Permission Enforcement — NOT STARTED
+### 4.2 Permission Enforcement — DONE
 
-Enforce RBAC on all kubectl command executions.
-This is the biggest open security gap: any authenticated user can currently
-run any kubectl command on any cluster.
-
-**Tasks:**
-- Parse kubectl command args to extract:
-  - Verb (get, list, create, delete, apply, edit, logs, exec)
-  - Resource type (pods, services, deployments, etc.)
-  - Namespace (from -n flag or default)
-- Check user permissions before routing command to agent
-- Return 403 with descriptive message if not permitted
-- Add user-role assignment API:
-  - `PUT /api/v1/admin/users/{id}/roles` - assign roles
-  - `GET /api/v1/admin/users/{id}/roles` - list user roles
-- Log permission denials
+Enforced in the exec handler (`http.go` `authorizeExec`):
+- `parseAccessRequest` extracts verb / resource (with `/name` stripped; pods for
+  logs/exec/etc.) / namespace (`-n`, `--namespace=`, `-A` → `*`, else default).
+- The user's JWT email is checked against the policy before the command is
+  routed to the agent; denials return 403 and are logged.
+- User→role assignment is via the policy `bindings`, not an API.
 
 **Acceptance Criteria:**
-- Unauthorized commands return 403
-- Authorized commands succeed
-- Wildcard patterns work (dev-* matches dev-cluster)
-- Permission denials are logged
+- Unauthorized commands return 403 (unit + verified) ✓
+- Authorized commands succeed (e2e: admin runs full kubectl suite) ✓
+- Wildcard patterns work (`dev-*` matches `dev-cluster`) ✓
+- Permission denials are logged ✓
 
 ### 4.3 Admin User Management — NOT STARTED
 
@@ -335,13 +315,15 @@ Write comprehensive documentation.
 | Phase 1 | Project setup, skeletons | Done |
 | Phase 2 | Core kubectl proxy functionality | Done |
 | Phase 3 | Authentication (DB, JWT, login) | Done |
-| Phase 4 | RBAC (roles, permissions, admin) | Not started (schema exists) |
+| Phase 4 | RBAC (config-file policy + enforcement) | Done except 4.3 admin user mgmt |
 | Phase 5 | Production (TLS, audit, Docker, Helm) | Not started (audit schema/config only) |
 
-**Recommended order:** Phase 4 next — RBAC enforcement is the biggest open
-security gap (any authenticated user can run any command on any cluster).
-Then Phase 5 for deployment.
+**Recommended order:** RBAC enforcement (Phase 4.1/4.2) is done and verified.
+Remaining: Phase 4.3 (admin user management + CLI), then Phase 5 for deployment.
 
 **Quick wins already 80% there (schema/config exists, just needs wiring):**
 - Audit logging (5.2) — table + config present, needs writes + query endpoint
-- RBAC (4.x) — tables + 2 of 3 default roles seeded, needs rbac.go + enforcement
+
+**Note on the `roles`/`permissions`/`user_roles` tables:** now unused by the
+authz path (RBAC moved to the policy file). Consider dropping them in a future
+migration, or keep for a possible future DB-override layer.

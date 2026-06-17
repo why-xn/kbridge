@@ -48,11 +48,12 @@ type HTTPServer struct {
 	commandQueue  *CommandQueue
 	authHandlers  *AuthHandlers
 	adminHandlers *AdminHandlers
+	policy        *PolicyEngine
 	jwtManager    *auth.JWTManager
 }
 
 // NewHTTPServer creates a new HTTP server with configured routes.
-func NewHTTPServer(agentStore *AgentStore, cmdQueue *CommandQueue, ah *AuthHandlers, adminH *AdminHandlers, jm *auth.JWTManager) *HTTPServer {
+func NewHTTPServer(agentStore *AgentStore, cmdQueue *CommandQueue, ah *AuthHandlers, adminH *AdminHandlers, policy *PolicyEngine, jm *auth.JWTManager) *HTTPServer {
 	gin.SetMode(gin.ReleaseMode)
 	router := gin.New()
 	router.Use(gin.Recovery())
@@ -64,6 +65,7 @@ func NewHTTPServer(agentStore *AgentStore, cmdQueue *CommandQueue, ah *AuthHandl
 		commandQueue:  cmdQueue,
 		authHandlers:  ah,
 		adminHandlers: adminH,
+		policy:        policy,
 		jwtManager:    jm,
 	}
 	s.setupRoutes()
@@ -182,6 +184,11 @@ func (s *HTTPServer) handleExecCommand(c *gin.Context) {
 		return
 	}
 
+	// Enforce RBAC before routing the command to the agent.
+	if !s.authorizeExec(c, clusterName, req) {
+		return
+	}
+
 	// Determine timeout
 	timeout := DefaultExecTimeout
 	if req.Timeout > 0 {
@@ -248,6 +255,30 @@ func (s *HTTPServer) handleExecCommand(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, response)
+}
+
+// authorizeExec checks the requesting user's RBAC permissions for the command.
+// It writes the appropriate error response and returns false when the request
+// must be rejected. When no authorizer is configured it allows the request.
+func (s *HTTPServer) authorizeExec(c *gin.Context, clusterName string, req ExecRequest) bool {
+	if s.policy == nil {
+		return true
+	}
+
+	claims := auth.GetUserFromContext(c)
+	if claims == nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "not authenticated"})
+		return false
+	}
+
+	access := parseAccessRequest(clusterName, req.Command, req.Namespace)
+	if !s.policy.Allows(claims.Email, access) {
+		log.Printf("RBAC denied: user=%s cluster=%s verb=%s resource=%s namespace=%s",
+			claims.Email, clusterName, access.Verb, access.Resource, access.Namespace)
+		c.JSON(http.StatusForbidden, gin.H{"error": "permission denied"})
+		return false
+	}
+	return true
 }
 
 // requestLogger returns a middleware that logs HTTP requests.

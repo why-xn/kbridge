@@ -1,0 +1,38 @@
+# kbridge RBAC policy (declarative, hot-reloaded on change).
+#
+# Auth (who you are) comes from the JWT; authz (what you can do) is defined here.
+# Each rule grants verbs on resources within clusters/namespaces; '*' is a
+# wildcard. A request is allowed if ANY rule of ANY of the user's roles matches.
+
+# Role applied to every authenticated user with no explicit binding below.
+# Keep this least-privilege.
+default: viewer
+
+roles:
+  - name: admin
+    rules:
+      - clusters: ["*"]
+        namespaces: ["*"]
+        resources: ["*"]
+        verbs: ["*"]
+
+  - name: developer
+    rules:
+      - clusters: ["dev-*", "staging"]
+        namespaces: ["*"]
+        resources: ["pods", "deployments", "services", "configmaps", "secrets"]
+        verbs: ["get", "list", "watch", "describe", "logs", "exec", "edit", "apply"]
+
+  - name: viewer
+    rules:
+      - clusters: ["*"]
+        namespaces: ["*"]
+        resources: ["*"]
+        verbs: ["get", "list", "watch", "describe", "logs"]
+
+bindings:
+  # subject is matched against the user's JWT email; wildcards are supported.
+  - subject: admin@kbridge.local
+    roles: ["admin"]
+  # - subject: "*@dev.example.com"
+  #   roles: ["developer"]

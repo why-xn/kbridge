@@ -123,6 +123,29 @@ audit:
 bootstrap:
   agent_token: "dev-token"
   agent_cluster: "${CLUSTER_NAME}"
+rbac:
+  policy_file: "${CONFIG_DIR}/rbac.yaml"
+EOF
+
+    # Create RBAC policy: the e2e admin gets full access; everyone else is a viewer.
+    cat > "${CONFIG_DIR}/rbac.yaml" <<EOF
+default: viewer
+roles:
+  - name: admin
+    rules:
+      - clusters: ["*"]
+        namespaces: ["*"]
+        resources: ["*"]
+        verbs: ["*"]
+  - name: viewer
+    rules:
+      - clusters: ["*"]
+        namespaces: ["*"]
+        resources: ["*"]
+        verbs: ["get", "list", "watch", "describe", "logs"]
+bindings:
+  - subject: admin@e2e.test
+    roles: ["admin"]
 EOF
 
     # Start central service in background
