@@ -204,7 +204,7 @@ file `bindings` (matched on email), per the config-based RBAC design.
 
 ---
 
-## Phase 5: Production Readiness — IN PROGRESS
+## Phase 5: Production Readiness — DONE
 
 ### 5.2 Audit Logging — DONE
 
@@ -290,24 +290,22 @@ the table, no query endpoint, no CLI, no retention/cleanup job.
 - `helm install ./charts/agent` renders ✓ (lint + template, incl. TLS+CA)
 - All config values customizable ✓
 
-### 5.5 Documentation — NOT STARTED
+### 5.5 Documentation — DONE
 
-Write comprehensive documentation.
-
-**Tasks:**
-- Update README.md with final features
-- Write installation guide (binary, Docker, Helm)
-- Write configuration reference (all options)
-- Write CLI command reference (all commands with examples)
-- Write API reference (all endpoints)
-- Write admin guide (user management, RBAC setup)
-- Add architecture diagrams
+- README updated for final features (RBAC/auth/audit/TLS/Docker/Helm); stale
+  "planned" markers removed; architecture diagram retained; Documentation index added.
+- `docs/installation.md` — binary, Docker, Helm.
+- `docs/configuration.md` — every central/agent/CLI option, env vars, TLS setup.
+- `docs/cli.md` — every command with examples.
+- `docs/api.md` — all HTTP endpoints with status codes.
+- `docs/rbac.md` — policy file format, matching semantics, examples.
+- `docs/admin.md` — users, agent tokens, audit, RBAC changes.
 
 **Acceptance Criteria:**
-- New users can get started from README
-- All config options documented
-- All CLI commands documented
-- All API endpoints documented
+- New users can get started from README ✓
+- All config options documented ✓
+- All CLI commands documented ✓
+- All API endpoints documented ✓
 
 ---
 
@@ -319,14 +317,13 @@ Write comprehensive documentation.
 | Phase 2 | Core kubectl proxy functionality | Done |
 | Phase 3 | Authentication (DB, JWT, login) | Done |
 | Phase 4 | RBAC (config-file policy + enforcement) | Done |
-| Phase 5 | Production (TLS, audit, Docker, Helm) | Not started (audit schema/config only) |
+| Phase 5 | Production (TLS, audit, Docker, Helm, docs) | Done |
 
-**Recommended order:** Phase 4 (RBAC + admin user management) is done and
-verified (unit + e2e). Next: Phase 5 for deployment (TLS, audit, Docker, Helm).
+**Status:** Phases 1–5 are complete and verified (unit + e2e). The system is
+feature-complete per this plan.
 
-**Quick wins already 80% there (schema/config exists, just needs wiring):**
-- Audit logging (5.2) — table + config present, needs writes + query endpoint
-
-**Note on the `roles`/`permissions`/`user_roles` tables:** now unused by the
-authz path (RBAC moved to the policy file). Consider dropping them in a future
-migration, or keep for a possible future DB-override layer.
+**Possible follow-ups (not in this plan):**
+- PostgreSQL store driver (the interface is ready; only SQLite is implemented).
+- Mutual TLS (client certificates) — currently server-authenticated TLS only.
+- Drop the unused `roles`/`permissions`/`user_roles` tables (RBAC moved to the
+  policy file), or keep them for a future DB-override layer.

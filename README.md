@@ -77,6 +77,11 @@ kbridge kubectl get pods           # Run kubectl on selected cluster
 kbridge kubectl apply -f app.yaml  # Any kubectl command works
 kbridge k get pods                 # 'k' alias for kubectl
 kbridge status                     # Show current context
+
+# Admin (requires the admin role)
+kbridge admin users list           # List users
+kbridge admin users create --email dev@corp.com --name Dev
+kbridge admin audit --user dev@corp.com   # View the command audit log
 ```
 
 ### Central Service (`kbridge-central`)
@@ -118,12 +123,18 @@ This produces three binaries in `bin/`:
 ./bin/kbridge-agent --config configs/agent.yaml
 ```
 
-**3. Use the CLI:**
+**3. Log in and use the CLI:**
 ```bash
+# Default admin is seeded from central.yaml (admin@kbridge.local / admin123 in
+# the example config — change these for any real deployment).
+./bin/kbridge login
 ./bin/kbridge clusters list
 ./bin/kbridge clusters use dev-cluster
 ./bin/kbridge kubectl get pods -A
 ```
+
+See [docs/installation.md](docs/installation.md) for binary, Docker, and Helm
+installs, and the [Documentation](#documentation) section below for full references.
 
 ## Configuration
 
@@ -211,30 +222,52 @@ spec:
 
 Users authenticate via `kbridge login`, which obtains a JWT token from central and stores it locally. All subsequent API calls include this token.
 
-### RBAC (Planned)
+### RBAC
 
-Roles define access by cluster, namespace, resource, and verb with wildcard support:
+Access control is defined in a declarative, hot-reloaded policy file
+(ArgoCD-style), enforced on every kubectl command before it reaches a cluster.
+Roles match by cluster, namespace, resource, and verb with wildcards; bindings
+map users (by JWT email) to roles:
 
 ```yaml
+default: viewer
 roles:
   - name: developer
-    clusters:
-      - name: "dev-*"
+    rules:
+      - clusters: ["dev-*", "staging"]
         namespaces: ["*"]
-        verbs: ["get", "list", "logs", "exec"]
         resources: ["pods", "services", "deployments"]
-
+        verbs: ["get", "list", "logs", "exec", "apply"]
   - name: admin
-    clusters:
-      - name: "*"
+    rules:
+      - clusters: ["*"]
         namespaces: ["*"]
-        verbs: ["*"]
         resources: ["*"]
+        verbs: ["*"]
+bindings:
+  - subject: admin@kbridge.local
+    roles: ["admin"]
 ```
+
+See [docs/rbac.md](docs/rbac.md) for the full policy reference.
 
 ### Agent Authentication
 
-Agents authenticate with pre-shared tokens during registration. TLS for all communication is planned.
+Agents authenticate with database-backed tokens, validated against a hash on
+registration; each token is bound to one cluster and can be revoked via the
+admin API. Tokens are managed with `POST/GET/DELETE /api/v1/admin/agent-tokens`.
+
+### TLS
+
+Server-authenticated TLS secures the HTTP API, the agent↔central gRPC channel,
+and the CLI. Generate a dev certificate with `make certs`; see
+[docs/configuration.md](docs/configuration.md#tls).
+
+### Audit Logging
+
+Every command (allowed, denied, failed, or timed out) is recorded with user,
+cluster, command, result, and duration. Query via `kbridge admin audit` or
+`GET /api/v1/admin/audit`.
 
 ## Tech Stack
 
@@ -244,9 +277,22 @@ Agents authenticate with pre-shared tokens during registration. TLS for all comm
 | CLI | Cobra + Viper |
 | HTTP Server | Gin |
 | RPC | gRPC + Protocol Buffers |
-| Database | SQLite (dev) / PostgreSQL (prod) - planned |
-| Auth | JWT (RS256) - planned |
+| Database | SQLite (`modernc.org/sqlite`, pure Go) |
+| Auth | JWT (HS256) + bcrypt |
+| Authorization | Declarative policy file (hot-reloaded) |
+| Transport security | Server-authenticated TLS (HTTP + gRPC) |
 | Config | YAML + environment variables |
+
+## Documentation
+
+| Guide | Contents |
+|-------|----------|
+| [Installation](docs/installation.md) | Binary, Docker, and Helm installation |
+| [Configuration](docs/configuration.md) | All central / agent / CLI options, incl. TLS |
+| [CLI reference](docs/cli.md) | Every command with examples |
+| [API reference](docs/api.md) | All HTTP endpoints |
+| [RBAC](docs/rbac.md) | Policy file format and examples |
+| [Admin guide](docs/admin.md) | Users, agent tokens, and audit logs |
 
 ## License
 
