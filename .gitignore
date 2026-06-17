@@ -40,3 +40,6 @@ docs/plans
 # Generated TLS certs (dev)
 /certs/
 *.pem
+
+# Superpowers brainstorming / spec docs (kept local, not committed)
+docs/superpowers/
