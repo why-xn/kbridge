@@ -1,0 +1,11 @@
+{{- if .Values.rbac.policy }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "central.fullname" . }}-rbac
+  labels:
+    {{- include "central.labels" . | nindent 4 }}
+data:
+  rbac.yaml: |
+    {{- .Values.rbac.policy | nindent 4 }}
+{{- end }}

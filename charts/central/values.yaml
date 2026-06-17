@@ -1,0 +1,73 @@
+replicaCount: 1
+
+image:
+  repository: kbridge-central
+  tag: latest
+  pullPolicy: IfNotPresent
+
+service:
+  type: ClusterIP
+  httpPort: 8080
+  grpcPort: 9090
+
+# Authentication secrets. CHANGE THESE for any real deployment.
+auth:
+  jwtSecret: "change-me-in-production-at-least-32-chars"
+  accessTokenExpiry: 24h
+  refreshTokenExpiry: 168h
+  adminEmail: "admin@kbridge.local"
+  adminPassword: "change-me"
+  adminName: "Admin"
+
+# Optional bootstrap agent token seeded on startup (leave empty in production).
+bootstrap:
+  agentToken: ""
+  agentCluster: ""
+
+audit:
+  retentionDays: 90
+  cleanupInterval: 24h
+
+# Inline RBAC policy (hot-reloaded). Empty policy string disables enforcement.
+rbac:
+  policy: |
+    default: viewer
+    roles:
+      - name: admin
+        rules:
+          - clusters: ["*"]
+            namespaces: ["*"]
+            resources: ["*"]
+            verbs: ["*"]
+      - name: viewer
+        rules:
+          - clusters: ["*"]
+            namespaces: ["*"]
+            resources: ["*"]
+            verbs: ["get", "list", "watch", "describe", "logs"]
+    bindings:
+      - subject: admin@kbridge.local
+        roles: ["admin"]
+
+# SQLite persistence. For HA, point at an external database instead.
+persistence:
+  enabled: true
+  size: 1Gi
+  storageClass: ""
+  dbPath: /data/kbridge.db
+
+# TLS: when enabled, secretName must reference an existing kubernetes.io/tls secret.
+tls:
+  enabled: false
+  secretName: ""
+
+ingress:
+  enabled: false
+  className: ""
+  host: ""
+  annotations: {}
+
+resources: {}
+nodeSelector: {}
+tolerations: []
+affinity: {}

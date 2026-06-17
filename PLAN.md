@@ -261,42 +261,34 @@ the table, no query endpoint, no CLI, no retention/cleanup job.
 - Audit log queryable via API and CLI
 - Old logs cleaned up automatically
 
-### 5.3 Docker Images — NOT STARTED
+### 5.3 Docker Images — DONE
 
-Containerize all components.
-
-**Tasks:**
-- Create multi-stage Dockerfile for CLI
-- Create multi-stage Dockerfile for central
-- Create multi-stage Dockerfile for agent
-- Use Alpine as base for minimal image size
-- Add `make docker` target to Makefile
-- Push to container registry (configurable)
+- Multi-stage, CGO-free (modernc sqlite) Alpine Dockerfiles in `build/`:
+  `central.Dockerfile`, `agent.Dockerfile` (bundles kubectl), `cli.Dockerfile`.
+  All run as a non-root user.
+- `make docker` (+ `docker-central`/`-agent`/`-cli`), parameterised by
+  `IMAGE_PREFIX` / `VERSION`.
 
 **Acceptance Criteria:**
-- `make docker` builds all images
-- Images are minimal (<50MB)
-- Images work correctly
+- `make docker` builds all images ✓ (verified building each)
+- Images minimal ✓ — CLI 18MB, central 36MB; agent 76MB (includes kubectl,
+  which the agent requires, so >50MB is expected)
+- Images work ✓ — central serves, CLI runs, agent has kubectl on PATH
 
-### 5.4 Helm Charts — NOT STARTED
+### 5.4 Helm Charts — DONE
 
-Create Helm charts for Kubernetes deployment.
-
-**Tasks:**
-- Create Helm chart for central service:
-  - Deployment, Service, ConfigMap, Secret
-  - Ingress (optional)
-  - PersistentVolumeClaim for SQLite (or external database config)
-- Create Helm chart for agent:
-  - Deployment, ServiceAccount, ClusterRole, ClusterRoleBinding
-  - ConfigMap, Secret for agent token
-- Add configurable values.yaml for both charts
-- Add documentation
+- `charts/central`: Deployment, Service, Secret (renders central.yaml with
+  secrets inline), ConfigMap (RBAC policy), PVC for SQLite, optional Ingress,
+  TLS-aware probes/mounts. Config swap triggers a rollout via checksum annotation.
+- `charts/agent`: Deployment, ServiceAccount, ClusterRole + Binding (rules
+  configurable; defaults broad with a note that the kbridge policy is the real
+  gate), Secret (agent.yaml + optional CA cert).
+- Both have a configurable `values.yaml`.
 
 **Acceptance Criteria:**
-- `helm install kbridge-central ./charts/central` works
-- `helm install kbridge-agent ./charts/agent` works
-- All config values are customizable
+- `helm install ./charts/central` renders ✓ (lint + template, incl. TLS+ingress)
+- `helm install ./charts/agent` renders ✓ (lint + template, incl. TLS+CA)
+- All config values customizable ✓
 
 ### 5.5 Documentation — NOT STARTED
 

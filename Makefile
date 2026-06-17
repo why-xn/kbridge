@@ -1,4 +1,8 @@
-.PHONY: build build-cli build-central build-agent clean proto test test-e2e e2e-setup e2e-teardown kind-up kind-down certs
+.PHONY: build build-cli build-central build-agent clean proto test test-e2e e2e-setup e2e-teardown kind-up kind-down certs docker docker-central docker-agent docker-cli
+
+# Container image settings (override on the command line, e.g. IMAGE_PREFIX=ghcr.io/acme VERSION=v1.0.0)
+IMAGE_PREFIX ?= kbridge
+VERSION ?= latest
 
 build: build-cli build-central build-agent
 
@@ -44,3 +48,15 @@ kind-down:
 # Generate self-signed TLS certs for local development (into ./certs)
 certs:
 	./scripts/gen-certs.sh certs
+
+# Build all container images
+docker: docker-central docker-agent docker-cli
+
+docker-central:
+	docker build -f build/central.Dockerfile -t $(IMAGE_PREFIX)-central:$(VERSION) .
+
+docker-agent:
+	docker build -f build/agent.Dockerfile -t $(IMAGE_PREFIX)-agent:$(VERSION) .
+
+docker-cli:
+	docker build -f build/cli.Dockerfile -t $(IMAGE_PREFIX):$(VERSION) .

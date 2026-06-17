@@ -1,0 +1,6 @@
+apiVersion: v2
+name: kbridge-agent
+description: kbridge agent that runs in a target cluster and executes kubectl on its behalf
+type: application
+version: 0.1.0
+appVersion: "latest"

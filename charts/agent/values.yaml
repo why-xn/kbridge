@@ -1,0 +1,42 @@
+replicaCount: 1
+
+image:
+  repository: kbridge-agent
+  tag: latest
+  pullPolicy: IfNotPresent
+
+central:
+  # gRPC address of the central service (in-cluster Service DNS or external host).
+  url: "kbridge-central:9090"
+  token: "change-me"
+  tls:
+    enabled: false
+    insecure: false
+    # PEM-encoded CA certificate to verify the central server. Mounted when set.
+    caCert: ""
+
+cluster:
+  name: "my-cluster"
+  kubernetesVersion: ""
+  nodeCount: 0
+  region: ""
+  provider: ""
+
+serviceAccount:
+  create: true
+  name: ""
+
+rbac:
+  create: true
+  # The agent executes kubectl using this ServiceAccount. The kbridge policy
+  # file on central is the real per-user authorization gate; scope these cluster
+  # permissions down to the minimum your users actually need.
+  rules:
+    - apiGroups: ["*"]
+      resources: ["*"]
+      verbs: ["*"]
+
+resources: {}
+nodeSelector: {}
+tolerations: []
+affinity: {}
