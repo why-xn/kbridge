@@ -80,7 +80,12 @@ func NewServer(cfg *Config) (*Server, error) {
 	httpHandler := NewHTTPServer(agentStore, commandQueue, authHandlers, adminHandlers, policy, auditRecorder, jwtManager)
 	grpcHandler := NewGRPCServer(agentStore, commandQueue, authenticator)
 
-	grpcSrv := grpc.NewServer()
+	grpcOpts, err := grpcServerOptions(cfg.TLS)
+	if err != nil {
+		dbStore.Close()
+		return nil, fmt.Errorf("configuring grpc tls: %w", err)
+	}
+	grpcSrv := grpc.NewServer(grpcOpts...)
 	grpcHandler.RegisterWithServer(grpcSrv)
 
 	httpSrv := &http.Server{
@@ -222,11 +227,19 @@ func (s *Server) startGRPC() error {
 		return fmt.Errorf("failed to listen on %s: %w", addr, err)
 	}
 
-	log.Printf("gRPC server listening on %s", addr)
+	scheme := "gRPC"
+	if s.config.TLS.Enabled {
+		scheme = "gRPC (TLS)"
+	}
+	log.Printf("%s server listening on %s", scheme, addr)
 	return s.grpcServer.Serve(lis)
 }
 
 func (s *Server) startHTTP() error {
+	if s.config.TLS.Enabled {
+		log.Printf("HTTPS server listening on %s", s.httpServer.Addr)
+		return s.httpServer.ListenAndServeTLS(s.config.TLS.CertFile, s.config.TLS.KeyFile)
+	}
 	log.Printf("HTTP server listening on %s", s.httpServer.Addr)
 	return s.httpServer.ListenAndServe()
 }

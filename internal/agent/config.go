@@ -16,8 +16,20 @@ type Config struct {
 
 // CentralConfig holds the central service connection configuration.
 type CentralConfig struct {
-	URL   string `yaml:"url"`
-	Token string `yaml:"token"`
+	URL   string         `yaml:"url"`
+	Token string         `yaml:"token"`
+	TLS   AgentTLSConfig `yaml:"tls"`
+}
+
+// AgentTLSConfig configures the agent's gRPC client transport security.
+//   - Enabled=false: plaintext.
+//   - Enabled, Insecure=true: TLS without verifying the server certificate.
+//   - Enabled, CAFile set: TLS verifying the server against the given CA.
+//   - Enabled, CAFile empty: TLS verifying against system root CAs.
+type AgentTLSConfig struct {
+	Enabled  bool   `yaml:"enabled"`
+	CAFile   string `yaml:"ca_file"`
+	Insecure bool   `yaml:"insecure"`
 }
 
 // ClusterConfig holds the cluster metadata configuration.

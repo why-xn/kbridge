@@ -221,30 +221,26 @@ file `bindings` (matched on email), per the config-based RBAC design.
 - Verified: unit (recorder, endpoint filters, denied-records-audit) + e2e
   (`TestAuditLogRecorded`).
 
-### 5.1 TLS/mTLS — NOT STARTED
+### 5.1 TLS — DONE (server-auth TLS)
 
-Secure all communication with TLS.
-Gap: no `tls:` block in `central.yaml`, no TLS fields in any config.go.
+Server-authenticated TLS across all hops; mutual TLS (client certs) is a
+possible future extension.
 
-**Tasks:**
-- Central: Add TLS config for HTTP server (cert_file, key_file)
-- Central: Add TLS config for gRPC server
-- Agent: Add TLS config for gRPC client (ca_file, insecure flag)
-- CLI: Support HTTPS URLs
-- Support self-signed certificates for development
-- Add config options:
-  ```yaml
-  tls:
-    enabled: true
-    cert_file: /etc/kbridge/tls.crt
-    key_file: /etc/kbridge/tls.key
-    ca_file: /etc/kbridge/ca.crt
-  ```
+- Central `tls: {enabled, cert_file, key_file}` secures both HTTP and gRPC with
+  the same cert (`config.go` + `tls.go`); validated when enabled.
+- Agent `central.tls: {enabled, ca_file, insecure}` builds gRPC client creds
+  (`agent/tls.go`): CA-verified, system-roots (empty CA), or skip-verify.
+- CLI honours `insecure_skip_verify` for HTTPS with self-signed certs.
+- `make certs` / `scripts/gen-certs.sh` generate a dev cert (localhost +
+  127.0.0.1 SAN). Example `tls:` blocks added to both configs (disabled default).
+- Verified: gRPC-over-TLS handshake integration test (TLS client registers,
+  plaintext client rejected), HTTPS smoke test (health over TLS, plaintext
+  rejected), agent-creds + config-validation unit tests.
 
 **Acceptance Criteria:**
-- All communication encrypted with TLS
-- Invalid certificates rejected
-- Insecure mode available for development
+- All communication can be encrypted with TLS ✓
+- Invalid/plaintext connections rejected ✓
+- Insecure mode available for development ✓
 
 ### 5.2 Audit Logging — PARTIAL (schema + config only)
 

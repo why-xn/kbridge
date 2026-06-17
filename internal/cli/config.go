@@ -14,6 +14,8 @@ const (
 	ConfigKeyCurrentCluster = "current_cluster"
 	ConfigKeyToken          = "token"
 	ConfigKeyRefreshToken   = "refresh_token"
+	// ConfigKeyInsecure skips TLS certificate verification (development only).
+	ConfigKeyInsecure = "insecure_skip_verify"
 )
 
 // configDir returns the kbridge config directory path
@@ -47,6 +49,7 @@ func initConfig() {
 	viper.SetDefault(ConfigKeyCurrentCluster, "")
 	viper.SetDefault(ConfigKeyToken, "")
 	viper.SetDefault(ConfigKeyRefreshToken, "")
+	viper.SetDefault(ConfigKeyInsecure, false)
 
 	// Read config file if it exists
 	if err := viper.ReadInConfig(); err != nil {

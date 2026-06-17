@@ -18,6 +18,15 @@ type Config struct {
 	Audit     AuditConfig     `yaml:"audit"`
 	Bootstrap BootstrapConfig `yaml:"bootstrap"`
 	RBAC      RBACConfig      `yaml:"rbac"`
+	TLS       TLSConfig       `yaml:"tls"`
+}
+
+// TLSConfig configures TLS for the central HTTP and gRPC servers. When enabled,
+// both servers present the same certificate.
+type TLSConfig struct {
+	Enabled  bool   `yaml:"enabled"`
+	CertFile string `yaml:"cert_file"`
+	KeyFile  string `yaml:"key_file"`
 }
 
 // RBACConfig configures policy-file-based access control. When PolicyFile is
@@ -141,7 +150,20 @@ func (c *Config) Validate() error {
 	if err := c.validateDatabase(); err != nil {
 		return err
 	}
-	return c.validateAuth()
+	if err := c.validateAuth(); err != nil {
+		return err
+	}
+	return c.validateTLS()
+}
+
+func (c *Config) validateTLS() error {
+	if !c.TLS.Enabled {
+		return nil
+	}
+	if c.TLS.CertFile == "" || c.TLS.KeyFile == "" {
+		return fmt.Errorf("tls.cert_file and tls.key_file are required when tls is enabled")
+	}
+	return nil
 }
 
 func (c *Config) validateServer() error {

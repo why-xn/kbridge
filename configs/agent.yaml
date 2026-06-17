@@ -1,6 +1,13 @@
 central:
   url: localhost:9090
   token: dev-token
+  # tls secures the gRPC connection to central. When enabled, set ca_file to the
+  # server's CA (the dev cert from `make certs`), or insecure: true to skip
+  # verification (development only).
+  tls:
+    enabled: false
+    ca_file: "certs/tls.crt"
+    insecure: false
 
 cluster:
   name: dev-cluster

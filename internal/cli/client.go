@@ -2,6 +2,7 @@ package cli
 
 import (
 	"bytes"
+	"crypto/tls"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -54,6 +55,17 @@ func NewCentralClient(baseURL string) *CentralClient {
 // SetToken sets the auth token for authenticated requests.
 func (c *CentralClient) SetToken(token string) {
 	c.token = token
+}
+
+// SetInsecureSkipVerify disables TLS certificate verification for HTTPS
+// requests. Intended for development with self-signed certificates only.
+func (c *CentralClient) SetInsecureSkipVerify(skip bool) {
+	if !skip {
+		return
+	}
+	c.httpClient.Transport = &http.Transport{
+		TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+	}
 }
 
 // doRequest executes an HTTP request with the auth token if set.
@@ -375,6 +387,7 @@ func newAuthenticatedClient(baseURL string) *CentralClient {
 	if token := viper.GetString(ConfigKeyToken); token != "" {
 		c.SetToken(token)
 	}
+	c.SetInsecureSkipVerify(viper.GetBool(ConfigKeyInsecure))
 	return c
 }
 
@@ -384,6 +397,7 @@ func newAuthenticatedClientWithTimeout(baseURL string, timeout time.Duration) *C
 	if token := viper.GetString(ConfigKeyToken); token != "" {
 		c.SetToken(token)
 	}
+	c.SetInsecureSkipVerify(viper.GetBool(ConfigKeyInsecure))
 	return c
 }
 

@@ -29,3 +29,10 @@ bootstrap:
 # policy_file empty to disable enforcement (all authenticated users allowed).
 rbac:
   policy_file: "configs/rbac.yaml"
+
+# tls secures both the HTTP and gRPC servers with the same certificate.
+# Generate a dev cert with `make certs`. Disabled by default.
+tls:
+  enabled: false
+  cert_file: "certs/tls.crt"
+  key_file: "certs/tls.key"

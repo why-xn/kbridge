@@ -9,7 +9,6 @@ import (
 
 	"github.com/why-xn/kbridge/api/proto/agentpb"
 	"google.golang.org/grpc"
-	"google.golang.org/grpc/credentials/insecure"
 )
 
 // DefaultPollInterval is how often the agent polls for pending commands.
@@ -80,9 +79,12 @@ func (a *Agent) connect(ctx context.Context) error {
 	dialCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 
-	// Use insecure credentials for now (TLS will be added later)
+	creds, err := clientTransportCredentials(a.config.Central.TLS)
+	if err != nil {
+		return fmt.Errorf("configuring transport security: %w", err)
+	}
 	conn, err := grpc.DialContext(dialCtx, a.config.Central.URL,
-		grpc.WithTransportCredentials(insecure.NewCredentials()),
+		grpc.WithTransportCredentials(creds),
 		grpc.WithBlock(),
 	)
 	if err != nil {

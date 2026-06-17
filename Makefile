@@ -1,4 +1,4 @@
-.PHONY: build build-cli build-central build-agent clean proto test test-e2e e2e-setup e2e-teardown kind-up kind-down
+.PHONY: build build-cli build-central build-agent clean proto test test-e2e e2e-setup e2e-teardown kind-up kind-down certs
 
 build: build-cli build-central build-agent
 
@@ -40,3 +40,7 @@ kind-up:
 # Delete the Kind cluster only
 kind-down:
 	./scripts/e2e-kind.sh cluster-down
+
+# Generate self-signed TLS certs for local development (into ./certs)
+certs:
+	./scripts/gen-certs.sh certs
