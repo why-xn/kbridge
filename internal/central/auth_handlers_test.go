@@ -266,4 +266,13 @@ func TestAuthHandler_Logout(t *testing.T) {
 	if w.Code != http.StatusOK {
 		t.Errorf("expected 200, got %d; body: %s", w.Code, w.Body.String())
 	}
+
+	// Logout must actually invalidate the refresh token, not just return 200.
+	rt, err := store.GetRefreshTokenByHash(context.Background(), hash)
+	if err != nil {
+		t.Fatalf("lookup after logout: %v", err)
+	}
+	if rt != nil {
+		t.Error("refresh token still present after logout")
+	}
 }

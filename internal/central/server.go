@@ -192,9 +192,11 @@ func (s *Server) Run() error {
 	// Start disconnect checker in goroutine
 	go s.runDisconnectChecker()
 
-	// Start RBAC policy hot-reload watcher if enabled
+	// Start RBAC policy hot-reload: a file watcher (where the filesystem
+	// delivers events) plus a SIGHUP handler (works anywhere).
 	if s.policy != nil {
 		s.policy.Watch(s.stopCh)
+		go s.runPolicyReloadOnSignal()
 	}
 
 	// Start the audit log retention cleanup loop if configured
@@ -242,6 +244,27 @@ func (s *Server) startHTTP() error {
 	}
 	log.Printf("HTTP server listening on %s", s.httpServer.Addr)
 	return s.httpServer.ListenAndServe()
+}
+
+// runPolicyReloadOnSignal reloads the RBAC policy on SIGHUP. This complements
+// the file watcher and works on filesystems that do not deliver inotify events.
+func (s *Server) runPolicyReloadOnSignal() {
+	ch := make(chan os.Signal, 1)
+	signal.Notify(ch, syscall.SIGHUP)
+	defer signal.Stop(ch)
+
+	for {
+		select {
+		case <-ch:
+			if err := s.policy.Reload(); err != nil {
+				log.Printf("rbac reload (SIGHUP) failed, keeping previous policy: %v", err)
+			} else {
+				log.Printf("rbac policy reloaded (SIGHUP)")
+			}
+		case <-s.stopCh:
+			return
+		}
+	}
 }
 
 // runAuditCleanup periodically deletes audit logs older than the configured

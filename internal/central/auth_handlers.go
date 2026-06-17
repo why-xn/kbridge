@@ -123,8 +123,12 @@ func (h *AuthHandlers) HandleLogout(c *gin.Context) {
 		return
 	}
 
+	// Look the token up by hash, then delete it by its ID (DeleteRefreshToken
+	// keys on id, not on the hash).
 	hash := hashToken(req.RefreshToken)
-	h.store.DeleteRefreshToken(c.Request.Context(), hash)
+	if rt, err := h.store.GetRefreshTokenByHash(c.Request.Context(), hash); err == nil && rt != nil {
+		h.store.DeleteRefreshToken(c.Request.Context(), rt.ID)
+	}
 	c.JSON(http.StatusOK, gin.H{"message": "logged out"})
 }
 

@@ -155,9 +155,10 @@ Implemented in `internal/central/policy.go` + `rbac.go`:
   clusters/namespaces/resources/verbs), and `bindings` (subject→roles, subject
   matched against the JWT email, wildcards supported). Example: `configs/rbac.yaml`.
 - Wildcard matching (`matchPattern`) and verb matching, fully unit-tested.
-- `PolicyEngine` holds the policy in an `atomic.Pointer` and hot-reloads on file
-  change via fsnotify (watches the containing dir; bad reloads are logged and the
-  previous policy is kept).
+- `PolicyEngine` holds the policy in an `atomic.Pointer` and hot-reloads via
+  fsnotify (watches the containing dir) and on SIGHUP (works on filesystems that
+  don't deliver inotify events, e.g. 9p/WSL mounts); bad reloads are logged and
+  the previous policy is kept.
 - Default roles ship in the example policy (admin / developer / viewer).
 - `rbac.policy_file` config; empty = enforcement disabled (allow-all).
 
