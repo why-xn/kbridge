@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -245,6 +246,77 @@ func (h *AdminHandlers) HandleDeleteUser(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"message": "user deleted"})
+}
+
+// defaultAuditPerPage and maxAuditPerPage bound audit query page sizes.
+const (
+	defaultAuditPerPage = 50
+	maxAuditPerPage     = 200
+)
+
+// HandleListAuditLogs returns audit logs filtered by query parameters:
+// user, cluster, status, from, to (RFC3339), page, per_page.
+func (h *AdminHandlers) HandleListAuditLogs(c *gin.Context) {
+	filter := AuditLogFilter{
+		UserEmail:   c.Query("user"),
+		ClusterName: c.Query("cluster"),
+		Status:      c.Query("status"),
+		Page:        atoiDefault(c.Query("page"), 1),
+		PerPage:     clampPerPage(atoiDefault(c.Query("per_page"), defaultAuditPerPage)),
+	}
+
+	from, err := parseTimeParam(c.Query("from"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid 'from' timestamp (use RFC3339)"})
+		return
+	}
+	to, err := parseTimeParam(c.Query("to"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid 'to' timestamp (use RFC3339)"})
+		return
+	}
+	filter.From, filter.To = from, to
+
+	logs, total, err := h.store.ListAuditLogs(c.Request.Context(), filter)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"logs":     logs,
+		"total":    total,
+		"page":     filter.Page,
+		"per_page": filter.PerPage,
+	})
+}
+
+func atoiDefault(s string, def int) int {
+	if s == "" {
+		return def
+	}
+	n, err := strconv.Atoi(s)
+	if err != nil || n < 1 {
+		return def
+	}
+	return n
+}
+
+func clampPerPage(n int) int {
+	if n > maxAuditPerPage {
+		return maxAuditPerPage
+	}
+	return n
+}
+
+func parseTimeParam(s string) (*time.Time, error) {
+	if s == "" {
+		return nil, nil
+	}
+	t, err := time.Parse(time.RFC3339, s)
+	if err != nil {
+		return nil, err
+	}
+	return &t, nil
 }
 
 // HandleRevokeAgentToken revokes an agent token by ID. Revocation is idempotent.

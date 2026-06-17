@@ -62,6 +62,7 @@ func NewServer(cfg *Config) (*Server, error) {
 	authHandlers := NewAuthHandlers(dbStore, jwtManager, cfg.Auth.RefreshTokenExpiry)
 	adminHandlers := NewAdminHandlers(dbStore)
 	authenticator := NewAgentAuthenticator(dbStore)
+	auditRecorder := NewAuditRecorder(dbStore)
 
 	// Load the RBAC policy if configured; nil engine means enforcement is off.
 	var policy *PolicyEngine
@@ -76,7 +77,7 @@ func NewServer(cfg *Config) (*Server, error) {
 		log.Printf("RBAC enforcement disabled (no rbac.policy_file configured)")
 	}
 
-	httpHandler := NewHTTPServer(agentStore, commandQueue, authHandlers, adminHandlers, policy, jwtManager)
+	httpHandler := NewHTTPServer(agentStore, commandQueue, authHandlers, adminHandlers, policy, auditRecorder, jwtManager)
 	grpcHandler := NewGRPCServer(agentStore, commandQueue, authenticator)
 
 	grpcSrv := grpc.NewServer()
@@ -191,6 +192,11 @@ func (s *Server) Run() error {
 		s.policy.Watch(s.stopCh)
 	}
 
+	// Start the audit log retention cleanup loop if configured
+	if s.config.Audit.RetentionDays > 0 && s.config.Audit.CleanupInterval > 0 {
+		go s.runAuditCleanup()
+	}
+
 	// Start gRPC server in goroutine
 	go func() {
 		if err := s.startGRPC(); err != nil {
@@ -223,6 +229,36 @@ func (s *Server) startGRPC() error {
 func (s *Server) startHTTP() error {
 	log.Printf("HTTP server listening on %s", s.httpServer.Addr)
 	return s.httpServer.ListenAndServe()
+}
+
+// runAuditCleanup periodically deletes audit logs older than the configured
+// retention window.
+func (s *Server) runAuditCleanup() {
+	ticker := time.NewTicker(s.config.Audit.CleanupInterval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ticker.C:
+			s.cleanupAuditLogs()
+		case <-s.stopCh:
+			return
+		}
+	}
+}
+
+func (s *Server) cleanupAuditLogs() {
+	cutoff := time.Now().UTC().AddDate(0, 0, -s.config.Audit.RetentionDays)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	n, err := s.store.CleanupOldAuditLogs(ctx, cutoff)
+	if err != nil {
+		log.Printf("audit cleanup failed: %v", err)
+		return
+	}
+	if n > 0 {
+		log.Printf("audit cleanup: removed %d log(s) older than %d days", n, s.config.Audit.RetentionDays)
+	}
 }
 
 // runDisconnectChecker periodically checks for and marks disconnected agents.

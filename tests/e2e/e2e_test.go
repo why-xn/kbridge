@@ -212,6 +212,49 @@ func TestRBACNonAdminRoleEnforced(t *testing.T) {
 	}
 }
 
+// Test: command executions are recorded in the audit log and queryable by admin.
+func TestAuditLogRecorded(t *testing.T) {
+	execURL := fmt.Sprintf("%s/api/v1/clusters/%s/exec", *centralURL, *clusterName)
+
+	// Admin runs a read; it should be audited as a success.
+	_, code := httpPostAuth(t, execURL, authToken,
+		map[string]any{"command": []string{"get", "pods", "-n", "kube-system"}})
+	if code != http.StatusOK {
+		t.Fatalf("admin exec: want 200, got %d", code)
+	}
+
+	body, code := httpGetAuth(t, fmt.Sprintf("%s/api/v1/admin/audit?cluster=%s", *centralURL, *clusterName), authToken)
+	if code != http.StatusOK {
+		t.Fatalf("audit query: want 200, got %d", code)
+	}
+	var resp struct {
+		Logs []struct {
+			UserEmail   string `json:"user_email"`
+			ClusterName string `json:"cluster_name"`
+			Command     string `json:"command"`
+			Status      string `json:"status"`
+		} `json:"logs"`
+		Total int `json:"total"`
+	}
+	if err := json.Unmarshal(body, &resp); err != nil {
+		t.Fatalf("parse audit response: %v", err)
+	}
+	if resp.Total == 0 {
+		t.Fatal("expected at least one audit entry")
+	}
+
+	found := false
+	for _, l := range resp.Logs {
+		if l.UserEmail == "admin@e2e.test" && l.Status == "success" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("expected an audited success by admin@e2e.test, got %+v", resp.Logs)
+	}
+}
+
 // Test: Central service health check
 func TestCentralServiceHealth(t *testing.T) {
 	url := fmt.Sprintf("%s/health", *centralURL)

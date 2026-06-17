@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 	"syscall"
 	"text/tabwriter"
@@ -45,17 +46,37 @@ var adminUsersCreateCmd = &cobra.Command{
 	RunE:  runAdminUsersCreate,
 }
 
+var (
+	auditUser    string
+	auditCluster string
+	auditStatus  string
+	auditLimit   int
+)
+
+var adminAuditCmd = &cobra.Command{
+	Use:   "audit",
+	Short: "View command audit logs",
+	Long:  `View the audit log of kubectl commands, optionally filtered by user, cluster, or status.`,
+	RunE:  runAdminAudit,
+}
+
 func init() {
 	rootCmd.AddCommand(adminCmd)
 	adminCmd.AddCommand(adminUsersCmd)
 	adminUsersCmd.AddCommand(adminUsersListCmd)
 	adminUsersCmd.AddCommand(adminUsersCreateCmd)
+	adminCmd.AddCommand(adminAuditCmd)
 
 	adminUsersCreateCmd.Flags().StringVar(&createUserEmail, "email", "", "user email (required)")
 	adminUsersCreateCmd.Flags().StringVar(&createUserName, "name", "", "user display name (required)")
 	adminUsersCreateCmd.Flags().StringVar(&createUserPassword, "password", "", "user password (prompted if omitted)")
 	adminUsersCreateCmd.MarkFlagRequired("email")
 	adminUsersCreateCmd.MarkFlagRequired("name")
+
+	adminAuditCmd.Flags().StringVar(&auditUser, "user", "", "filter by user email")
+	adminAuditCmd.Flags().StringVar(&auditCluster, "cluster", "", "filter by cluster name")
+	adminAuditCmd.Flags().StringVar(&auditStatus, "status", "", "filter by status (success/failed/denied/timeout)")
+	adminAuditCmd.Flags().IntVar(&auditLimit, "limit", 50, "maximum number of entries to show")
 }
 
 func adminClient() (*CentralClient, error) {
@@ -110,6 +131,42 @@ func runAdminUsersCreate(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to create user: %w", err)
 	}
 	fmt.Printf("Created user %q (%s).\n", user.Email, user.ID)
+	return nil
+}
+
+func runAdminAudit(cmd *cobra.Command, args []string) error {
+	client, err := adminClient()
+	if err != nil {
+		return err
+	}
+
+	filters := map[string]string{
+		"user":     auditUser,
+		"cluster":  auditCluster,
+		"status":   auditStatus,
+		"per_page": strconv.Itoa(auditLimit),
+	}
+	logs, total, err := client.ListAuditLogs(filters)
+	if err != nil {
+		return fmt.Errorf("failed to fetch audit logs: %w", err)
+	}
+	if len(logs) == 0 {
+		fmt.Println("No audit logs found.")
+		return nil
+	}
+
+	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
+	fmt.Fprintln(w, "TIME\tUSER\tCLUSTER\tSTATUS\tEXIT\tCOMMAND")
+	for _, l := range logs {
+		exit := "-"
+		if l.ExitCode != nil {
+			exit = strconv.Itoa(int(*l.ExitCode))
+		}
+		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\n",
+			l.CreatedAt, l.UserEmail, l.ClusterName, l.Status, exit, l.Command)
+	}
+	w.Flush()
+	fmt.Printf("\nShowing %d of %d entries.\n", len(logs), total)
 	return nil
 }
 

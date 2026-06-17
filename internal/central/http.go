@@ -4,6 +4,7 @@ import (
 	"context"
 	"log"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -49,11 +50,12 @@ type HTTPServer struct {
 	authHandlers  *AuthHandlers
 	adminHandlers *AdminHandlers
 	policy        *PolicyEngine
+	audit         *AuditRecorder
 	jwtManager    *auth.JWTManager
 }
 
 // NewHTTPServer creates a new HTTP server with configured routes.
-func NewHTTPServer(agentStore *AgentStore, cmdQueue *CommandQueue, ah *AuthHandlers, adminH *AdminHandlers, policy *PolicyEngine, jm *auth.JWTManager) *HTTPServer {
+func NewHTTPServer(agentStore *AgentStore, cmdQueue *CommandQueue, ah *AuthHandlers, adminH *AdminHandlers, policy *PolicyEngine, audit *AuditRecorder, jm *auth.JWTManager) *HTTPServer {
 	gin.SetMode(gin.ReleaseMode)
 	router := gin.New()
 	router.Use(gin.Recovery())
@@ -66,6 +68,7 @@ func NewHTTPServer(agentStore *AgentStore, cmdQueue *CommandQueue, ah *AuthHandl
 		authHandlers:  ah,
 		adminHandlers: adminH,
 		policy:        policy,
+		audit:         audit,
 		jwtManager:    jm,
 	}
 	s.setupRoutes()
@@ -119,6 +122,8 @@ func (s *HTTPServer) setupRoutes() {
 				admin.POST("/users", s.adminHandlers.HandleCreateUser)
 				admin.PUT("/users/:id", s.adminHandlers.HandleUpdateUser)
 				admin.DELETE("/users/:id", s.adminHandlers.HandleDeleteUser)
+
+				admin.GET("/audit", s.adminHandlers.HandleListAuditLogs)
 			}
 		}
 	}
@@ -223,6 +228,7 @@ func (s *HTTPServer) handleExecCommand(c *gin.Context) {
 	log.Printf("Queued command %s for cluster %s: %v", requestID, clusterName, req.Command)
 
 	// Wait for result with timeout
+	start := time.Now()
 	ctx, cancel := context.WithTimeout(c.Request.Context(), timeout+5*time.Second)
 	defer cancel()
 
@@ -233,11 +239,15 @@ func (s *HTTPServer) handleExecCommand(c *gin.Context) {
 
 	if err != nil {
 		log.Printf("Command %s timed out or failed: %v", requestID, err)
+		dur := time.Since(start).Milliseconds()
+		s.recordExecAudit(c, clusterName, req, AuditStatusTimeout, nil, &dur, "command execution timed out")
 		c.JSON(http.StatusGatewayTimeout, gin.H{
 			"error": "command execution timed out",
 		})
 		return
 	}
+
+	s.recordExecResult(c, clusterName, req, result, time.Since(start).Milliseconds())
 
 	// Build response
 	response := ExecResponse{
@@ -280,10 +290,45 @@ func (s *HTTPServer) authorizeExec(c *gin.Context, clusterName string, req ExecR
 	if !s.policy.Allows(claims.Email, access) {
 		log.Printf("RBAC denied: user=%s cluster=%s verb=%s resource=%s namespace=%s",
 			claims.Email, clusterName, access.Verb, access.Resource, access.Namespace)
+		s.recordExecAudit(c, clusterName, req, AuditStatusDenied, nil, nil, "permission denied")
 		c.JSON(http.StatusForbidden, gin.H{"error": "permission denied"})
 		return false
 	}
 	return true
+}
+
+// recordExecAudit writes an audit entry for an exec attempt, attributing it to
+// the authenticated user and client IP. A no-op when auditing is disabled.
+func (s *HTTPServer) recordExecAudit(c *gin.Context, cluster string, req ExecRequest, status string, exitCode *int32, durationMs *int64, errMsg string) {
+	if s.audit == nil {
+		return
+	}
+	entry := &AuditLog{
+		ClusterName:  cluster,
+		Command:      strings.Join(req.Command, " "),
+		Namespace:    req.Namespace,
+		Status:       status,
+		ExitCode:     exitCode,
+		DurationMs:   durationMs,
+		ErrorMessage: errMsg,
+		ClientIP:     c.ClientIP(),
+	}
+	if claims := auth.GetUserFromContext(c); claims != nil {
+		entry.UserID = claims.UserID
+		entry.UserEmail = claims.Email
+	}
+	s.audit.Record(entry)
+}
+
+// recordExecResult audits a completed command, deriving success/failed from the
+// exit code and any error message.
+func (s *HTTPServer) recordExecResult(c *gin.Context, cluster string, req ExecRequest, result *CommandResult, durationMs int64) {
+	status := AuditStatusSuccess
+	if result.ExitCode != 0 || result.ErrorMessage != "" {
+		status = AuditStatusFailed
+	}
+	exitCode := result.ExitCode
+	s.recordExecAudit(c, cluster, req, status, &exitCode, &durationMs, result.ErrorMessage)
 }
 
 // requestLogger returns a middleware that logs HTTP requests.

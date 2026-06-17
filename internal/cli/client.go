@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"time"
 
 	"github.com/spf13/viper"
@@ -242,6 +243,59 @@ func (c *CentralClient) CreateUser(email, name, password string) (*UserInfo, err
 		b, _ := io.ReadAll(resp.Body)
 		return nil, fmt.Errorf("server returned %d: %s", resp.StatusCode, string(b))
 	}
+}
+
+// AuditLogInfo represents one audit record returned by the admin API.
+type AuditLogInfo struct {
+	UserEmail   string `json:"user_email"`
+	ClusterName string `json:"cluster_name"`
+	Command     string `json:"command"`
+	Namespace   string `json:"namespace"`
+	Status      string `json:"status"`
+	ExitCode    *int32 `json:"exit_code"`
+	CreatedAt   string `json:"created_at"`
+}
+
+// ListAuditLogs fetches audit logs, applying the given query filters
+// (user, cluster, status, per_page, ...).
+func (c *CentralClient) ListAuditLogs(filters map[string]string) ([]AuditLogInfo, int, error) {
+	q := url.Values{}
+	for k, v := range filters {
+		if v != "" {
+			q.Set(k, v)
+		}
+	}
+	reqURL := c.baseURL + "/api/v1/admin/audit"
+	if encoded := q.Encode(); encoded != "" {
+		reqURL += "?" + encoded
+	}
+
+	req, err := http.NewRequest(http.MethodGet, reqURL, nil)
+	if err != nil {
+		return nil, 0, fmt.Errorf("creating request: %w", err)
+	}
+	resp, err := c.doRequest(req)
+	if err != nil {
+		return nil, 0, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode == http.StatusForbidden {
+		return nil, 0, fmt.Errorf("admin role required")
+	}
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, 0, fmt.Errorf("server returned %d: %s", resp.StatusCode, string(body))
+	}
+
+	var out struct {
+		Logs  []AuditLogInfo `json:"logs"`
+		Total int            `json:"total"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		return nil, 0, fmt.Errorf("decoding response: %w", err)
+	}
+	return out.Logs, out.Total, nil
 }
 
 // CheckHealth checks if the central service is healthy.

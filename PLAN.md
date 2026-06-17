@@ -204,7 +204,22 @@ file `bindings` (matched on email), per the config-based RBAC design.
 
 ---
 
-## Phase 5: Production Readiness — NOT STARTED
+## Phase 5: Production Readiness — IN PROGRESS
+
+### 5.2 Audit Logging — DONE
+
+- `AuditRecorder` domain service (`audit.go`) records each exec with user,
+  cluster, command, namespace, status, exit code, duration, and client IP.
+  Recording uses a background context (a cancelled request still audits) and
+  never fails the caller.
+- The exec handler records every outcome: `success` / `failed` (by exit code)
+  / `timeout`, and `denied` for RBAC rejections.
+- `GET /api/v1/admin/audit` with filters (user, cluster, status, from/to
+  RFC3339, page, per_page) + `kbridge admin audit` CLI.
+- Retention cleanup goroutine deletes logs older than `audit.retention_days`
+  every `audit.cleanup_interval`.
+- Verified: unit (recorder, endpoint filters, denied-records-audit) + e2e
+  (`TestAuditLogRecorded`).
 
 ### 5.1 TLS/mTLS — NOT STARTED
 

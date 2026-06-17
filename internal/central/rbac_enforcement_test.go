@@ -25,7 +25,7 @@ func newRBACTestServer(t *testing.T, policyYAML string) (*HTTPServer, *auth.JWTM
 	agents.Register(&AgentInfo{ID: "a1", ClusterName: "prod"})
 
 	srv := NewHTTPServer(agents, NewCommandQueue(),
-		NewAuthHandlers(store, jm, time.Hour), NewAdminHandlers(store), eng, jm)
+		NewAuthHandlers(store, jm, time.Hour), NewAdminHandlers(store), eng, nil, jm)
 	return srv, jm
 }
 
