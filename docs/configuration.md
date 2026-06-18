@@ -38,6 +38,9 @@ tls:
   enabled: false
   cert_file: "certs/tls.crt"
   key_file: "certs/tls.key"
+
+streams:
+  max_concurrent: 50       # max simultaneous streaming sessions (logs -f / get -w)
 ```
 
 | Key | Required | Notes |
@@ -47,6 +50,7 @@ tls:
 | `bootstrap.*` | no | Seeds one agent token at startup; prefer the admin API |
 | `rbac.policy_file` | no | When empty, all authenticated users are allowed |
 | `tls.*` | no | When `enabled`, `cert_file` + `key_file` are required |
+| `streams.max_concurrent` | no | Cap on concurrent streaming sessions; `0`/unset → default 50 |
 
 ## Agent (`agent.yaml`)
 

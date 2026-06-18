@@ -75,6 +75,7 @@ kbridge clusters list              # List available clusters
 kbridge clusters use <cluster>     # Select active cluster
 kbridge kubectl get pods           # Run kubectl on selected cluster
 kbridge kubectl apply -f app.yaml  # Any kubectl command works
+kbridge kubectl logs -f deploy/api # Follow/watch (-f/-w) streams live until Ctrl-C
 kbridge k get pods                 # 'k' alias for kubectl
 kbridge status                     # Show current context
 

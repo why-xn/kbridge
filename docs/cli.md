@@ -45,6 +45,15 @@ kbridge kubectl edit configmap app-config
 kbridge k get nodes
 ```
 
+**Streaming (`logs -f` / `get -w`).** When the command uses a follow/watch flag
+(`-f`, `--follow`, `-w`, `--watch`), the CLI streams output live until you stop
+it with Ctrl-C — no special syntax needed:
+
+```bash
+kbridge kubectl logs -f deploy/api -n prod    # tail logs live
+kbridge kubectl get pods -w                   # watch resource changes
+```
+
 ### `kbridge status`
 Shows the current central URL, authenticated user, and active cluster.
 

@@ -321,12 +321,37 @@ the table, no query endpoint, no CLI, no retention/cleanup job.
 | Phase 3 | Authentication (DB, JWT, login) | Done |
 | Phase 4 | RBAC (config-file policy + enforcement) | Done |
 | Phase 5 | Production (TLS, audit, Docker, Helm, docs) | Done |
+| Phase 6 | Streaming commands (`logs -f` / `get -w`) | Done |
 
 **Status:** Phases 1–5 are complete and verified (unit + e2e). The system is
-feature-complete per this plan.
+feature-complete per the original plan.
 
-**Possible follow-ups (not in this plan):**
+## Phase 6: Streaming commands (`logs -f` / `get -w`) — DONE
+
+Shipped after the original plan. Follow/watch kubectl commands stream end-to-end
+via a persistent bidirectional gRPC stream the agent opens to central
+(`OpenStream`), multiplexed per session by a `SessionManager`; the CLI
+auto-detects `-f`/`--follow`/`-w`/`--watch` and reads a chunked HTTP response
+from `POST /api/v1/clusters/:name/stream`. RBAC and audit are reused (with a new
+`canceled` audit status); `streams.max_concurrent` (default 50) bounds sessions.
+The one-shot exec path is unchanged. Verified by unit, integration, and e2e
+(`TestStreamingLogsFollow`).
+
+**Follow-ups specific to streaming (tracked, not blocking):**
+- Agent stream-drop process leak: on a transient stream drop+reconnect, in-flight
+  sessions' kubectl processes are only torn down at agent shutdown (not on the
+  blip). Proactively cancel a connection's sessions when its stream ends.
+- `SessionManager` max-concurrent is a TOCTOU check (the count is read, then the
+  send happens unlocked, then the insert) — a burst can transiently exceed the
+  cap by a few. Reserve the slot under the lock if a hard cap is needed.
+- Cosmetic: expose `Session.Output` as `<-chan`; drop the executor's redundant
+  `bufio` layer over the pipes; wrap the `json.Marshal` error in CLI
+  `StreamCommand`; replace a couple of timing `sleep`s in tests with polling.
+
+**Possible follow-ups (not in any plan):**
 - PostgreSQL store driver (the interface is ready; only SQLite is implemented).
 - Mutual TLS (client certificates) — currently server-authenticated TLS only.
 - Drop the unused `roles`/`permissions`/`user_roles` tables (RBAC moved to the
   policy file), or keep them for a future DB-override layer.
+- Interactive `exec -it` and `port-forward` — build on the streaming foundation
+  (each its own design + plan).

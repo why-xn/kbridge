@@ -49,6 +49,15 @@ Returns `{output, exit_code, error}`. Status codes:
 
 Every call is recorded in the audit log.
 
+### `POST /api/v1/clusters/{name}/stream`
+Streams a follow/watch command (`logs -f`, `get -w`). Same request body as
+`exec`. RBAC is checked before the stream starts (403 on denial). On success
+returns `200` with a chunked response body that streams stdout/stderr until the
+command ends or the client disconnects (which cancels it). Status codes: `403`
+denied, `404` cluster not found, `503` agent disconnected or no open stream,
+`429` over `streams.max_concurrent`. The outcome is audited as `success`,
+`failed`, or `canceled`.
+
 ## Admin — agent tokens
 
 ### `POST /api/v1/admin/agent-tokens`
