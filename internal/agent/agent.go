@@ -52,6 +52,9 @@ func (a *Agent) Run(ctx context.Context) error {
 	// Start command polling loop in goroutine
 	go a.runCommandPollLoop(ctx)
 
+	// Start persistent stream client
+	go a.runStream(ctx)
+
 	// Run heartbeat loop (blocks until stopped)
 	a.runHeartbeatLoop(ctx)
 

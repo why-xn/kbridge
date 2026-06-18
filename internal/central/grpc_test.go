@@ -2,8 +2,10 @@ package central
 
 import (
 	"context"
+	"io"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/why-xn/kbridge/api/proto/agentpb"
 	"google.golang.org/grpc/codes"
@@ -22,7 +24,7 @@ func newTestGRPCServer(t *testing.T) (*GRPCServer, *AgentStore, *CommandQueue) {
 	db := newTestStore(t)
 	seedClusterToken(t, db, testClusterName, testAgentToken, nil)
 	authn := NewAgentAuthenticator(db)
-	return NewGRPCServer(agents, cmdQueue, authn), agents, cmdQueue
+	return NewGRPCServer(agents, cmdQueue, authn, NewSessionManager(10)), agents, cmdQueue
 }
 
 func TestGRPCServer_Register_Success(t *testing.T) {
@@ -72,7 +74,7 @@ func TestGRPCServer_Register_PersistsClusterConnected(t *testing.T) {
 	ctx := context.Background()
 	db := newTestStore(t)
 	cluster := seedClusterToken(t, db, "edge", "edge-token", nil)
-	srv := NewGRPCServer(NewAgentStore(), NewCommandQueue(), NewAgentAuthenticator(db))
+	srv := NewGRPCServer(NewAgentStore(), NewCommandQueue(), NewAgentAuthenticator(db), NewSessionManager(10))
 
 	resp, err := srv.Register(ctx, &agentpb.RegisterRequest{
 		AgentToken:  "edge-token",
@@ -102,7 +104,7 @@ func TestGRPCServer_Register_RevokedToken(t *testing.T) {
 	ctx := context.Background()
 	db := newTestStore(t)
 	seedClusterToken(t, db, "edge", "edge-token", func(at *AgentToken) { at.IsRevoked = true })
-	srv := NewGRPCServer(NewAgentStore(), NewCommandQueue(), NewAgentAuthenticator(db))
+	srv := NewGRPCServer(NewAgentStore(), NewCommandQueue(), NewAgentAuthenticator(db), NewSessionManager(10))
 
 	resp, err := srv.Register(ctx, &agentpb.RegisterRequest{
 		AgentToken:  "edge-token",
@@ -169,7 +171,7 @@ func TestGRPCServer_Register_MultipleAgents(t *testing.T) {
 	ctx := context.Background()
 	db := newTestStore(t)
 	store := NewAgentStore()
-	srv := NewGRPCServer(store, NewCommandQueue(), NewAgentAuthenticator(db))
+	srv := NewGRPCServer(store, NewCommandQueue(), NewAgentAuthenticator(db), NewSessionManager(10))
 
 	// Each cluster has its own token: a token authorizes exactly one cluster.
 	clusters := []string{"cluster-a", "cluster-b", "cluster-c"}
@@ -296,31 +298,6 @@ func TestGRPCServer_Heartbeat_MissingAgentID(t *testing.T) {
 
 	if st.Code() != codes.InvalidArgument {
 		t.Errorf("expected code %v, got %v", codes.InvalidArgument, st.Code())
-	}
-}
-
-func TestGRPCServer_ExecuteCommand(t *testing.T) {
-	srv, _, _ := newTestGRPCServer(t)
-
-	req := &agentpb.CommandRequest{
-		RequestId: "req-123",
-		AgentId:   "agent-test-cluster",
-		Command:   []string{"get", "pods"},
-	}
-
-	// ExecuteCommand should return Unimplemented error
-	err := srv.ExecuteCommand(req, nil)
-	if err == nil {
-		t.Fatal("expected error, got nil")
-	}
-
-	st, ok := status.FromError(err)
-	if !ok {
-		t.Fatalf("expected gRPC status error, got %v", err)
-	}
-
-	if st.Code() != codes.Unimplemented {
-		t.Errorf("expected code %v, got %v", codes.Unimplemented, st.Code())
 	}
 }
 
@@ -536,4 +513,63 @@ func TestGRPCServer_SubmitCommandResult_MissingRequestID(t *testing.T) {
 	if st.Code() != codes.InvalidArgument {
 		t.Errorf("expected code %v, got %v", codes.InvalidArgument, st.Code())
 	}
+}
+
+func TestGRPCServer_OpenStream_RegistersAndRoutes(t *testing.T) {
+	ctx := context.Background()
+	db := newTestStore(t)
+	seedClusterToken(t, db, "edge", "edge-stream-token", nil)
+	sm := NewSessionManager(10)
+	srv := NewGRPCServer(NewAgentStore(), NewCommandQueue(), NewAgentAuthenticator(db), sm)
+
+	// Register the agent in the in-memory store so OpenStream accepts it.
+	resp, _ := srv.Register(ctx, &agentpb.RegisterRequest{AgentToken: "edge-stream-token", ClusterName: "edge"})
+
+	fs := newFakeOpenStream(resp.AgentId)
+	go func() { _ = srv.OpenStream(fs) }()
+	fs.waitRegistered(t)
+
+	// Once registered, the manager can start a session for this agent.
+	if _, err := sm.Start(resp.AgentId, []string{"logs", "-f"}, ""); err != nil {
+		t.Fatalf("start after OpenStream: %v", err)
+	}
+}
+
+type fakeOpenStream struct {
+	agentpb.AgentService_OpenStreamServer
+	agentID  string
+	incoming chan *agentpb.AgentStreamMessage
+	sent     chan *agentpb.CentralStreamMessage
+	ctx      context.Context
+}
+
+func newFakeOpenStream(agentID string) *fakeOpenStream {
+	f := &fakeOpenStream{
+		agentID:  agentID,
+		incoming: make(chan *agentpb.AgentStreamMessage, 4),
+		sent:     make(chan *agentpb.CentralStreamMessage, 4),
+		ctx:      context.Background(),
+	}
+	f.incoming <- &agentpb.AgentStreamMessage{Msg: &agentpb.AgentStreamMessage_Register{
+		Register: &agentpb.StreamRegister{AgentId: agentID},
+	}}
+	return f
+}
+
+func (f *fakeOpenStream) Context() context.Context { return f.ctx }
+func (f *fakeOpenStream) Send(m *agentpb.CentralStreamMessage) error {
+	f.sent <- m
+	return nil
+}
+func (f *fakeOpenStream) Recv() (*agentpb.AgentStreamMessage, error) {
+	msg, ok := <-f.incoming
+	if !ok {
+		return nil, io.EOF
+	}
+	return msg, nil
+}
+func (f *fakeOpenStream) waitRegistered(t *testing.T) {
+	t.Helper()
+	// Give the handler a moment to process the Register message.
+	time.Sleep(100 * time.Millisecond)
 }

@@ -77,8 +77,10 @@ func NewServer(cfg *Config) (*Server, error) {
 		log.Printf("RBAC enforcement disabled (no rbac.policy_file configured)")
 	}
 
-	httpHandler := NewHTTPServer(agentStore, commandQueue, authHandlers, adminHandlers, policy, auditRecorder, jwtManager)
-	grpcHandler := NewGRPCServer(agentStore, commandQueue, authenticator)
+	sessionManager := NewSessionManager(cfg.Streams.MaxConcurrent)
+
+	httpHandler := NewHTTPServer(agentStore, commandQueue, authHandlers, adminHandlers, policy, auditRecorder, sessionManager, jwtManager)
+	grpcHandler := NewGRPCServer(agentStore, commandQueue, authenticator, sessionManager)
 
 	grpcOpts, err := grpcServerOptions(cfg.TLS)
 	if err != nil {

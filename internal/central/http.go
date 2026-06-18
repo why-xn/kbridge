@@ -51,11 +51,12 @@ type HTTPServer struct {
 	adminHandlers *AdminHandlers
 	policy        *PolicyEngine
 	audit         *AuditRecorder
+	sessions      *SessionManager
 	jwtManager    *auth.JWTManager
 }
 
 // NewHTTPServer creates a new HTTP server with configured routes.
-func NewHTTPServer(agentStore *AgentStore, cmdQueue *CommandQueue, ah *AuthHandlers, adminH *AdminHandlers, policy *PolicyEngine, audit *AuditRecorder, jm *auth.JWTManager) *HTTPServer {
+func NewHTTPServer(agentStore *AgentStore, cmdQueue *CommandQueue, ah *AuthHandlers, adminH *AdminHandlers, policy *PolicyEngine, audit *AuditRecorder, sessions *SessionManager, jm *auth.JWTManager) *HTTPServer {
 	gin.SetMode(gin.ReleaseMode)
 	router := gin.New()
 	router.Use(gin.Recovery())
@@ -69,6 +70,7 @@ func NewHTTPServer(agentStore *AgentStore, cmdQueue *CommandQueue, ah *AuthHandl
 		adminHandlers: adminH,
 		policy:        policy,
 		audit:         audit,
+		sessions:      sessions,
 		jwtManager:    jm,
 	}
 	s.setupRoutes()
@@ -100,6 +102,9 @@ func (s *HTTPServer) setupRoutes() {
 	{
 		api.GET("/clusters", s.handleListClusters)
 		api.POST("/clusters/:name/exec", s.handleExecCommand)
+		if s.sessions != nil {
+			api.POST("/clusters/:name/stream", s.handleStreamCommand)
+		}
 
 		// Auth routes that require authentication
 		if s.authHandlers != nil {
@@ -329,6 +334,82 @@ func (s *HTTPServer) recordExecResult(c *gin.Context, cluster string, req ExecRe
 	}
 	exitCode := result.ExitCode
 	s.recordExecAudit(c, cluster, req, status, &exitCode, &durationMs, result.ErrorMessage)
+}
+
+// handleStreamCommand streams a long-running kubectl command (logs -f, get -w)
+// to the client over a chunked HTTP response.
+func (s *HTTPServer) handleStreamCommand(c *gin.Context) {
+	clusterName := c.Param("name")
+	agent, exists := s.agentStore.GetByClusterName(clusterName)
+	if !exists {
+		c.JSON(http.StatusNotFound, gin.H{"error": "cluster not found"})
+		return
+	}
+	if agent.Status != AgentStatusConnected {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "cluster agent is disconnected"})
+		return
+	}
+
+	var req ExecRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request: " + err.Error()})
+		return
+	}
+	if len(req.Command) == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "command is required"})
+		return
+	}
+	if !s.authorizeExec(c, clusterName, req) {
+		return
+	}
+
+	sess, err := s.sessions.Start(agent.ID, req.Command, req.Namespace)
+	if err != nil {
+		if err == ErrTooManyStreams {
+			c.JSON(http.StatusTooManyRequests, gin.H{"error": "too many concurrent streams"})
+			return
+		}
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "streaming unavailable for this cluster"})
+		return
+	}
+
+	c.Header("Content-Type", "text/plain; charset=utf-8")
+	c.Status(http.StatusOK)
+	flusher, _ := c.Writer.(http.Flusher)
+	start := time.Now()
+
+	s.streamSessionToClient(c, sess, flusher)
+
+	exitCode, errMsg := sess.Wait()
+	status := AuditStatusSuccess
+	if c.Request.Context().Err() != nil {
+		status = AuditStatusCanceled
+	} else if exitCode != 0 || errMsg != "" {
+		status = AuditStatusFailed
+	}
+	dur := time.Since(start).Milliseconds()
+	ec := exitCode
+	s.recordExecAudit(c, clusterName, req, status, &ec, &dur, errMsg)
+}
+
+// streamSessionToClient copies session output to the response until the session
+// ends or the client disconnects (which cancels the session).
+func (s *HTTPServer) streamSessionToClient(c *gin.Context, sess *Session, flusher http.Flusher) {
+	for {
+		select {
+		case <-c.Request.Context().Done():
+			s.sessions.Cancel(sess.ID)
+			return
+		case chunk, ok := <-sess.Output:
+			if !ok {
+				return
+			}
+			c.Writer.Write(chunk.Data) //nolint:errcheck
+			if flusher != nil {
+				flusher.Flush()
+			}
+		}
+	}
 }
 
 // requestLogger returns a middleware that logs HTTP requests.

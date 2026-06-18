@@ -1,0 +1,216 @@
+package central
+
+import (
+	"errors"
+	"sync"
+
+	"github.com/google/uuid"
+	"github.com/why-xn/kbridge/api/proto/agentpb"
+)
+
+// Errors returned by Start.
+var (
+	ErrNoAgentStream  = errors.New("agent has no open stream")
+	ErrTooManyStreams = errors.New("too many concurrent streams")
+)
+
+// sessionOutputBuffer bounds how many chunks may queue for a slow client.
+const sessionOutputBuffer = 64
+
+// streamSender is the subset of the gRPC agent stream the manager needs to send on.
+type streamSender interface {
+	Send(*agentpb.CentralStreamMessage) error
+}
+
+// StreamChunk is one piece of command output.
+type StreamChunk struct {
+	Type agentpb.OutputType
+	Data []byte
+}
+
+// Session is a single streaming command in flight.
+type Session struct {
+	ID      string
+	AgentID string
+	Output  chan StreamChunk
+	done    chan struct{}
+	once    sync.Once
+	// exitCode and errMsg are written inside once.Do before closing done,
+	// so reads after <-done are race-free without additional locking.
+	exitCode int32
+	errMsg   string
+}
+
+func (s *Session) close(exitCode int32, errMsg string) {
+	s.once.Do(func() {
+		s.exitCode = exitCode
+		s.errMsg = errMsg
+		close(s.Output)
+		close(s.done)
+	})
+}
+
+// Wait blocks until the session ends and returns its exit code and error message.
+func (s *Session) Wait() (int32, string) {
+	<-s.done
+	return s.exitCode, s.errMsg
+}
+
+type agentConn struct {
+	sender   streamSender
+	mu       sync.Mutex // gRPC streams are not safe for concurrent Send
+	sessions map[string]*Session
+}
+
+// SessionManager multiplexes streaming sessions over per-agent bidi streams.
+type SessionManager struct {
+	mu       sync.Mutex
+	agents   map[string]*agentConn
+	sessions map[string]*Session
+	max      int
+}
+
+// NewSessionManager creates a manager allowing maxConcurrent sessions (<=0 means default 50).
+func NewSessionManager(maxConcurrent int) *SessionManager {
+	if maxConcurrent <= 0 {
+		maxConcurrent = 50
+	}
+	return &SessionManager{
+		agents:   make(map[string]*agentConn),
+		sessions: make(map[string]*Session),
+		max:      maxConcurrent,
+	}
+}
+
+// RegisterAgentStream records an agent's open stream.
+func (m *SessionManager) RegisterAgentStream(agentID string, s streamSender) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.agents[agentID] = &agentConn{sender: s, sessions: make(map[string]*Session)}
+}
+
+// UnregisterAgentStream drops an agent and closes all of its sessions.
+func (m *SessionManager) UnregisterAgentStream(agentID string) {
+	m.mu.Lock()
+	conn := m.agents[agentID]
+	delete(m.agents, agentID)
+	var dead []*Session
+	if conn != nil {
+		for id, sess := range conn.sessions {
+			dead = append(dead, sess)
+			delete(m.sessions, id)
+		}
+	}
+	m.mu.Unlock()
+	for _, sess := range dead {
+		sess.close(-1, "agent disconnected")
+	}
+}
+
+// Start opens a new session on the agent and pushes StartStream down its stream.
+func (m *SessionManager) Start(agentID string, command []string, namespace string) (*Session, error) {
+	m.mu.Lock()
+	conn := m.agents[agentID]
+	if conn == nil {
+		m.mu.Unlock()
+		return nil, ErrNoAgentStream
+	}
+	if len(m.sessions) >= m.max {
+		m.mu.Unlock()
+		return nil, ErrTooManyStreams
+	}
+	sess := &Session{
+		ID:      uuid.New().String(),
+		AgentID: agentID,
+		Output:  make(chan StreamChunk, sessionOutputBuffer),
+		done:    make(chan struct{}),
+	}
+	m.mu.Unlock()
+
+	// Send StartStream BEFORE inserting into the maps to close the phantom-session
+	// window: a concurrent Cancel/Route must not observe a session the agent has
+	// never received a StartStream for.  Inserting after a successful send is still
+	// safe because the agent cannot produce StreamOutput until it receives
+	// StartStream, spawns the kubectl process, and reads its first output — all of
+	// which take far longer than the map insert that follows immediately after.
+	err := sendLocked(conn, &agentpb.CentralStreamMessage{Msg: &agentpb.CentralStreamMessage_Start{
+		Start: &agentpb.StartStream{SessionId: sess.ID, Command: command, Namespace: namespace},
+	}})
+	if err != nil {
+		// Send failed: nothing was inserted, so there is nothing to clean up.
+		return nil, err
+	}
+
+	m.mu.Lock()
+	conn.sessions[sess.ID] = sess
+	m.sessions[sess.ID] = sess
+	m.mu.Unlock()
+
+	return sess, nil
+}
+
+// Route delivers an agent message to its session.
+func (m *SessionManager) Route(msg *agentpb.AgentStreamMessage) {
+	switch v := msg.GetMsg().(type) {
+	case *agentpb.AgentStreamMessage_Output:
+		if sess := m.lookup(v.Output.GetSessionId()); sess != nil {
+			select {
+			case sess.Output <- StreamChunk{Type: v.Output.GetType(), Data: v.Output.GetData()}:
+			default:
+				// Slow client: cancel rather than block the shared recv loop.
+				m.Cancel(sess.ID)
+			}
+		}
+	case *agentpb.AgentStreamMessage_Exit:
+		if sess := m.lookup(v.Exit.GetSessionId()); sess != nil {
+			m.dropSession(sess.ID)
+			sess.close(v.Exit.GetExitCode(), v.Exit.GetErrorMessage())
+		}
+	}
+}
+
+// Cancel sends CancelStream to the agent and ends the session.
+func (m *SessionManager) Cancel(sessionID string) {
+	m.mu.Lock()
+	sess := m.sessions[sessionID]
+	var conn *agentConn
+	if sess != nil {
+		conn = m.agents[sess.AgentID]
+	}
+	m.mu.Unlock()
+	if sess == nil {
+		return
+	}
+	if conn != nil {
+		// Best-effort: if the stream is already broken the agent will detect the
+		// disconnect independently, and the session is closed below regardless.
+		sendLocked(conn, &agentpb.CentralStreamMessage{Msg: &agentpb.CentralStreamMessage_Cancel{ //nolint:errcheck
+			Cancel: &agentpb.CancelStream{SessionId: sessionID},
+		}})
+	}
+	m.dropSession(sessionID)
+	sess.close(-1, "canceled")
+}
+
+func (m *SessionManager) lookup(id string) *Session {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.sessions[id]
+}
+
+func (m *SessionManager) dropSession(id string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if sess := m.sessions[id]; sess != nil {
+		if conn := m.agents[sess.AgentID]; conn != nil {
+			delete(conn.sessions, id)
+		}
+	}
+	delete(m.sessions, id)
+}
+
+func sendLocked(conn *agentConn, msg *agentpb.CentralStreamMessage) error {
+	conn.mu.Lock()
+	defer conn.mu.Unlock()
+	return conn.sender.Send(msg)
+}

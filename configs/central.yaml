@@ -36,3 +36,7 @@ tls:
   enabled: false
   cert_file: "certs/tls.crt"
   key_file: "certs/tls.key"
+
+# streams bounds concurrent streaming sessions (kubectl logs -f, get -w).
+streams:
+  max_concurrent: 50

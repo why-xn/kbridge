@@ -10,6 +10,12 @@ import (
 	"github.com/why-xn/kbridge/internal/auth"
 )
 
+func TestAuditStatusCanceled(t *testing.T) {
+	if AuditStatusCanceled != "canceled" {
+		t.Errorf("want canceled, got %q", AuditStatusCanceled)
+	}
+}
+
 func TestAuditRecorder_Record(t *testing.T) {
 	store := newTestStore(t)
 	r := NewAuditRecorder(store)
@@ -104,7 +110,7 @@ roles:
 	agents := NewAgentStore()
 	agents.Register(&AgentInfo{ID: "a1", ClusterName: "prod"})
 	srv := NewHTTPServer(agents, NewCommandQueue(),
-		NewAuthHandlers(store, jm, time.Hour), NewAdminHandlers(store), eng, NewAuditRecorder(store), jm)
+		NewAuthHandlers(store, jm, time.Hour), NewAdminHandlers(store), eng, NewAuditRecorder(store), nil, jm)
 
 	// The audited user must exist (audit_logs.user_id FK -> users.id).
 	user := &User{Email: "dev@x.com", Name: "Dev", PasswordHash: "h", IsActive: true}

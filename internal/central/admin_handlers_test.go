@@ -305,7 +305,7 @@ func TestAdminRoutes_RequireAdminRole(t *testing.T) {
 	store := newTestStore(t)
 	jm := auth.NewJWTManager("test-secret-at-least-32-chars!!", time.Hour)
 	srv := NewHTTPServer(NewAgentStore(), NewCommandQueue(),
-		NewAuthHandlers(store, jm, time.Hour), NewAdminHandlers(store), nil, nil, jm)
+		NewAuthHandlers(store, jm, time.Hour), NewAdminHandlers(store), nil, nil, nil, jm)
 
 	tokenFor := func(roles []string) string {
 		tok, err := jm.GenerateAccessToken(&auth.UserClaims{

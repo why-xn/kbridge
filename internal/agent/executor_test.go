@@ -2,6 +2,9 @@ package agent
 
 import (
 	"context"
+	"os"
+	"path/filepath"
+	"sync"
 	"testing"
 	"time"
 )
@@ -137,5 +140,80 @@ func TestNewKubectlExecutor(t *testing.T) {
 	}
 	if e.kubectlPath != "kubectl" {
 		t.Errorf("expected kubectlPath 'kubectl', got %q", e.kubectlPath)
+	}
+}
+
+func TestKubectlExecutor_ExecuteStream(t *testing.T) {
+	// Point the executor at /bin/sh and pass a script via args to emit two lines.
+	e := &KubectlExecutor{kubectlPath: "/bin/sh"}
+	var got []byte
+	code, err := e.ExecuteStream(context.Background(),
+		[]string{"-c", "printf 'a\\nb\\n'"}, "",
+		func(stdout bool, data []byte) { got = append(got, data...) })
+	if err != nil {
+		t.Fatalf("execute stream: %v", err)
+	}
+	if code != 0 {
+		t.Errorf("want exit 0, got %d", code)
+	}
+	if string(got) != "a\nb\n" {
+		t.Errorf("want a\\nb\\n, got %q", got)
+	}
+}
+
+func TestKubectlExecutor_ExecuteStream_Namespace(t *testing.T) {
+	// Write a tiny shell script that prints all its positional parameters
+	// literally so that flag-like args such as -n are visible in the output.
+	// This lets us assert that ExecuteStream prepends the namespace flag.
+	dir := t.TempDir()
+	script := filepath.Join(dir, "print_args.sh")
+	if err := os.WriteFile(script, []byte("#!/bin/sh\nprintf '%s ' \"$@\"\n"), 0o755); err != nil {
+		t.Fatalf("write helper script: %v", err)
+	}
+
+	e := &KubectlExecutor{kubectlPath: script}
+	var mu sync.Mutex
+	var got []byte
+	code, err := e.ExecuteStream(context.Background(),
+		[]string{"get", "pods"}, "default",
+		func(stdout bool, data []byte) {
+			mu.Lock()
+			got = append(got, data...)
+			mu.Unlock()
+		})
+	if err != nil {
+		t.Fatalf("execute stream: %v", err)
+	}
+	if code != 0 {
+		t.Errorf("want exit 0, got %d", code)
+	}
+	output := string(got)
+	if !contains(output, "-n default") {
+		t.Errorf("expected output to contain \"-n default\", got %q", output)
+	}
+}
+
+// contains is a small helper to avoid importing strings in this file.
+func contains(s, substr string) bool {
+	return len(s) >= len(substr) && (s == substr || len(s) > 0 && containsAt(s, substr))
+}
+
+func containsAt(s, substr string) bool {
+	for i := 0; i <= len(s)-len(substr); i++ {
+		if s[i:i+len(substr)] == substr {
+			return true
+		}
+	}
+	return false
+}
+
+func TestKubectlExecutor_ExecuteStream_Cancel(t *testing.T) {
+	e := &KubectlExecutor{kubectlPath: "/bin/sh"}
+	ctx, cancel := context.WithCancel(context.Background())
+	go func() { time.Sleep(200 * time.Millisecond); cancel() }()
+	start := time.Now()
+	_, _ = e.ExecuteStream(ctx, []string{"-c", "sleep 10"}, "", func(bool, []byte) {})
+	if time.Since(start) > 3*time.Second {
+		t.Error("expected cancel to kill the process quickly")
 	}
 }

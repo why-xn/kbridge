@@ -2,6 +2,7 @@ package cli
 
 import (
 	"bytes"
+	"context"
 	"crypto/tls"
 	"encoding/json"
 	"fmt"
@@ -543,6 +544,52 @@ func (c *CentralClient) ExecCommandWithStdin(clusterName string, command []strin
 	defer resp.Body.Close()
 
 	return c.parseExecResponse(resp, clusterName)
+}
+
+// StreamCommand runs a streaming kubectl command, copying the chunked response
+// body to out until the stream ends or ctx is cancelled.
+func (c *CentralClient) StreamCommand(ctx context.Context, clusterName string, command []string, namespace string, out io.Writer) error {
+	reqBody, _ := json.Marshal(ExecRequest{Command: command, Namespace: namespace})
+	reqURL := fmt.Sprintf("%s/api/v1/clusters/%s/stream", c.baseURL, clusterName)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, reqURL, bytes.NewReader(reqBody))
+	if err != nil {
+		return fmt.Errorf("creating request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	if c.token != "" {
+		req.Header.Set("Authorization", "Bearer "+c.token)
+	}
+
+	// No client timeout for streaming: the request lives as long as the stream.
+	streamClient := &http.Client{Transport: c.httpClient.Transport}
+	resp, err := streamClient.Do(req)
+	if err != nil {
+		if ctx.Err() != nil {
+			return nil // user cancelled
+		}
+		return fmt.Errorf("request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	switch resp.StatusCode {
+	case http.StatusOK:
+		_, err := io.Copy(out, resp.Body)
+		if ctx.Err() != nil {
+			return nil
+		}
+		return err
+	case http.StatusForbidden:
+		return fmt.Errorf("permission denied")
+	case http.StatusNotFound:
+		return fmt.Errorf("cluster %q not found", clusterName)
+	case http.StatusServiceUnavailable:
+		return fmt.Errorf("cluster %q cannot stream right now", clusterName)
+	case http.StatusTooManyRequests:
+		return fmt.Errorf("too many concurrent streams; try again later")
+	default:
+		b, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("server returned %d: %s", resp.StatusCode, string(b))
+	}
 }
 
 func (c *CentralClient) parseExecResponse(resp *http.Response, clusterName string) (*ExecResponse, error) {

@@ -12,6 +12,7 @@ const (
 	AuditStatusFailed  = "failed"
 	AuditStatusDenied  = "denied"
 	AuditStatusTimeout = "timeout"
+	AuditStatusCanceled = "canceled"
 )
 
 // auditWriteTimeout bounds how long an audit insert may take.

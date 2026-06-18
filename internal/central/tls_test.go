@@ -59,7 +59,7 @@ func TestGRPCServer_TLSHandshake(t *testing.T) {
 
 	store := newTestStore(t)
 	seedClusterToken(t, store, "edge", "tls-token", nil)
-	srvImpl := NewGRPCServer(NewAgentStore(), NewCommandQueue(), NewAgentAuthenticator(store))
+	srvImpl := NewGRPCServer(NewAgentStore(), NewCommandQueue(), NewAgentAuthenticator(store), NewSessionManager(10))
 
 	opts, err := grpcServerOptions(TLSConfig{Enabled: true, CertFile: certFile, KeyFile: keyFile})
 	if err != nil {

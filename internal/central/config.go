@@ -19,6 +19,7 @@ type Config struct {
 	Bootstrap BootstrapConfig `yaml:"bootstrap"`
 	RBAC      RBACConfig      `yaml:"rbac"`
 	TLS       TLSConfig       `yaml:"tls"`
+	Streams   StreamsConfig   `yaml:"streams"`
 }
 
 // TLSConfig configures TLS for the central HTTP and gRPC servers. When enabled,
@@ -27,6 +28,11 @@ type TLSConfig struct {
 	Enabled  bool   `yaml:"enabled"`
 	CertFile string `yaml:"cert_file"`
 	KeyFile  string `yaml:"key_file"`
+}
+
+// StreamsConfig limits concurrent streaming sessions.
+type StreamsConfig struct {
+	MaxConcurrent int `yaml:"max_concurrent"`
 }
 
 // RBACConfig configures policy-file-based access control. When PolicyFile is
@@ -96,6 +102,7 @@ func DefaultConfig() *Config {
 			CleanupIntervalStr: "24h",
 			CleanupInterval:    24 * time.Hour,
 		},
+		Streams: StreamsConfig{MaxConcurrent: 50},
 	}
 }
 

@@ -1,8 +1,10 @@
 package cli
 
 import (
+	"context"
 	"fmt"
 	"os"
+	"os/signal"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -83,6 +85,17 @@ func runKubectl(cmd *cobra.Command, args []string) error {
 		}
 	}
 
+	// Stream long-lived follow/watch commands via chunked HTTP.
+	if isStreamingCommand(args) {
+		ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
+		defer cancel()
+		streamClient := newAuthenticatedClient(centralURL)
+		if err := streamClient.StreamCommand(ctx, currentCluster, args, namespace, os.Stdout); err != nil {
+			return err
+		}
+		return nil
+	}
+
 	// Create client with longer timeout for command execution
 	client := newAuthenticatedClientWithTimeout(centralURL, defaultKubectlTimeout+10*time.Second)
 
@@ -109,6 +122,18 @@ func runKubectl(cmd *cobra.Command, args []string) error {
 	}
 
 	return nil
+}
+
+// isStreamingCommand reports whether args use a follow/watch flag and should be
+// streamed rather than run one-shot.
+func isStreamingCommand(args []string) bool {
+	for _, a := range args {
+		switch a {
+		case "-f", "--follow", "-w", "--watch":
+			return true
+		}
+	}
+	return false
 }
 
 // runKubectlEdit handles the kubectl edit command using a local editor workflow.

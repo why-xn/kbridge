@@ -1,10 +1,13 @@
 package agent
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"fmt"
+	"io"
 	"os/exec"
+	"sync"
 	"time"
 )
 
@@ -78,6 +81,72 @@ func (e *KubectlExecutor) ExecuteWithStdin(ctx context.Context, args []string, n
 	}
 
 	return result
+}
+
+// streamChunkSize bounds how much output is buffered before a chunk is emitted.
+const streamChunkSize = 32 * 1024
+
+// ExecuteStream runs a kubectl command, invoking onChunk for each piece of
+// output as it is produced. Cancelling ctx kills the process.
+// onChunk may be called concurrently from the stdout and stderr readers;
+// callers must synchronize access to any shared state touched inside onChunk.
+func (e *KubectlExecutor) ExecuteStream(ctx context.Context, args []string, namespace string, onChunk func(stdout bool, data []byte)) (int, error) {
+	cmdArgs := args
+	if namespace != "" {
+		cmdArgs = append([]string{"-n", namespace}, args...)
+	}
+	cmd := exec.CommandContext(ctx, e.kubectlPath, cmdArgs...)
+	// WaitDelay ensures pipes are force-closed after context cancellation so that
+	// any goroutines blocked on Read are unblocked even if child processes
+	// inherited and still hold the pipe handles.
+	cmd.WaitDelay = 500 * time.Millisecond
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		return -1, fmt.Errorf("stdout pipe: %w", err)
+	}
+	stderr, err := cmd.StderrPipe()
+	if err != nil {
+		return -1, fmt.Errorf("stderr pipe: %w", err)
+	}
+	if err := cmd.Start(); err != nil {
+		return -1, fmt.Errorf("starting kubectl: %w", err)
+	}
+
+	// waitCh carries the result of cmd.Wait so we can unblock pipe readers.
+	waitCh := make(chan error, 1)
+	go func() { waitCh <- cmd.Wait() }()
+
+	var wg sync.WaitGroup
+	wg.Add(2)
+	go pumpStream(&wg, stdout, true, onChunk)
+	go pumpStream(&wg, stderr, false, onChunk)
+	wg.Wait()
+
+	waitErr := <-waitCh
+	if waitErr != nil {
+		if exitErr, ok := waitErr.(*exec.ExitError); ok {
+			return exitErr.ExitCode(), nil
+		}
+		return -1, fmt.Errorf("kubectl wait: %w", waitErr)
+	}
+	return 0, nil
+}
+
+func pumpStream(wg *sync.WaitGroup, r io.Reader, stdout bool, onChunk func(bool, []byte)) {
+	defer wg.Done()
+	buf := make([]byte, streamChunkSize)
+	reader := bufio.NewReader(r)
+	for {
+		n, err := reader.Read(buf)
+		if n > 0 {
+			chunk := make([]byte, n)
+			copy(chunk, buf[:n])
+			onChunk(stdout, chunk)
+		}
+		if err != nil {
+			return
+		}
+	}
 }
 
 // ExecuteStreaming runs a kubectl command and streams output via callbacks.

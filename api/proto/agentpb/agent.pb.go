@@ -843,6 +843,454 @@ func (x *SubmitCommandResultResponse) GetSuccess() bool {
 	return false
 }
 
+type CentralStreamMessage struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Types that are valid to be assigned to Msg:
+	//
+	//	*CentralStreamMessage_Start
+	//	*CentralStreamMessage_Cancel
+	Msg           isCentralStreamMessage_Msg `protobuf_oneof:"msg"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CentralStreamMessage) Reset() {
+	*x = CentralStreamMessage{}
+	mi := &file_agent_proto_msgTypes[11]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CentralStreamMessage) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CentralStreamMessage) ProtoMessage() {}
+
+func (x *CentralStreamMessage) ProtoReflect() protoreflect.Message {
+	mi := &file_agent_proto_msgTypes[11]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CentralStreamMessage.ProtoReflect.Descriptor instead.
+func (*CentralStreamMessage) Descriptor() ([]byte, []int) {
+	return file_agent_proto_rawDescGZIP(), []int{11}
+}
+
+func (x *CentralStreamMessage) GetMsg() isCentralStreamMessage_Msg {
+	if x != nil {
+		return x.Msg
+	}
+	return nil
+}
+
+func (x *CentralStreamMessage) GetStart() *StartStream {
+	if x != nil {
+		if x, ok := x.Msg.(*CentralStreamMessage_Start); ok {
+			return x.Start
+		}
+	}
+	return nil
+}
+
+func (x *CentralStreamMessage) GetCancel() *CancelStream {
+	if x != nil {
+		if x, ok := x.Msg.(*CentralStreamMessage_Cancel); ok {
+			return x.Cancel
+		}
+	}
+	return nil
+}
+
+type isCentralStreamMessage_Msg interface {
+	isCentralStreamMessage_Msg()
+}
+
+type CentralStreamMessage_Start struct {
+	Start *StartStream `protobuf:"bytes,1,opt,name=start,proto3,oneof"`
+}
+
+type CentralStreamMessage_Cancel struct {
+	Cancel *CancelStream `protobuf:"bytes,2,opt,name=cancel,proto3,oneof"`
+}
+
+func (*CentralStreamMessage_Start) isCentralStreamMessage_Msg() {}
+
+func (*CentralStreamMessage_Cancel) isCentralStreamMessage_Msg() {}
+
+type StartStream struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	SessionId     string                 `protobuf:"bytes,1,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
+	Command       []string               `protobuf:"bytes,2,rep,name=command,proto3" json:"command,omitempty"`
+	Namespace     string                 `protobuf:"bytes,3,opt,name=namespace,proto3" json:"namespace,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *StartStream) Reset() {
+	*x = StartStream{}
+	mi := &file_agent_proto_msgTypes[12]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *StartStream) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*StartStream) ProtoMessage() {}
+
+func (x *StartStream) ProtoReflect() protoreflect.Message {
+	mi := &file_agent_proto_msgTypes[12]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use StartStream.ProtoReflect.Descriptor instead.
+func (*StartStream) Descriptor() ([]byte, []int) {
+	return file_agent_proto_rawDescGZIP(), []int{12}
+}
+
+func (x *StartStream) GetSessionId() string {
+	if x != nil {
+		return x.SessionId
+	}
+	return ""
+}
+
+func (x *StartStream) GetCommand() []string {
+	if x != nil {
+		return x.Command
+	}
+	return nil
+}
+
+func (x *StartStream) GetNamespace() string {
+	if x != nil {
+		return x.Namespace
+	}
+	return ""
+}
+
+type CancelStream struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	SessionId     string                 `protobuf:"bytes,1,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CancelStream) Reset() {
+	*x = CancelStream{}
+	mi := &file_agent_proto_msgTypes[13]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CancelStream) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CancelStream) ProtoMessage() {}
+
+func (x *CancelStream) ProtoReflect() protoreflect.Message {
+	mi := &file_agent_proto_msgTypes[13]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CancelStream.ProtoReflect.Descriptor instead.
+func (*CancelStream) Descriptor() ([]byte, []int) {
+	return file_agent_proto_rawDescGZIP(), []int{13}
+}
+
+func (x *CancelStream) GetSessionId() string {
+	if x != nil {
+		return x.SessionId
+	}
+	return ""
+}
+
+type AgentStreamMessage struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Types that are valid to be assigned to Msg:
+	//
+	//	*AgentStreamMessage_Register
+	//	*AgentStreamMessage_Output
+	//	*AgentStreamMessage_Exit
+	Msg           isAgentStreamMessage_Msg `protobuf_oneof:"msg"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *AgentStreamMessage) Reset() {
+	*x = AgentStreamMessage{}
+	mi := &file_agent_proto_msgTypes[14]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *AgentStreamMessage) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*AgentStreamMessage) ProtoMessage() {}
+
+func (x *AgentStreamMessage) ProtoReflect() protoreflect.Message {
+	mi := &file_agent_proto_msgTypes[14]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use AgentStreamMessage.ProtoReflect.Descriptor instead.
+func (*AgentStreamMessage) Descriptor() ([]byte, []int) {
+	return file_agent_proto_rawDescGZIP(), []int{14}
+}
+
+func (x *AgentStreamMessage) GetMsg() isAgentStreamMessage_Msg {
+	if x != nil {
+		return x.Msg
+	}
+	return nil
+}
+
+func (x *AgentStreamMessage) GetRegister() *StreamRegister {
+	if x != nil {
+		if x, ok := x.Msg.(*AgentStreamMessage_Register); ok {
+			return x.Register
+		}
+	}
+	return nil
+}
+
+func (x *AgentStreamMessage) GetOutput() *StreamOutput {
+	if x != nil {
+		if x, ok := x.Msg.(*AgentStreamMessage_Output); ok {
+			return x.Output
+		}
+	}
+	return nil
+}
+
+func (x *AgentStreamMessage) GetExit() *StreamExit {
+	if x != nil {
+		if x, ok := x.Msg.(*AgentStreamMessage_Exit); ok {
+			return x.Exit
+		}
+	}
+	return nil
+}
+
+type isAgentStreamMessage_Msg interface {
+	isAgentStreamMessage_Msg()
+}
+
+type AgentStreamMessage_Register struct {
+	Register *StreamRegister `protobuf:"bytes,1,opt,name=register,proto3,oneof"`
+}
+
+type AgentStreamMessage_Output struct {
+	Output *StreamOutput `protobuf:"bytes,2,opt,name=output,proto3,oneof"`
+}
+
+type AgentStreamMessage_Exit struct {
+	Exit *StreamExit `protobuf:"bytes,3,opt,name=exit,proto3,oneof"`
+}
+
+func (*AgentStreamMessage_Register) isAgentStreamMessage_Msg() {}
+
+func (*AgentStreamMessage_Output) isAgentStreamMessage_Msg() {}
+
+func (*AgentStreamMessage_Exit) isAgentStreamMessage_Msg() {}
+
+type StreamRegister struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	AgentId       string                 `protobuf:"bytes,1,opt,name=agent_id,json=agentId,proto3" json:"agent_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *StreamRegister) Reset() {
+	*x = StreamRegister{}
+	mi := &file_agent_proto_msgTypes[15]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *StreamRegister) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*StreamRegister) ProtoMessage() {}
+
+func (x *StreamRegister) ProtoReflect() protoreflect.Message {
+	mi := &file_agent_proto_msgTypes[15]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use StreamRegister.ProtoReflect.Descriptor instead.
+func (*StreamRegister) Descriptor() ([]byte, []int) {
+	return file_agent_proto_rawDescGZIP(), []int{15}
+}
+
+func (x *StreamRegister) GetAgentId() string {
+	if x != nil {
+		return x.AgentId
+	}
+	return ""
+}
+
+type StreamOutput struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	SessionId     string                 `protobuf:"bytes,1,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
+	Type          OutputType             `protobuf:"varint,2,opt,name=type,proto3,enum=kbridge.agent.v1.OutputType" json:"type,omitempty"`
+	Data          []byte                 `protobuf:"bytes,3,opt,name=data,proto3" json:"data,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *StreamOutput) Reset() {
+	*x = StreamOutput{}
+	mi := &file_agent_proto_msgTypes[16]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *StreamOutput) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*StreamOutput) ProtoMessage() {}
+
+func (x *StreamOutput) ProtoReflect() protoreflect.Message {
+	mi := &file_agent_proto_msgTypes[16]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use StreamOutput.ProtoReflect.Descriptor instead.
+func (*StreamOutput) Descriptor() ([]byte, []int) {
+	return file_agent_proto_rawDescGZIP(), []int{16}
+}
+
+func (x *StreamOutput) GetSessionId() string {
+	if x != nil {
+		return x.SessionId
+	}
+	return ""
+}
+
+func (x *StreamOutput) GetType() OutputType {
+	if x != nil {
+		return x.Type
+	}
+	return OutputType_OUTPUT_TYPE_UNKNOWN
+}
+
+func (x *StreamOutput) GetData() []byte {
+	if x != nil {
+		return x.Data
+	}
+	return nil
+}
+
+type StreamExit struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	SessionId     string                 `protobuf:"bytes,1,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
+	ExitCode      int32                  `protobuf:"varint,2,opt,name=exit_code,json=exitCode,proto3" json:"exit_code,omitempty"`
+	ErrorMessage  string                 `protobuf:"bytes,3,opt,name=error_message,json=errorMessage,proto3" json:"error_message,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *StreamExit) Reset() {
+	*x = StreamExit{}
+	mi := &file_agent_proto_msgTypes[17]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *StreamExit) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*StreamExit) ProtoMessage() {}
+
+func (x *StreamExit) ProtoReflect() protoreflect.Message {
+	mi := &file_agent_proto_msgTypes[17]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use StreamExit.ProtoReflect.Descriptor instead.
+func (*StreamExit) Descriptor() ([]byte, []int) {
+	return file_agent_proto_rawDescGZIP(), []int{17}
+}
+
+func (x *StreamExit) GetSessionId() string {
+	if x != nil {
+		return x.SessionId
+	}
+	return ""
+}
+
+func (x *StreamExit) GetExitCode() int32 {
+	if x != nil {
+		return x.ExitCode
+	}
+	return 0
+}
+
+func (x *StreamExit) GetErrorMessage() string {
+	if x != nil {
+		return x.ErrorMessage
+	}
+	return ""
+}
+
 var File_agent_proto protoreflect.FileDescriptor
 
 const file_agent_proto_rawDesc = "" +
@@ -897,7 +1345,37 @@ const file_agent_proto_rawDesc = "" +
 	"\texit_code\x18\x04 \x01(\x05R\bexitCode\x12#\n" +
 	"\rerror_message\x18\x05 \x01(\tR\ferrorMessage\"7\n" +
 	"\x1bSubmitCommandResultResponse\x12\x18\n" +
-	"\asuccess\x18\x01 \x01(\bR\asuccess*\\\n" +
+	"\asuccess\x18\x01 \x01(\bR\asuccess\"\x8e\x01\n" +
+	"\x14CentralStreamMessage\x125\n" +
+	"\x05start\x18\x01 \x01(\v2\x1d.kbridge.agent.v1.StartStreamH\x00R\x05start\x128\n" +
+	"\x06cancel\x18\x02 \x01(\v2\x1e.kbridge.agent.v1.CancelStreamH\x00R\x06cancelB\x05\n" +
+	"\x03msg\"d\n" +
+	"\vStartStream\x12\x1d\n" +
+	"\n" +
+	"session_id\x18\x01 \x01(\tR\tsessionId\x12\x18\n" +
+	"\acommand\x18\x02 \x03(\tR\acommand\x12\x1c\n" +
+	"\tnamespace\x18\x03 \x01(\tR\tnamespace\"-\n" +
+	"\fCancelStream\x12\x1d\n" +
+	"\n" +
+	"session_id\x18\x01 \x01(\tR\tsessionId\"\xc9\x01\n" +
+	"\x12AgentStreamMessage\x12>\n" +
+	"\bregister\x18\x01 \x01(\v2 .kbridge.agent.v1.StreamRegisterH\x00R\bregister\x128\n" +
+	"\x06output\x18\x02 \x01(\v2\x1e.kbridge.agent.v1.StreamOutputH\x00R\x06output\x122\n" +
+	"\x04exit\x18\x03 \x01(\v2\x1c.kbridge.agent.v1.StreamExitH\x00R\x04exitB\x05\n" +
+	"\x03msg\"+\n" +
+	"\x0eStreamRegister\x12\x19\n" +
+	"\bagent_id\x18\x01 \x01(\tR\aagentId\"s\n" +
+	"\fStreamOutput\x12\x1d\n" +
+	"\n" +
+	"session_id\x18\x01 \x01(\tR\tsessionId\x120\n" +
+	"\x04type\x18\x02 \x01(\x0e2\x1c.kbridge.agent.v1.OutputTypeR\x04type\x12\x12\n" +
+	"\x04data\x18\x03 \x01(\fR\x04data\"m\n" +
+	"\n" +
+	"StreamExit\x12\x1d\n" +
+	"\n" +
+	"session_id\x18\x01 \x01(\tR\tsessionId\x12\x1b\n" +
+	"\texit_code\x18\x02 \x01(\x05R\bexitCode\x12#\n" +
+	"\rerror_message\x18\x03 \x01(\tR\ferrorMessage*\\\n" +
 	"\vAgentStatus\x12\x18\n" +
 	"\x14AGENT_STATUS_UNKNOWN\x10\x00\x12\x18\n" +
 	"\x14AGENT_STATUS_HEALTHY\x10\x01\x12\x19\n" +
@@ -906,11 +1384,12 @@ const file_agent_proto_rawDesc = "" +
 	"OutputType\x12\x17\n" +
 	"\x13OUTPUT_TYPE_UNKNOWN\x10\x00\x12\x16\n" +
 	"\x12OUTPUT_TYPE_STDOUT\x10\x01\x12\x16\n" +
-	"\x12OUTPUT_TYPE_STDERR\x10\x022\xf5\x03\n" +
+	"\x12OUTPUT_TYPE_STDERR\x10\x022\xfc\x03\n" +
 	"\fAgentService\x12Q\n" +
 	"\bRegister\x12!.kbridge.agent.v1.RegisterRequest\x1a\".kbridge.agent.v1.RegisterResponse\x12T\n" +
-	"\tHeartbeat\x12\".kbridge.agent.v1.HeartbeatRequest\x1a#.kbridge.agent.v1.HeartbeatResponse\x12W\n" +
-	"\x0eExecuteCommand\x12 .kbridge.agent.v1.CommandRequest\x1a!.kbridge.agent.v1.CommandResponse0\x01\x12o\n" +
+	"\tHeartbeat\x12\".kbridge.agent.v1.HeartbeatRequest\x1a#.kbridge.agent.v1.HeartbeatResponse\x12^\n" +
+	"\n" +
+	"OpenStream\x12$.kbridge.agent.v1.AgentStreamMessage\x1a&.kbridge.agent.v1.CentralStreamMessage(\x010\x01\x12o\n" +
 	"\x12GetPendingCommands\x12+.kbridge.agent.v1.GetPendingCommandsRequest\x1a,.kbridge.agent.v1.GetPendingCommandsResponse\x12r\n" +
 	"\x13SubmitCommandResult\x12,.kbridge.agent.v1.SubmitCommandResultRequest\x1a-.kbridge.agent.v1.SubmitCommandResultResponseB-Z+github.com/why-xn/kbridge/api/proto/agentpbb\x06proto3"
 
@@ -927,7 +1406,7 @@ func file_agent_proto_rawDescGZIP() []byte {
 }
 
 var file_agent_proto_enumTypes = make([]protoimpl.EnumInfo, 2)
-var file_agent_proto_msgTypes = make([]protoimpl.MessageInfo, 11)
+var file_agent_proto_msgTypes = make([]protoimpl.MessageInfo, 18)
 var file_agent_proto_goTypes = []any{
 	(AgentStatus)(0),                    // 0: kbridge.agent.v1.AgentStatus
 	(OutputType)(0),                     // 1: kbridge.agent.v1.OutputType
@@ -942,27 +1421,40 @@ var file_agent_proto_goTypes = []any{
 	(*GetPendingCommandsResponse)(nil),  // 10: kbridge.agent.v1.GetPendingCommandsResponse
 	(*SubmitCommandResultRequest)(nil),  // 11: kbridge.agent.v1.SubmitCommandResultRequest
 	(*SubmitCommandResultResponse)(nil), // 12: kbridge.agent.v1.SubmitCommandResultResponse
+	(*CentralStreamMessage)(nil),        // 13: kbridge.agent.v1.CentralStreamMessage
+	(*StartStream)(nil),                 // 14: kbridge.agent.v1.StartStream
+	(*CancelStream)(nil),                // 15: kbridge.agent.v1.CancelStream
+	(*AgentStreamMessage)(nil),          // 16: kbridge.agent.v1.AgentStreamMessage
+	(*StreamRegister)(nil),              // 17: kbridge.agent.v1.StreamRegister
+	(*StreamOutput)(nil),                // 18: kbridge.agent.v1.StreamOutput
+	(*StreamExit)(nil),                  // 19: kbridge.agent.v1.StreamExit
 }
 var file_agent_proto_depIdxs = []int32{
 	3,  // 0: kbridge.agent.v1.RegisterRequest.metadata:type_name -> kbridge.agent.v1.ClusterMetadata
 	0,  // 1: kbridge.agent.v1.HeartbeatRequest.status:type_name -> kbridge.agent.v1.AgentStatus
 	1,  // 2: kbridge.agent.v1.CommandResponse.type:type_name -> kbridge.agent.v1.OutputType
 	7,  // 3: kbridge.agent.v1.GetPendingCommandsResponse.commands:type_name -> kbridge.agent.v1.CommandRequest
-	2,  // 4: kbridge.agent.v1.AgentService.Register:input_type -> kbridge.agent.v1.RegisterRequest
-	5,  // 5: kbridge.agent.v1.AgentService.Heartbeat:input_type -> kbridge.agent.v1.HeartbeatRequest
-	7,  // 6: kbridge.agent.v1.AgentService.ExecuteCommand:input_type -> kbridge.agent.v1.CommandRequest
-	9,  // 7: kbridge.agent.v1.AgentService.GetPendingCommands:input_type -> kbridge.agent.v1.GetPendingCommandsRequest
-	11, // 8: kbridge.agent.v1.AgentService.SubmitCommandResult:input_type -> kbridge.agent.v1.SubmitCommandResultRequest
-	4,  // 9: kbridge.agent.v1.AgentService.Register:output_type -> kbridge.agent.v1.RegisterResponse
-	6,  // 10: kbridge.agent.v1.AgentService.Heartbeat:output_type -> kbridge.agent.v1.HeartbeatResponse
-	8,  // 11: kbridge.agent.v1.AgentService.ExecuteCommand:output_type -> kbridge.agent.v1.CommandResponse
-	10, // 12: kbridge.agent.v1.AgentService.GetPendingCommands:output_type -> kbridge.agent.v1.GetPendingCommandsResponse
-	12, // 13: kbridge.agent.v1.AgentService.SubmitCommandResult:output_type -> kbridge.agent.v1.SubmitCommandResultResponse
-	9,  // [9:14] is the sub-list for method output_type
-	4,  // [4:9] is the sub-list for method input_type
-	4,  // [4:4] is the sub-list for extension type_name
-	4,  // [4:4] is the sub-list for extension extendee
-	0,  // [0:4] is the sub-list for field type_name
+	14, // 4: kbridge.agent.v1.CentralStreamMessage.start:type_name -> kbridge.agent.v1.StartStream
+	15, // 5: kbridge.agent.v1.CentralStreamMessage.cancel:type_name -> kbridge.agent.v1.CancelStream
+	17, // 6: kbridge.agent.v1.AgentStreamMessage.register:type_name -> kbridge.agent.v1.StreamRegister
+	18, // 7: kbridge.agent.v1.AgentStreamMessage.output:type_name -> kbridge.agent.v1.StreamOutput
+	19, // 8: kbridge.agent.v1.AgentStreamMessage.exit:type_name -> kbridge.agent.v1.StreamExit
+	1,  // 9: kbridge.agent.v1.StreamOutput.type:type_name -> kbridge.agent.v1.OutputType
+	2,  // 10: kbridge.agent.v1.AgentService.Register:input_type -> kbridge.agent.v1.RegisterRequest
+	5,  // 11: kbridge.agent.v1.AgentService.Heartbeat:input_type -> kbridge.agent.v1.HeartbeatRequest
+	16, // 12: kbridge.agent.v1.AgentService.OpenStream:input_type -> kbridge.agent.v1.AgentStreamMessage
+	9,  // 13: kbridge.agent.v1.AgentService.GetPendingCommands:input_type -> kbridge.agent.v1.GetPendingCommandsRequest
+	11, // 14: kbridge.agent.v1.AgentService.SubmitCommandResult:input_type -> kbridge.agent.v1.SubmitCommandResultRequest
+	4,  // 15: kbridge.agent.v1.AgentService.Register:output_type -> kbridge.agent.v1.RegisterResponse
+	6,  // 16: kbridge.agent.v1.AgentService.Heartbeat:output_type -> kbridge.agent.v1.HeartbeatResponse
+	13, // 17: kbridge.agent.v1.AgentService.OpenStream:output_type -> kbridge.agent.v1.CentralStreamMessage
+	10, // 18: kbridge.agent.v1.AgentService.GetPendingCommands:output_type -> kbridge.agent.v1.GetPendingCommandsResponse
+	12, // 19: kbridge.agent.v1.AgentService.SubmitCommandResult:output_type -> kbridge.agent.v1.SubmitCommandResultResponse
+	15, // [15:20] is the sub-list for method output_type
+	10, // [10:15] is the sub-list for method input_type
+	10, // [10:10] is the sub-list for extension type_name
+	10, // [10:10] is the sub-list for extension extendee
+	0,  // [0:10] is the sub-list for field type_name
 }
 
 func init() { file_agent_proto_init() }
@@ -970,13 +1462,22 @@ func file_agent_proto_init() {
 	if File_agent_proto != nil {
 		return
 	}
+	file_agent_proto_msgTypes[11].OneofWrappers = []any{
+		(*CentralStreamMessage_Start)(nil),
+		(*CentralStreamMessage_Cancel)(nil),
+	}
+	file_agent_proto_msgTypes[14].OneofWrappers = []any{
+		(*AgentStreamMessage_Register)(nil),
+		(*AgentStreamMessage_Output)(nil),
+		(*AgentStreamMessage_Exit)(nil),
+	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_agent_proto_rawDesc), len(file_agent_proto_rawDesc)),
 			NumEnums:      2,
-			NumMessages:   11,
+			NumMessages:   18,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

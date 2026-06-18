@@ -53,6 +53,12 @@ func TestDefaultConfig(t *testing.T) {
 	}
 }
 
+func TestDefaultConfig_Streams(t *testing.T) {
+	if DefaultConfig().Streams.MaxConcurrent != 50 {
+		t.Errorf("want default 50, got %d", DefaultConfig().Streams.MaxConcurrent)
+	}
+}
+
 func TestLoadConfig(t *testing.T) {
 	tests := []struct {
 		name     string

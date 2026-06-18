@@ -24,16 +24,19 @@ type GRPCServer struct {
 	agents   *AgentStore
 	cmdQueue *CommandQueue
 	authn    *AgentAuthenticator
+	sessions *SessionManager
 }
 
 // NewGRPCServer creates a new gRPC server. agents tracks live agent state for
 // command routing; authn validates registration tokens against the persistent
-// store and resolves their bound cluster.
-func NewGRPCServer(agents *AgentStore, cmdQueue *CommandQueue, authn *AgentAuthenticator) *GRPCServer {
+// store and resolves their bound cluster. sessions manages bidi streaming
+// sessions for agents that have opened a persistent stream.
+func NewGRPCServer(agents *AgentStore, cmdQueue *CommandQueue, authn *AgentAuthenticator, sessions *SessionManager) *GRPCServer {
 	return &GRPCServer{
 		agents:   agents,
 		cmdQueue: cmdQueue,
 		authn:    authn,
+		sessions: sessions,
 	}
 }
 
@@ -152,14 +155,6 @@ func (s *GRPCServer) Heartbeat(ctx context.Context, req *agentpb.HeartbeatReques
 	}, nil
 }
 
-// ExecuteCommand handles command execution requests.
-// NOTE: This is currently unused - see GetPendingCommands for agent-initiated flow.
-func (s *GRPCServer) ExecuteCommand(req *agentpb.CommandRequest, stream grpc.ServerStreamingServer[agentpb.CommandResponse]) error {
-	log.Printf("ExecuteCommand request: agent=%s, command=%v", req.GetAgentId(), req.GetCommand())
-
-	return status.Error(codes.Unimplemented, "ExecuteCommand not implemented - use GetPendingCommands instead")
-}
-
 // GetPendingCommands returns any pending commands for the requesting agent.
 func (s *GRPCServer) GetPendingCommands(ctx context.Context, req *agentpb.GetPendingCommandsRequest) (*agentpb.GetPendingCommandsResponse, error) {
 	agentID := req.GetAgentId()
@@ -228,6 +223,33 @@ func (s *GRPCServer) SubmitCommandResult(ctx context.Context, req *agentpb.Submi
 	return &agentpb.SubmitCommandResultResponse{
 		Success: true,
 	}, nil
+}
+
+// OpenStream is the persistent bidi channel an agent opens after Register.
+func (s *GRPCServer) OpenStream(stream agentpb.AgentService_OpenStreamServer) error {
+	first, err := stream.Recv()
+	if err != nil {
+		return err
+	}
+	reg := first.GetRegister()
+	if reg == nil || reg.GetAgentId() == "" {
+		return status.Error(codes.InvalidArgument, "first message must be StreamRegister")
+	}
+	if _, ok := s.agents.Get(reg.GetAgentId()); !ok {
+		return status.Error(codes.NotFound, "agent not registered")
+	}
+
+	s.sessions.RegisterAgentStream(reg.GetAgentId(), stream)
+	defer s.sessions.UnregisterAgentStream(reg.GetAgentId())
+	log.Printf("Agent stream opened: id=%s", reg.GetAgentId())
+
+	for {
+		msg, err := stream.Recv()
+		if err != nil {
+			return err
+		}
+		s.sessions.Route(msg)
+	}
 }
 
 // generateAgentID creates a unique identifier for an agent using random bytes.
