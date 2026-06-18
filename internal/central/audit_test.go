@@ -110,7 +110,7 @@ roles:
 	agents := NewAgentStore()
 	agents.Register(&AgentInfo{ID: "a1", ClusterName: "prod"})
 	srv := NewHTTPServer(agents, NewCommandQueue(),
-		NewAuthHandlers(store, jm, time.Hour), NewAdminHandlers(store), eng, NewAuditRecorder(store), nil, jm)
+		NewAuthHandlers(store, jm, time.Hour), NewAdminHandlers(store, testPepper), eng, NewAuditRecorder(store), nil, jm)
 
 	// The audited user must exist (audit_logs.user_id FK -> users.id).
 	user := &User{Email: "dev@x.com", Name: "Dev", PasswordHash: "h", IsActive: true}

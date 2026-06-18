@@ -60,8 +60,8 @@ func NewServer(cfg *Config) (*Server, error) {
 	// Set up auth components
 	jwtManager := auth.NewJWTManager(cfg.Auth.JWTSecret, cfg.Auth.AccessTokenExpiry)
 	authHandlers := NewAuthHandlers(dbStore, jwtManager, cfg.Auth.RefreshTokenExpiry)
-	adminHandlers := NewAdminHandlers(dbStore)
-	authenticator := NewAgentAuthenticator(dbStore)
+	adminHandlers := NewAdminHandlers(dbStore, cfg.AgentTokenPepper())
+	authenticator := NewAgentAuthenticator(dbStore, cfg.AgentTokenPepper())
 	auditRecorder := NewAuditRecorder(dbStore)
 
 	// Load the RBAC policy if configured; nil engine means enforcement is off.
@@ -148,7 +148,7 @@ func seedAdminUser(store *SQLiteStore, cfg *Config) {
 // the same value does not already exist. Idempotent across restarts.
 func seedAgentToken(store *SQLiteStore, cfg *Config) {
 	ctx := context.Background()
-	hash := hashToken(cfg.Bootstrap.AgentToken)
+	hash := hashAgentToken(cfg.AgentTokenPepper(), cfg.Bootstrap.AgentToken)
 	if existing, _ := store.GetAgentTokenByHash(ctx, hash); existing != nil {
 		return
 	}

@@ -23,12 +23,14 @@ const ClusterStatusPending = "pending"
 
 // AdminHandlers provides HTTP handlers for admin operations.
 type AdminHandlers struct {
-	store Store
+	store  Store
+	pepper string
 }
 
-// NewAdminHandlers creates a new AdminHandlers instance.
-func NewAdminHandlers(store Store) *AdminHandlers {
-	return &AdminHandlers{store: store}
+// NewAdminHandlers creates a new AdminHandlers instance. pepper is the
+// server-side secret used to HMAC agent tokens at rest.
+func NewAdminHandlers(store Store, pepper string) *AdminHandlers {
+	return &AdminHandlers{store: store, pepper: pepper}
 }
 
 type createAgentTokenRequest struct {
@@ -86,7 +88,7 @@ func (h *AdminHandlers) HandleCreateAgentToken(c *gin.Context) {
 
 	token := &AgentToken{
 		ClusterID:   cluster.ID,
-		TokenHash:   hashToken(plaintext),
+		TokenHash:   hashAgentToken(h.pepper, plaintext),
 		TokenPrefix: prefix,
 		Description: req.Description,
 		ExpiresAt:   expiresAt,

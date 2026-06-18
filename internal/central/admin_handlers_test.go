@@ -16,7 +16,7 @@ import (
 func newTestAdminHandlers(t *testing.T) (*AdminHandlers, *SQLiteStore) {
 	t.Helper()
 	store := newTestStore(t)
-	return NewAdminHandlers(store), store
+	return NewAdminHandlers(store, testPepper), store
 }
 
 // doRequest runs a single request against a router that has the given route registered.
@@ -66,7 +66,7 @@ func TestAdminHandler_CreateAgentToken(t *testing.T) {
 		}
 
 		// Token must be retrievable by its hash, bound to the cluster.
-		stored, err := store.GetAgentTokenByHash(context.Background(), hashToken(resp.Token))
+		stored, err := store.GetAgentTokenByHash(context.Background(), hashAgentToken(testPepper, resp.Token))
 		if err != nil || stored == nil {
 			t.Fatalf("expected token persisted by hash, err=%v stored=%v", err, stored)
 		}
@@ -117,7 +117,7 @@ func TestAdminHandler_CreateAgentToken(t *testing.T) {
 			t.Fatal("expected expires_at to be set")
 		}
 		cl, _ := store.GetClusterByName(context.Background(), "c1")
-		stored, _ := store.GetAgentTokenByHash(context.Background(), hashToken(resp.Token))
+		stored, _ := store.GetAgentTokenByHash(context.Background(), hashAgentToken(testPepper, resp.Token))
 		if stored.ExpiresAt == nil || stored.ClusterID != cl.ID {
 			t.Error("stored token missing expiry or cluster binding")
 		}
@@ -305,7 +305,7 @@ func TestAdminRoutes_RequireAdminRole(t *testing.T) {
 	store := newTestStore(t)
 	jm := auth.NewJWTManager("test-secret-at-least-32-chars!!", time.Hour)
 	srv := NewHTTPServer(NewAgentStore(), NewCommandQueue(),
-		NewAuthHandlers(store, jm, time.Hour), NewAdminHandlers(store), nil, nil, nil, jm)
+		NewAuthHandlers(store, jm, time.Hour), NewAdminHandlers(store, testPepper), nil, nil, nil, jm)
 
 	tokenFor := func(roles []string) string {
 		tok, err := jm.GenerateAccessToken(&auth.UserClaims{
@@ -358,7 +358,7 @@ func TestAdminHandler_RevokeAgentToken(t *testing.T) {
 		t.Fatalf("want 200, got %d: %s", rw.Code, rw.Body.String())
 	}
 
-	stored, _ := store.GetAgentTokenByHash(context.Background(), hashToken(created.Token))
+	stored, _ := store.GetAgentTokenByHash(context.Background(), hashAgentToken(testPepper, created.Token))
 	if stored == nil || !stored.IsRevoked {
 		t.Fatalf("expected token to be revoked, got %+v", stored)
 	}

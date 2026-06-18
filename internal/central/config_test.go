@@ -275,6 +275,25 @@ audit:
 	}
 }
 
+func TestConfig_AgentTokenPepper(t *testing.T) {
+	t.Run("falls back to jwt_secret when token_pepper is unset", func(t *testing.T) {
+		c := &Config{}
+		c.Auth.JWTSecret = "the-jwt-secret"
+		if got := c.AgentTokenPepper(); got != "the-jwt-secret" {
+			t.Fatalf("want jwt_secret fallback, got %q", got)
+		}
+	})
+
+	t.Run("prefers a dedicated token_pepper", func(t *testing.T) {
+		c := &Config{}
+		c.Auth.JWTSecret = "the-jwt-secret"
+		c.Auth.TokenPepper = "the-pepper"
+		if got := c.AgentTokenPepper(); got != "the-pepper" {
+			t.Fatalf("want dedicated pepper, got %q", got)
+		}
+	})
+}
+
 func TestConfig_Validate(t *testing.T) {
 	tests := []struct {
 		name    string

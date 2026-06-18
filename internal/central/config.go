@@ -63,14 +63,15 @@ type DatabaseConfig struct {
 
 // AuthConfig holds the authentication configuration.
 type AuthConfig struct {
-	JWTSecret            string        `yaml:"jwt_secret"`
-	AccessTokenExpiryStr string        `yaml:"access_token_expiry"`
-	AccessTokenExpiry    time.Duration `yaml:"-"`
-	RefreshTokenExpiryStr string       `yaml:"refresh_token_expiry"`
-	RefreshTokenExpiry   time.Duration `yaml:"-"`
-	AdminEmail           string        `yaml:"admin_email"`
-	AdminPassword        string        `yaml:"admin_password"`
-	AdminName            string        `yaml:"admin_name"`
+	JWTSecret             string        `yaml:"jwt_secret"`
+	TokenPepper           string        `yaml:"token_pepper"`
+	AccessTokenExpiryStr  string        `yaml:"access_token_expiry"`
+	AccessTokenExpiry     time.Duration `yaml:"-"`
+	RefreshTokenExpiryStr string        `yaml:"refresh_token_expiry"`
+	RefreshTokenExpiry    time.Duration `yaml:"-"`
+	AdminEmail            string        `yaml:"admin_email"`
+	AdminPassword         string        `yaml:"admin_password"`
+	AdminName             string        `yaml:"admin_name"`
 }
 
 // AuditConfig holds the audit log configuration.
@@ -204,4 +205,14 @@ func (c *Config) validateAuth() error {
 		return fmt.Errorf("refresh_token_expiry must be greater than zero")
 	}
 	return nil
+}
+
+// AgentTokenPepper returns the secret used to HMAC agent tokens at rest. A
+// dedicated token_pepper is preferred for key separation; when unset it falls
+// back to jwt_secret, which Validate already requires to be non-empty.
+func (c *Config) AgentTokenPepper() string {
+	if c.Auth.TokenPepper != "" {
+		return c.Auth.TokenPepper
+	}
+	return c.Auth.JWTSecret
 }

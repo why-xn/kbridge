@@ -375,6 +375,16 @@ func (s *SQLiteStore) RevokeAgentToken(ctx context.Context, id string) error {
 	return nil
 }
 
+func (s *SQLiteStore) TouchAgentToken(ctx context.Context, id string, usedAt time.Time) error {
+	_, err := s.db.ExecContext(ctx,
+		`UPDATE agent_tokens SET last_used_at = ? WHERE id = ?`,
+		usedAt.UTC().Format(timeFormat), id)
+	if err != nil {
+		return fmt.Errorf("touch agent token: %w", err)
+	}
+	return nil
+}
+
 // --- Roles ---
 
 func (s *SQLiteStore) CreateRole(ctx context.Context, role *Role) error {

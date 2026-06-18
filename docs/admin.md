@@ -38,9 +38,14 @@ only once):
 
 ```bash
 kbridge admin agent-tokens create --cluster prod-us-east --description "prod agent" --expires-in-days 90
-kbridge admin agent-tokens list --cluster prod-us-east   # prefixes only, never the secret
+kbridge admin agent-tokens list --cluster prod-us-east   # prefixes + last_used_at, never the secret
 kbridge admin agent-tokens revoke <id>
 ```
+
+Tokens are stored only as an HMAC-SHA256 digest (keyed by `auth.token_pepper`,
+which falls back to `jwt_secret`) — never in plaintext. `list` reports each
+token's `last_used_at`, updated on every successful registration; a token that
+is old and never used is a good candidate to revoke.
 
 Via the API instead:
 

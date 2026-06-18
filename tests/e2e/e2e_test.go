@@ -20,6 +20,7 @@ import (
 
 var (
 	centralURL  = flag.String("central-url", "http://localhost:8080", "Central service URL")
+	grpcAddr    = flag.String("grpc-addr", "localhost:9090", "Central gRPC address for agents")
 	clusterName = flag.String("cluster-name", "kbridge-e2e-test", "Kind cluster name")
 	binDir      = flag.String("bin-dir", "../../bin", "Directory containing binaries")
 )

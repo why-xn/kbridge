@@ -6,6 +6,10 @@ import (
 	"time"
 )
 
+// testPepper is the agent-token HMAC pepper used across tests. Token creation
+// and verification must use the same pepper, so all test fixtures share this.
+const testPepper = "test-agent-token-pepper"
+
 func newTestStore(t *testing.T) *SQLiteStore {
 	t.Helper()
 	store, err := NewSQLiteStore(":memory:")

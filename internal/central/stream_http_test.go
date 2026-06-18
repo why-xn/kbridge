@@ -22,7 +22,7 @@ func TestHandleStreamCommand_StreamsOutput(t *testing.T) {
 	sm.RegisterAgentStream("a1", snd)
 
 	srv := NewHTTPServer(agents, NewCommandQueue(), NewAuthHandlers(store, jm, time.Hour),
-		NewAdminHandlers(store), nil, NewAuditRecorder(store), sm, jm)
+		NewAdminHandlers(store, testPepper), nil, NewAuditRecorder(store), sm, jm)
 
 	token, _ := jm.GenerateAccessToken(&auth.UserClaims{UserID: "u1", Email: "dev@x.com"})
 	body, _ := json.Marshal(ExecRequest{Command: []string{"logs", "-f", "web"}})
@@ -73,7 +73,7 @@ func TestHandleStreamCommand_NoAgentStream(t *testing.T) {
 	agents := NewAgentStore()
 	agents.Register(&AgentInfo{ID: "a1", ClusterName: "prod"}) // connected but no OpenStream
 	srv := NewHTTPServer(agents, NewCommandQueue(), NewAuthHandlers(store, jm, time.Hour),
-		NewAdminHandlers(store), nil, NewAuditRecorder(store), NewSessionManager(10), jm)
+		NewAdminHandlers(store, testPepper), nil, NewAuditRecorder(store), NewSessionManager(10), jm)
 
 	token, _ := jm.GenerateAccessToken(&auth.UserClaims{UserID: "u1", Email: "dev@x.com"})
 	body, _ := json.Marshal(ExecRequest{Command: []string{"logs", "-f", "web"}})

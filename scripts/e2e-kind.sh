@@ -5,8 +5,8 @@
 set -e
 
 CLUSTER_NAME="kbridge-e2e-test"
-CENTRAL_PORT=8080
-GRPC_PORT=9090
+CENTRAL_PORT="${CENTRAL_PORT:-8080}"
+GRPC_PORT="${GRPC_PORT:-9090}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 BIN_DIR="${PROJECT_ROOT}/bin"
@@ -148,15 +148,29 @@ bindings:
     roles: ["admin"]
 EOF
 
+    # Fail fast (with a clear message) if the port is already taken by something
+    # else — otherwise the readiness probe below would latch onto the imposter.
+    if curl -fsS "http://localhost:${CENTRAL_PORT}/health" >/dev/null 2>&1; then
+        log_error "Port ${CENTRAL_PORT} is already serving HTTP — another process is using it."
+        log_error "Free it or re-run with: CENTRAL_PORT=<free-port> GRPC_PORT=<free-port> make test-e2e"
+        exit 1
+    fi
+
     # Start central service in background
     "${BIN_DIR}/kbridge-central" --config "${CONFIG_DIR}/central.yaml" > "${LOG_DIR}/central.log" 2>&1 &
     CENTRAL_PID=$!
     echo "${CENTRAL_PID}" > "${LOG_DIR}/central.pid"
 
-    # Wait for central to be ready
+    # Wait for central to be ready. Probe with --fail and confirm the body is our
+    # health payload, so a foreign service on the port can't masquerade as ready.
     log_info "Waiting for central service to be ready..."
     for i in {1..30}; do
-        if curl -s "http://localhost:${CENTRAL_PORT}/health" > /dev/null 2>&1; then
+        if ! kill -0 "${CENTRAL_PID}" 2>/dev/null; then
+            log_error "Central process exited during startup. Log:"
+            cat "${LOG_DIR}/central.log"
+            exit 1
+        fi
+        if curl -fsS "http://localhost:${CENTRAL_PORT}/health" 2>/dev/null | grep -q '"status":"healthy"'; then
             log_info "Central service is ready (PID: ${CENTRAL_PID})."
             return 0
         fi
@@ -298,7 +312,7 @@ run_tests() {
     cd "${PROJECT_ROOT}"
 
     # Run Go e2e tests
-    go test -v -tags=e2e ./tests/e2e/... -central-url="http://localhost:${CENTRAL_PORT}" -cluster-name="${CLUSTER_NAME}" -bin-dir="${BIN_DIR}"
+    go test -v -tags=e2e ./tests/e2e/... -central-url="http://localhost:${CENTRAL_PORT}" -grpc-addr="localhost:${GRPC_PORT}" -cluster-name="${CLUSTER_NAME}" -bin-dir="${BIN_DIR}"
 
     log_info "All e2e tests passed!"
 }

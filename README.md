@@ -269,9 +269,14 @@ See [docs/rbac.md](docs/rbac.md) for the full policy reference.
 
 ### Agent Authentication
 
-Agents authenticate with database-backed tokens, validated against a hash on
-registration; each token is bound to one cluster and can be revoked via the
-admin API. Tokens are managed with `POST/GET/DELETE /api/v1/admin/agent-tokens`.
+Agents authenticate with database-backed tokens. Each token is a high-entropy
+random secret, shown once at creation and stored only as an
+HMAC-SHA256 digest keyed by a server-side pepper (`auth.token_pepper`, falling
+back to `jwt_secret`) — so a stolen database alone cannot be used to verify
+guessed tokens. Each token is bound to one cluster, can be revoked via the admin
+API, and records a `last_used_at` timestamp on every successful registration for
+staleness detection. Tokens are managed with
+`POST/GET/DELETE /api/v1/admin/agent-tokens`.
 
 ### TLS
 

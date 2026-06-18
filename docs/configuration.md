@@ -17,6 +17,7 @@ database:
 
 auth:
   jwt_secret: "..."        # REQUIRED; use a long random value in production
+  token_pepper: ""         # HMAC key for agent tokens at rest; empty = reuse jwt_secret
   access_token_expiry: 24h
   refresh_token_expiry: 168h
   admin_email: admin@kbridge.local    # seeded on first start if set
@@ -46,6 +47,7 @@ streams:
 | Key | Required | Notes |
 |-----|----------|-------|
 | `auth.jwt_secret` | yes | Signing key for access tokens |
+| `auth.token_pepper` | no | HMAC key for agent tokens at rest; when empty, falls back to `jwt_secret`. Set a dedicated value for key separation. Changing it invalidates existing agent tokens (re-issue them) |
 | `database.path` | yes | SQLite file path |
 | `bootstrap.*` | no | Seeds one agent token at startup; prefer the admin API |
 | `rbac.policy_file` | no | When empty, all authenticated users are allowed |

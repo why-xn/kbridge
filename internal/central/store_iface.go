@@ -28,6 +28,7 @@ type Store interface {
 	GetAgentTokenByHash(ctx context.Context, tokenHash string) (*AgentToken, error)
 	ListAgentTokensByCluster(ctx context.Context, clusterID string) ([]*AgentToken, error)
 	RevokeAgentToken(ctx context.Context, id string) error
+	TouchAgentToken(ctx context.Context, id string, usedAt time.Time) error
 
 	// Roles
 	CreateRole(ctx context.Context, role *Role) error

@@ -23,7 +23,7 @@ func newTestGRPCServer(t *testing.T) (*GRPCServer, *AgentStore, *CommandQueue) {
 	cmdQueue := NewCommandQueue()
 	db := newTestStore(t)
 	seedClusterToken(t, db, testClusterName, testAgentToken, nil)
-	authn := NewAgentAuthenticator(db)
+	authn := NewAgentAuthenticator(db, testPepper)
 	return NewGRPCServer(agents, cmdQueue, authn, NewSessionManager(10)), agents, cmdQueue
 }
 
@@ -74,7 +74,7 @@ func TestGRPCServer_Register_PersistsClusterConnected(t *testing.T) {
 	ctx := context.Background()
 	db := newTestStore(t)
 	cluster := seedClusterToken(t, db, "edge", "edge-token", nil)
-	srv := NewGRPCServer(NewAgentStore(), NewCommandQueue(), NewAgentAuthenticator(db), NewSessionManager(10))
+	srv := NewGRPCServer(NewAgentStore(), NewCommandQueue(), NewAgentAuthenticator(db, testPepper), NewSessionManager(10))
 
 	resp, err := srv.Register(ctx, &agentpb.RegisterRequest{
 		AgentToken:  "edge-token",
@@ -104,7 +104,7 @@ func TestGRPCServer_Register_RevokedToken(t *testing.T) {
 	ctx := context.Background()
 	db := newTestStore(t)
 	seedClusterToken(t, db, "edge", "edge-token", func(at *AgentToken) { at.IsRevoked = true })
-	srv := NewGRPCServer(NewAgentStore(), NewCommandQueue(), NewAgentAuthenticator(db), NewSessionManager(10))
+	srv := NewGRPCServer(NewAgentStore(), NewCommandQueue(), NewAgentAuthenticator(db, testPepper), NewSessionManager(10))
 
 	resp, err := srv.Register(ctx, &agentpb.RegisterRequest{
 		AgentToken:  "edge-token",
@@ -171,7 +171,7 @@ func TestGRPCServer_Register_MultipleAgents(t *testing.T) {
 	ctx := context.Background()
 	db := newTestStore(t)
 	store := NewAgentStore()
-	srv := NewGRPCServer(store, NewCommandQueue(), NewAgentAuthenticator(db), NewSessionManager(10))
+	srv := NewGRPCServer(store, NewCommandQueue(), NewAgentAuthenticator(db, testPepper), NewSessionManager(10))
 
 	// Each cluster has its own token: a token authorizes exactly one cluster.
 	clusters := []string{"cluster-a", "cluster-b", "cluster-c"}
@@ -520,7 +520,7 @@ func TestGRPCServer_OpenStream_RegistersAndRoutes(t *testing.T) {
 	db := newTestStore(t)
 	seedClusterToken(t, db, "edge", "edge-stream-token", nil)
 	sm := NewSessionManager(10)
-	srv := NewGRPCServer(NewAgentStore(), NewCommandQueue(), NewAgentAuthenticator(db), sm)
+	srv := NewGRPCServer(NewAgentStore(), NewCommandQueue(), NewAgentAuthenticator(db, testPepper), sm)
 
 	// Register the agent in the in-memory store so OpenStream accepts it.
 	resp, _ := srv.Register(ctx, &agentpb.RegisterRequest{AgentToken: "edge-stream-token", ClusterName: "edge"})

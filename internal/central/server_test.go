@@ -73,7 +73,7 @@ func TestServer_SeedsBootstrapAgentToken(t *testing.T) {
 	}
 
 	// The bootstrap token should be validatable via the persistent store.
-	cluster, err := NewAgentAuthenticator(srv.store).Authenticate(
+	cluster, err := NewAgentAuthenticator(srv.store, cfg.AgentTokenPepper()).Authenticate(
 		context.Background(), "dev-token", "dev-cluster")
 	if err != nil {
 		t.Fatalf("expected bootstrap token to authenticate: %v", err)
