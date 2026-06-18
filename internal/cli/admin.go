@@ -125,7 +125,7 @@ func init() {
 func adminClient() (*CentralClient, error) {
 	centralURL := viper.GetString(ConfigKeyCentralURL)
 	if centralURL == "" {
-		return nil, fmt.Errorf("central URL not configured. Run 'kbridge login' first or set %s", ConfigKeyCentralURL)
+		return nil, fmt.Errorf("central URL not configured. Run 'kb login' first or set %s", ConfigKeyCentralURL)
 	}
 	return newAuthenticatedClient(centralURL), nil
 }

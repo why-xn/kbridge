@@ -9,7 +9,7 @@ on user machines.
 Requires Go 1.25+.
 
 ```bash
-make build      # builds bin/kbridge, bin/kbridge-central, bin/kbridge-agent
+make build      # builds bin/kb (+ kbridge symlink), bin/kbridge-central, bin/kbridge-agent
 ```
 
 Run central and an agent with example configs:
@@ -57,7 +57,7 @@ helm install kbridge-agent ./charts/agent \
 ```
 
 Generate an agent token first with
-`kbridge admin agent-tokens create --cluster <name>` (see the
+`kb admin agent-tokens create --cluster <name>` (see the
 [admin guide](admin.md)) — or via the `POST /api/v1/admin/agent-tokens` API, or
 by seeding one through central's `bootstrap` config.
 
@@ -69,6 +69,6 @@ users actually need (the kbridge policy file is the per-user gate).
 
 ```bash
 curl http://localhost:8080/health      # {"status":"healthy"}
-kbridge login                          # authenticate
-kbridge clusters list                  # list registered clusters
+kb login                          # authenticate
+kb clusters list                  # list registered clusters
 ```

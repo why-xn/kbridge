@@ -19,7 +19,7 @@ kbridge eliminates direct cluster access by placing a central gateway between us
 
 1. **Central Service (`kbridge-central`)** — API gateway that authenticates users, enforces access policies, queues commands, and collects results. The single point of control for all cluster access.
 2. **Cluster Agent (`kbridge-agent`)** — A small daemon deployed in each cluster that initiates an outbound gRPC connection to central. It polls for pending commands, executes them via kubectl locally, and returns results. Since connections are outbound-only, no firewall changes or public endpoints are needed.
-3. **CLI (`kbridge`)** — A user-friendly command-line tool that talks to central over REST. Developers use familiar kubectl syntax (`kbridge kubectl get pods`) without needing direct cluster credentials or network access.
+3. **CLI (`kb`)** — A user-friendly command-line tool that talks to central over REST. Developers use familiar kubectl syntax (`kb get pods`) without needing direct cluster credentials or network access. (Installed as `kb`, with a `kbridge` symlink for back-compat.)
 
 ## Architecture
 
@@ -64,26 +64,28 @@ CLI (kbridge) --HTTP REST--> Central Service <--gRPC-- Agent (per cluster) --> k
 
 ## Components
 
-### CLI (`kbridge`)
+### CLI (`kb`)
 
-User-facing command-line tool.
+User-facing command-line tool. **kubectl by default** — anything that isn't a
+management command (`login`, `logout`, `status`, `clusters`, `admin`) is run as
+kubectl on the selected cluster. (`kbridge` remains as a back-compat alias.)
 
 ```bash
-kbridge login                      # Login to central service
-kbridge logout                     # Logout
-kbridge clusters list              # List available clusters
-kbridge clusters use <cluster>     # Select active cluster
-kbridge kubectl get pods           # Run kubectl on selected cluster
-kbridge kubectl apply -f app.yaml  # Any kubectl command works
-kbridge kubectl logs -f deploy/api # Follow/watch (-f/-w) streams live until Ctrl-C
-kbridge k get pods                 # 'k' alias for kubectl
-kbridge status                     # Show current context
+kb login                      # Login to central service
+kb logout                     # Logout
+kb clusters list              # List available clusters
+kb clusters use <cluster>     # Select active cluster
+kb get pods                   # Run kubectl on the selected cluster
+kb apply -f app.yaml          # Any kubectl command works
+kb logs -f deploy/api         # Follow/watch (-f/-w) streams live until Ctrl-C
+kb kubectl get pods           # 'kubectl'/'k' force kubectl explicitly
+kb status                     # Show current context
 
 # Admin (requires the admin role)
-kbridge admin users list                          # List users
-kbridge admin users create --email dev@corp.com --name Dev
-kbridge admin agent-tokens create --cluster prod  # Generate an agent token
-kbridge admin audit --user dev@corp.com           # View the command audit log
+kb admin users list                          # List users
+kb admin users create --email dev@corp.com --name Dev
+kb admin agent-tokens create --cluster prod  # Generate an agent token
+kb admin audit --user dev@corp.com           # View the command audit log
 ```
 
 ### Central Service (`kbridge-central`)
@@ -109,7 +111,7 @@ make build
 ```
 
 This produces three binaries in `bin/`:
-- `kbridge` - CLI tool
+- `kb` - CLI tool (with a `kbridge` symlink for back-compat)
 - `kbridge-central` - Central service
 - `kbridge-agent` - Cluster agent
 
@@ -129,10 +131,10 @@ This produces three binaries in `bin/`:
 ```bash
 # Default admin is seeded from central.yaml (admin@kbridge.local / admin123 in
 # the example config — change these for any real deployment).
-./bin/kbridge login
-./bin/kbridge clusters list
-./bin/kbridge clusters use dev-cluster
-./bin/kbridge kubectl get pods -A
+./bin/kb login
+./bin/kb clusters list
+./bin/kb clusters use dev-cluster
+./bin/kb get pods -A
 ```
 
 See [docs/installation.md](docs/installation.md) for binary, Docker, and Helm
@@ -236,7 +238,7 @@ spec:
 
 ### Authentication
 
-Users authenticate via `kbridge login`, which obtains a JWT token from central and stores it locally. All subsequent API calls include this token.
+Users authenticate via `kb login`, which obtains a JWT token from central and stores it locally. All subsequent API calls include this token.
 
 ### RBAC
 
@@ -287,7 +289,7 @@ and the CLI. Generate a dev certificate with `make certs`; see
 ### Audit Logging
 
 Every command (allowed, denied, failed, or timed out) is recorded with user,
-cluster, command, result, and duration. Query via `kbridge admin audit` or
+cluster, command, result, and duration. Query via `kb admin audit` or
 `GET /api/v1/admin/audit`.
 
 ## Tech Stack

@@ -1,48 +1,57 @@
 # CLI Reference
 
-The `kbridge` CLI talks to the central service over REST. Configuration lives in
-`~/.kbridge/config.yaml` (see [configuration](configuration.md)).
+The `kb` CLI talks to the central service over REST. Configuration lives in
+`~/.kbridge/config.yaml` (see [configuration](configuration.md)). The binary is
+also installed as `kbridge` (a symlink) for back-compat.
+
+**kubectl by default.** The first argument decides what runs: the management
+commands `login`, `logout`, `status`, `clusters` (alias `cluster`), and `admin`
+run locally; **anything else is sent to kubectl** on the active cluster. So
+`kb get pods` runs kubectl, while `kb admin users list` runs the admin command.
+Use `kb kubectl …` (or `kb k …`) to force kubectl when a name would otherwise
+collide.
 
 ## Authentication
 
-### `kbridge login`
+### `kb login`
 Prompts for the central URL (if unset), email, and password; stores the access
 and refresh tokens.
 
 ```bash
-kbridge login
+kb login
 ```
 
-### `kbridge logout`
+### `kb logout`
 Invalidates the refresh token on the server and clears the local token.
 
 ## Clusters
 
-### `kbridge clusters list` (alias `ls`)
+### `kb clusters list` (alias `ls`)
 Lists clusters registered with central and their status.
 
 ```bash
-kbridge clusters list
+kb clusters list
 ```
 
-### `kbridge clusters use <name>`
+### `kb clusters use <name>`
 Sets the active cluster for subsequent `kubectl` commands.
 
 ```bash
-kbridge clusters use dev-cluster
+kb clusters use dev-cluster
 ```
 
 ## Running commands
 
-### `kbridge kubectl <args...>` (alias `k`)
+### `kb <args...>` (explicit: `kb kubectl …` / `kb k …`)
 Runs a kubectl command on the active cluster via central. Standard kubectl
-syntax and flags work; access is checked against the RBAC policy.
+syntax and flags work; access is checked against the RBAC policy. No `kubectl`
+keyword is needed — it's the default for any non-management command.
 
 ```bash
-kbridge kubectl get pods -A
-kbridge kubectl logs deploy/api -n prod
-kbridge kubectl edit configmap app-config
-kbridge k get nodes
+kb get pods -A
+kb logs deploy/api -n prod
+kb edit configmap app-config
+kb get nodes
 ```
 
 **Streaming (`logs -f` / `get -w`).** When the command uses a follow/watch flag
@@ -50,24 +59,24 @@ kbridge k get nodes
 it with Ctrl-C — no special syntax needed:
 
 ```bash
-kbridge kubectl logs -f deploy/api -n prod    # tail logs live
-kbridge kubectl get pods -w                   # watch resource changes
+kb logs -f deploy/api -n prod    # tail logs live
+kb get pods -w                   # watch resource changes
 ```
 
-### `kbridge status`
+### `kb status`
 Shows the current central URL, authenticated user, and active cluster.
 
 ## Admin (requires the admin role)
 
-### `kbridge admin users list` (alias `ls`)
+### `kb admin users list` (alias `ls`)
 Lists all users.
 
-### `kbridge admin users create`
+### `kb admin users create`
 Creates a user. Prompts for the password if `--password` is omitted.
 
 ```bash
-kbridge admin users create --email dev@corp.com --name "Dev User"
-kbridge admin users create --email ci@corp.com --name CI --password "$TOKEN"
+kb admin users create --email dev@corp.com --name "Dev User"
+kb admin users create --email ci@corp.com --name CI --password "$TOKEN"
 ```
 
 | Flag | Description |
@@ -76,20 +85,20 @@ kbridge admin users create --email ci@corp.com --name CI --password "$TOKEN"
 | `--name` | Display name (required) |
 | `--password` | Password (prompted if omitted) |
 
-### `kbridge admin agent-tokens` (alias `tokens`)
+### `kb admin agent-tokens` (alias `tokens`)
 Manage the tokens agents use to register. Subcommands: `create`, `list`, `revoke`.
 
 ```bash
 # Generate a token for a cluster (printed once — set it as the agent's central.token)
-kbridge admin agent-tokens create --cluster prod-us-east --description "prod agent"
-kbridge admin agent-tokens create --cluster dev --expires-in-days 90
+kb admin agent-tokens create --cluster prod-us-east --description "prod agent"
+kb admin agent-tokens create --cluster dev --expires-in-days 90
 
 # List tokens (shows the prefix, never the secret)
-kbridge admin agent-tokens list
-kbridge admin agent-tokens list --cluster prod-us-east
+kb admin agent-tokens list
+kb admin agent-tokens list --cluster prod-us-east
 
 # Revoke a token by ID
-kbridge admin agent-tokens revoke <id>
+kb admin agent-tokens revoke <id>
 ```
 
 | `create` flag | Description |
@@ -98,13 +107,13 @@ kbridge admin agent-tokens revoke <id>
 | `--description` | Optional description |
 | `--expires-in-days` | Optional expiry in days (0 = no expiry) |
 
-### `kbridge admin audit`
+### `kb admin audit`
 Shows the command audit log, newest first.
 
 ```bash
-kbridge admin audit
-kbridge admin audit --user dev@corp.com --status denied
-kbridge admin audit --cluster prod --limit 100
+kb admin audit
+kb admin audit --user dev@corp.com --status denied
+kb admin audit --cluster prod --limit 100
 ```
 
 | Flag | Description | Default |
@@ -116,5 +125,5 @@ kbridge admin audit --cluster prod --limit 100
 
 ## Global behaviour
 
-- A `401` response means your token expired — run `kbridge login` again.
+- A `401` response means your token expired — run `kb login` again.
 - Permission errors (`403`) come from the RBAC policy; see [rbac.md](rbac.md).

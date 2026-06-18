@@ -42,7 +42,7 @@ Subjects support the same wildcards, e.g. `*@dev.corp.com`.
 
 | Part | Derived from |
 |------|--------------|
-| cluster | the target cluster (`kbridge clusters use`) |
+| cluster | the target cluster (`kb clusters use`) |
 | verb | the first kubectl arg (`get`, `delete`, `apply`, …) |
 | resource | the resource type; `pods` for `logs`/`exec`/`cp`/etc.; `foo/name` → `foo` |
 | namespace | `-n`/`--namespace`; `*` for `-A`/`--all-namespaces`; else `default` |

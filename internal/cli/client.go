@@ -80,7 +80,7 @@ func (c *CentralClient) doRequest(req *http.Request) (*http.Response, error) {
 	}
 	if resp.StatusCode == http.StatusUnauthorized {
 		resp.Body.Close()
-		return nil, fmt.Errorf("authentication required: run 'kbridge login' first")
+		return nil, fmt.Errorf("authentication required: run 'kb login' first")
 	}
 	return resp, nil
 }

@@ -5,7 +5,7 @@
 Three-component architecture: CLI, Central Service, and Agent.
 
 ```
-cmd/kbridge/          # CLI entry point
+cmd/kb/               # CLI entry point (binary `kb`, `kbridge` symlink)
 cmd/central/          # Central service entry point
 cmd/agent/            # Agent entry point
 internal/cli/         # CLI commands (Cobra)

@@ -29,7 +29,7 @@ func init() {
 func runLogin(cmd *cobra.Command, args []string) error {
 	centralURL := viper.GetString(ConfigKeyCentralURL)
 	if centralURL == "" {
-		return fmt.Errorf("central_url not configured: run 'kbridge config set central_url <url>'")
+		return fmt.Errorf("central_url not configured: run 'kb config set central_url <url>'")
 	}
 
 	reader := bufio.NewReader(os.Stdin)

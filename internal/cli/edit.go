@@ -29,12 +29,12 @@ type EditHandler struct {
 func NewEditHandler(args []string) (*EditHandler, error) {
 	centralURL := viper.GetString(ConfigKeyCentralURL)
 	if centralURL == "" {
-		return nil, fmt.Errorf("central URL not configured. Run 'kbridge login' first")
+		return nil, fmt.Errorf("central URL not configured. Run 'kb login' first")
 	}
 
 	clusterName := viper.GetString(ConfigKeyCurrentCluster)
 	if clusterName == "" {
-		return nil, fmt.Errorf("no cluster selected. Run 'kbridge clusters use <name>' first")
+		return nil, fmt.Errorf("no cluster selected. Run 'kb clusters use <name>' first")
 	}
 
 	h := &EditHandler{

@@ -348,6 +348,27 @@ The one-shot exec path is unchanged. Verified by unit, integration, and e2e
   `bufio` layer over the pipes; wrap the `json.Marshal` error in CLI
   `StreamCommand`; replace a couple of timing `sleep`s in tests with polling.
 
+## Phase 7: Agent token hardening + CLI ergonomics — DONE
+
+Shipped after the original plan.
+
+**Agent token storage** — agent tokens are now hashed at rest with
+HMAC-SHA256 keyed by a server-side pepper (`auth.token_pepper`, falling back to
+`jwt_secret`) instead of a bare SHA-256, so a stolen database alone cannot verify
+guessed tokens. Each successful registration stamps `last_used_at` (best-effort)
+for staleness detection. Negative auth (invalid/revoked token rejected at gRPC
+registration) is covered e2e by `TestAgentAuthRejectsBadTokens`. Note: this is a
+breaking change — pre-existing tokens must be re-issued.
+
+**CLI: kubectl-by-default (`kb`)** — the CLI binary is now `kb` (with a `kbridge`
+symlink for back-compat). Any first argument that is not a management command
+(`login`, `logout`, `status`, `clusters`/`cluster`, `admin`) is dispatched to
+kubectl on the active cluster, so `kb get pods` works without a `kubectl`
+keyword; `kb kubectl …` / `kb k …` force it explicitly. The CLI `--version` flag
+frees the bare `version` word for kubectl. Implemented as an arg rewrite
+(`rewriteArgs`) wired into `Execute`; verified by unit tests and e2e
+(`TestKubectlByDefault`).
+
 **Possible follow-ups (not in any plan):**
 - PostgreSQL store driver (the interface is ready; only SQLite is implemented).
 - Mutual TLS (client certificates) — currently server-authenticated TLS only.

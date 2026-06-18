@@ -10,7 +10,8 @@ proto:
 	./scripts/generate-proto.sh
 
 build-cli:
-	go build -o bin/kbridge ./cmd/kbridge
+	go build -o bin/kb ./cmd/kb
+	ln -sf kb bin/kbridge
 
 build-central:
 	go build -o bin/kbridge-central ./cmd/central

@@ -4,8 +4,8 @@ Administrative operations require a user with the `admin` role (granted via the
 [RBAC policy](rbac.md) bindings). The first admin is seeded from `auth.admin_*`
 in `central.yaml` on first startup.
 
-These tasks are driven primarily through the `kbridge admin …` CLI (run
-`kbridge login` as an admin first); the equivalent HTTP API is shown as a
+These tasks are driven primarily through the `kb admin …` CLI (run
+`kb login` as an admin first); the equivalent HTTP API is shown as a
 secondary option. See the [CLI reference](cli.md) and [API reference](api.md).
 
 ## Users
@@ -15,8 +15,8 @@ Users authenticate to central; their permissions come from the policy file
 `bindings` instead.
 
 ```bash
-kbridge admin users list
-kbridge admin users create --email dev@corp.com --name "Dev User"
+kb admin users list
+kb admin users create --email dev@corp.com --name "Dev User"
 ```
 
 Or via the API:
@@ -37,9 +37,9 @@ with the CLI, then set it as the agent's `central.token` (the plaintext is shown
 only once):
 
 ```bash
-kbridge admin agent-tokens create --cluster prod-us-east --description "prod agent" --expires-in-days 90
-kbridge admin agent-tokens list --cluster prod-us-east   # prefixes + last_used_at, never the secret
-kbridge admin agent-tokens revoke <id>
+kb admin agent-tokens create --cluster prod-us-east --description "prod agent" --expires-in-days 90
+kb admin agent-tokens list --cluster prod-us-east   # prefixes + last_used_at, never the secret
+kb admin agent-tokens revoke <id>
 ```
 
 Tokens are stored only as an HMAC-SHA256 digest (keyed by `auth.token_pepper`,
@@ -71,7 +71,7 @@ Every command attempt is recorded (status `success`, `failed`, `denied`, or
 client IP.
 
 ```bash
-kbridge admin audit --cluster prod --status denied --limit 100
+kb admin audit --cluster prod --status denied --limit 100
 ```
 
 Or `GET /api/v1/admin/audit` with `user`, `cluster`, `status`, `from`/`to`

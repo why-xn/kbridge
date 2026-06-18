@@ -11,8 +11,9 @@ import (
 
 // clustersCmd represents the clusters command
 var clustersCmd = &cobra.Command{
-	Use:   "clusters",
-	Short: "Manage cluster connections",
+	Use:     "clusters",
+	Aliases: []string{"cluster"},
+	Short:   "Manage cluster connections",
 	Long: `Manage cluster connections to Kubernetes clusters.
 
 Use subcommands to list available clusters or select a cluster to use.`,
@@ -45,7 +46,7 @@ func init() {
 func runClustersList(cmd *cobra.Command, args []string) error {
 	centralURL := viper.GetString(ConfigKeyCentralURL)
 	if centralURL == "" {
-		return fmt.Errorf("central URL not configured. Run 'kbridge login' first or set %s", ConfigKeyCentralURL)
+		return fmt.Errorf("central URL not configured. Run 'kb login' first or set %s", ConfigKeyCentralURL)
 	}
 
 	client := newAuthenticatedClient(centralURL)
@@ -104,7 +105,7 @@ func runClustersUse(cmd *cobra.Command, args []string) error {
 
 	centralURL := viper.GetString(ConfigKeyCentralURL)
 	if centralURL == "" {
-		return fmt.Errorf("central URL not configured. Run 'kbridge login' first or set %s", ConfigKeyCentralURL)
+		return fmt.Errorf("central URL not configured. Run 'kb login' first or set %s", ConfigKeyCentralURL)
 	}
 
 	// Verify cluster exists and is connected

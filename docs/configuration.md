@@ -89,7 +89,7 @@ cluster:
 ```yaml
 central_url: https://central.example.com:8080
 current_cluster: production-us-east
-token: ""                  # set by `kbridge login`
+token: ""                  # set by `kb login`
 refresh_token: ""
 insecure_skip_verify: false   # skip TLS verification for self-signed dev certs
 ```
