@@ -14,16 +14,19 @@ import (
 // runExecBridge relays an interactive session between the CLI (upstream frames
 // in, downstream frames out) and the agent (via the SessionManager). It is
 // transport-agnostic so it can be unit-tested over pipes.
-func runExecBridge(ctx context.Context, upstream io.Reader, downstream io.Writer, sess *Session, sm *SessionManager, flush func()) {
+//
+// It returns (exitCode, errMsg) from the session so the caller does not need
+// to call sess.Wait() again — every return path closes the session exactly once.
+func runExecBridge(ctx context.Context, upstream io.Reader, downstream io.Writer, sess *Session, sm *SessionManager, flush func()) (int32, string) {
+	// The upstream goroutine only forwards stdin. On any read error (including
+	// io.EOF for a clean half-close and post-EXIT body-close errors) it simply
+	// stops forwarding. It must NOT call sm.Cancel: true client disconnect is
+	// detected by the downstream select's <-ctx.Done() branch.
 	go func() {
 		for {
 			t, payload, err := execframe.Decode(upstream)
-			if err == io.EOF {
-				return // clean half-close (Ctrl-D): stop stdin, keep session alive
-			}
 			if err != nil {
-				sm.Cancel(sess.ID) // broken client
-				return
+				return // stop forwarding on any error; cancel is handled downstream
 			}
 			switch t {
 			case execframe.Stdin:
@@ -40,13 +43,14 @@ func runExecBridge(ctx context.Context, upstream io.Reader, downstream io.Writer
 		select {
 		case <-ctx.Done():
 			sm.Cancel(sess.ID)
-			return
+			return sess.Wait()
 		case chunk, ok := <-sess.Output:
 			if !ok {
+				// Output closed: session is already closed by the exit/cancel path.
 				code, errMsg := sess.Wait()
 				_ = execframe.Encode(downstream, execframe.Exit, execframe.EncodeExit(code, errMsg))
 				flush()
-				return
+				return code, errMsg
 			}
 			ft := execframe.Stdout
 			if chunk.Type == agentpb.OutputType_OUTPUT_TYPE_STDERR {
@@ -56,6 +60,18 @@ func runExecBridge(ctx context.Context, upstream io.Reader, downstream io.Writer
 			flush()
 		}
 	}
+}
+
+// clampDim clamps a terminal dimension to [1, 65535] before uint16 conversion,
+// preventing wrap-around from absurd values such as rows=70000.
+func clampDim(n int) uint16 {
+	if n < 1 {
+		return 1
+	}
+	if n > 65535 {
+		return 65535
+	}
+	return uint16(n)
 }
 
 // buildExecArgs assembles kubectl args so that command[0] == "exec" (RBAC reads
@@ -112,7 +128,7 @@ func (s *HTTPServer) handleExecAttach(c *gin.Context) {
 	var sess *Session
 	var err error
 	if tty {
-		sess, err = s.sessions.StartInteractive(agent.ID, args, namespace, uint16(rows), uint16(cols))
+		sess, err = s.sessions.StartInteractive(agent.ID, args, namespace, clampDim(rows), clampDim(cols))
 	} else {
 		sess, err = s.sessions.StartWithStdin(agent.ID, args, namespace)
 	}
@@ -139,16 +155,24 @@ func (s *HTTPServer) handleExecAttach(c *gin.Context) {
 	flush()
 	start := time.Now()
 
-	runExecBridge(c.Request.Context(), c.Request.Body, c.Writer, sess, s.sessions, flush)
+	exitCode, errMsg := runExecBridge(c.Request.Context(), c.Request.Body, c.Writer, sess, s.sessions, flush)
 
-	exitCode, errMsg := sess.Wait()
+	// I3: distinguish canceled (slow-client via Route→Cancel or ctx cancel) from
+	// failed (non-zero exit). Cancel closes the session with errMsg "canceled";
+	// ctx.Done indicates a client-side disconnect cancel.
 	status := AuditStatusSuccess
-	if c.Request.Context().Err() != nil {
+	if c.Request.Context().Err() != nil || errMsg == "canceled" {
 		status = AuditStatusCanceled
 	} else if exitCode != 0 || errMsg != "" {
 		status = AuditStatusFailed
 	}
 	dur := time.Since(start).Milliseconds()
 	ec := exitCode
-	s.recordExecAudit(c, clusterName, req, status, &ec, &dur, errMsg)
+
+	// I6: audit the logical command (exec <pod> -- <cmd>) rather than the raw
+	// kubectl args which include transport flags (-i/-t). Use req for authz
+	// (unchanged); build a separate auditReq for the final audit record.
+	auditCmd := append([]string{"exec", pod}, append([]string{"--"}, command...)...)
+	auditReq := ExecRequest{Command: auditCmd, Namespace: namespace}
+	s.recordExecAudit(c, clusterName, auditReq, status, &ec, &dur, errMsg)
 }

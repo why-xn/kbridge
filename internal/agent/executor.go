@@ -259,6 +259,11 @@ func (e *KubectlExecutor) ExecuteStreaming(ctx context.Context, args []string, n
 // stdin from the channel and streaming stdout/stderr to onOutput. It returns the
 // exit code when the process exits or ctx is cancelled.
 func (e *KubectlExecutor) ExecuteInteractiveNoTTY(ctx context.Context, args []string, namespace string, stdin <-chan []byte, onOutput func(bool, []byte)) (int, error) {
+	// Derive a child context so stdin pump goroutines are guaranteed to exit
+	// before the function returns, independent of the caller's cancel timing.
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
 	cmdArgs := args
 	if namespace != "" {
 		cmdArgs = append([]string{"-n", namespace}, args...)
@@ -333,6 +338,11 @@ func (e *KubectlExecutor) ExecuteInteractiveNoTTY(ctx context.Context, args []st
 // cancelled (which kills the child). onOutput is called only from the single
 // read-loop goroutine, so it is never called concurrently.
 func (e *KubectlExecutor) ExecuteInteractive(ctx context.Context, args []string, namespace string, rows, cols uint16, stdin <-chan []byte, resize <-chan [2]uint16, onOutput func([]byte)) (int, error) {
+	// Derive a child context so stdin/resize pump goroutines are guaranteed to
+	// exit before the function returns, independent of the caller's cancel timing.
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
 	cmdArgs := args
 	if namespace != "" {
 		cmdArgs = append([]string{"-n", namespace}, args...)

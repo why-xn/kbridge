@@ -80,6 +80,8 @@ func parseExecArgs(args []string) (execTarget, bool) {
 func httpStatusError(resp *http.Response) error {
 	body, _ := io.ReadAll(resp.Body)
 	switch resp.StatusCode {
+	case http.StatusUnauthorized:
+		return fmt.Errorf("authentication required, run kb login")
 	case http.StatusForbidden:
 		return fmt.Errorf("permission denied")
 	case http.StatusNotFound:

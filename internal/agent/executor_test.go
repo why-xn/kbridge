@@ -220,6 +220,49 @@ func TestKubectlExecutor_ExecuteStream_Cancel(t *testing.T) {
 	}
 }
 
+func TestExecuteInteractiveNoTTY_EchoAndExit(t *testing.T) {
+	if _, err := exec.LookPath("cat"); err != nil {
+		t.Skip("cat not available")
+	}
+	e := &KubectlExecutor{kubectlPath: "cat"}
+	stdin := make(chan []byte, 1)
+	var mu sync.Mutex
+	var out []byte
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	done := make(chan struct{})
+	go func() {
+		_, _ = e.ExecuteInteractiveNoTTY(ctx, nil, "", stdin,
+			func(_ bool, b []byte) { mu.Lock(); out = append(out, b...); mu.Unlock() })
+		close(done)
+	}()
+
+	stdin <- []byte("ping\n")
+	// cat echoes stdin to stdout; wait up to 2s for the echo to arrive.
+	deadline := time.After(2 * time.Second)
+	for {
+		mu.Lock()
+		got := string(out)
+		mu.Unlock()
+		if strings.Contains(got, "ping") {
+			break
+		}
+		select {
+		case <-deadline:
+			t.Fatal("did not observe echoed stdin")
+		case <-time.After(20 * time.Millisecond):
+		}
+	}
+	// Cancel the context and assert the function returns promptly (no orphaned goroutine/process).
+	cancel()
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("ExecuteInteractiveNoTTY did not return after cancel (orphaned process)")
+	}
+}
+
 func TestExecuteInteractive_EchoAndExit(t *testing.T) {
 	if _, err := exec.LookPath("cat"); err != nil {
 		t.Skip("cat not available")
