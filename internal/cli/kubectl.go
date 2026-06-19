@@ -64,6 +64,11 @@ func runKubectl(cmd *cobra.Command, args []string) error {
 		return runKubectlEdit(args)
 	}
 
+	// Interactive exec (-i/-t) needs a bidirectional stream, not the one-shot path.
+	if tgt, ok := parseExecArgs(args); ok {
+		return execInteractiveFromConfig(tgt)
+	}
+
 	// Check central URL
 	centralURL := viper.GetString(ConfigKeyCentralURL)
 	if centralURL == "" {
