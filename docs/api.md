@@ -58,6 +58,44 @@ denied, `404` cluster not found, `503` agent disconnected or no open stream,
 `429` over `streams.max_concurrent`. The outcome is audited as `success`,
 `failed`, or `canceled`.
 
+### `POST /api/v1/clusters/{name}/exec/attach`
+Opens an interactive exec session over an HTTP/2 bidirectional stream. This is
+the attach endpoint — distinct from the one-shot `/exec` and the streaming
+`/stream` endpoints.
+
+**Query parameters:**
+
+| Parameter | Required | Description |
+|-----------|----------|-------------|
+| `pod` | yes | Pod name |
+| `container` | no | Container name (defaults to first container) |
+| `namespace` | no | Kubernetes namespace |
+| `command` | yes (repeated) | Remote command and arguments, one per param |
+| `tty` | no | `true` to allocate a PTY |
+| `rows` | no | Initial terminal height (rows) |
+| `cols` | no | Initial terminal width (columns) |
+
+**Auth:** `Authorization: Bearer <jwt>`. RBAC must grant the `exec` verb on
+`pods` for the target cluster and namespace.
+
+**Frame protocol.** On `200` the response body is a length-prefixed frame
+stream. Frames from the client (stdin data, terminal resize events) flow
+upstream; frames from the server (stdout, stderr, exit status) flow downstream.
+The stream ends when the remote process exits or the client disconnects.
+
+**Status codes:**
+
+| Code | Meaning |
+|------|---------|
+| 200 | Session established; frame stream follows |
+| 403 | Denied by RBAC policy |
+| 404 | Cluster not found |
+| 429 | Over `streams.max_concurrent` limit |
+| 503 | Cluster agent disconnected |
+
+Every session is recorded in the audit log with outcome `success`, `failed`,
+`denied`, or `canceled`.
+
 ## Admin — agent tokens
 
 ### `POST /api/v1/admin/agent-tokens`

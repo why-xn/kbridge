@@ -376,5 +376,19 @@ frees the bare `version` word for kubectl. Implemented as an arg rewrite
 - Mutual TLS (client certificates) — currently server-authenticated TLS only.
 - Drop the unused `roles`/`permissions`/`user_roles` tables (RBAC moved to the
   policy file), or keep them for a future DB-override layer.
-- Interactive `exec -it` and `port-forward` — build on the streaming foundation
-  (each its own design + plan).
+- `port-forward` — next interactive feature; builds on the same streaming and
+  session-manager foundation (its own design + plan).
+
+## Phase 8: Interactive exec (`kb exec -it`) — DONE
+
+Shipped after Phase 7. `kb exec -it <pod> -- <cmd>` opens a full PTY session
+end-to-end: CLI raw mode + SIGWINCH resize → HTTP/2 bidirectional frame stream
+(`POST /api/v1/clusters/:name/exec/attach`) → agent PTY (`ExecuteInteractive`)
+via gRPC `StdinData`/`Resize` messages. `-i` (stdin, no TTY) uses the same
+interactive path. Non-interactive `kb exec` (no `-i`/`-t`) stays on the
+one-shot path. RBAC (`exec` verb on `pods`) and audit (`success`/`failed`/
+`denied`/`canceled`) are reused from the exec handler. `streams.max_concurrent`
+bounds concurrent sessions (429 when exceeded). Terminal state is restored on
+exit (`defer`); orphan prevention via context cancellation and `WaitDelay`.
+Verified by unit tests (codec, bridge, session manager, registry, PTY pump) and
+e2e (`TestExecStdin`, `TestExecInteractiveTTY`, negative cases).

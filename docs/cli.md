@@ -63,6 +63,21 @@ kb logs -f deploy/api -n prod    # tail logs live
 kb get pods -w                   # watch resource changes
 ```
 
+**Interactive exec (`exec -it`).** `kb exec` opens an interactive session on
+a pod. Use `-it` for a full TTY (terminal resize, full-screen apps like `vim`
+or `htop`); use `-i` alone for stdin-only (no TTY). Both go through the
+interactive path. Without `-i` or `-t`, `kb exec` falls back to the one-shot
+path (same as `kb exec`). The `--` separator is required to pass flags to the
+remote command instead of to `kb` itself. Ctrl-C and Ctrl-D are forwarded to
+the remote shell, not to the CLI. There is no inactivity timeout on the session.
+
+```bash
+kb exec -it <pod> -- sh                          # interactive shell (full TTY)
+kb exec -it <pod> -c <container> -- bash         # specific container
+kb exec -it <pod> -n <namespace> -- sh           # specific namespace
+kb exec -i <pod> -- sh -c "cat /etc/hosts"       # stdin, no TTY
+```
+
 ### `kb status`
 Shows the current central URL, authenticated user, and active cluster.
 
