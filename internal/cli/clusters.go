@@ -64,7 +64,7 @@ func runClustersList(cmd *cobra.Command, args []string) error {
 
 	// Print clusters in table format
 	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-	fmt.Fprintln(w, "CURRENT\tNAME\tSTATUS\tVERSION\tNODES\tREGION\tPROVIDER")
+	fmt.Fprintln(w, "CURRENT\tNAME\tSTATUS")
 
 	for _, c := range clusters {
 		current := ""
@@ -72,28 +72,7 @@ func runClustersList(cmd *cobra.Command, args []string) error {
 			current = "*"
 		}
 
-		version := c.KubernetesVersion
-		if version == "" {
-			version = "-"
-		}
-
-		nodes := "-"
-		if c.NodeCount > 0 {
-			nodes = fmt.Sprintf("%d", c.NodeCount)
-		}
-
-		region := c.Region
-		if region == "" {
-			region = "-"
-		}
-
-		provider := c.Provider
-		if provider == "" {
-			provider = "-"
-		}
-
-		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
-			current, c.Name, c.Status, version, nodes, region, provider)
+		fmt.Fprintf(w, "%s\t%s\t%s\n", current, c.Name, c.Status)
 	}
 
 	w.Flush()

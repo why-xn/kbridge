@@ -175,10 +175,6 @@ central:
 
 cluster:
   name: dev-cluster                # Unique cluster identifier
-  kubernetes_version: "1.28.0"
-  node_count: 3
-  region: us-east-1
-  provider: aws
 ```
 
 ### CLI (`~/.kbridge/config.yaml`)
@@ -199,8 +195,6 @@ token: ""
 | `KBRIDGE_CENTRAL_URL` | Central gRPC address | `localhost:9090` |
 | `KBRIDGE_AGENT_TOKEN` | Authentication token | — |
 | `KBRIDGE_CLUSTER_NAME` | Cluster name | `default` |
-| `KBRIDGE_CLUSTER_REGION` | Cloud region | `unknown` |
-| `KBRIDGE_CLUSTER_PROVIDER` | Cloud provider | `unknown` |
 
 **Central:**
 

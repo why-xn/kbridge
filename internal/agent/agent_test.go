@@ -111,13 +111,7 @@ func TestAgent_Register(t *testing.T) {
 
 	cfg := &Config{
 		Central: CentralConfig{URL: addr, Token: "test-token"},
-		Cluster: ClusterConfig{
-			Name:              "test-cluster",
-			KubernetesVersion: "1.28.0",
-			NodeCount:         3,
-			Region:            "us-east-1",
-			Provider:          "aws",
-		},
+		Cluster: ClusterConfig{Name: "test-cluster"},
 	}
 
 	a := New(cfg)

@@ -17,12 +17,8 @@ func TestCentralClient_ListClusters(t *testing.T) {
 		resp := ClustersResponse{
 			Clusters: []ClusterInfo{
 				{
-					Name:              "prod",
-					Status:            "connected",
-					KubernetesVersion: "1.28.0",
-					NodeCount:         5,
-					Region:            "us-east-1",
-					Provider:          "aws",
+					Name:   "prod",
+					Status: "connected",
 				},
 				{
 					Name:   "staging",
@@ -50,9 +46,6 @@ func TestCentralClient_ListClusters(t *testing.T) {
 		t.Errorf("expected first cluster name 'prod', got %q", clusters[0].Name)
 	}
 
-	if clusters[0].KubernetesVersion != "1.28.0" {
-		t.Errorf("expected kubernetes version '1.28.0', got %q", clusters[0].KubernetesVersion)
-	}
 }
 
 func TestCentralClient_ListClusters_Empty(t *testing.T) {

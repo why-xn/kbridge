@@ -13,12 +13,8 @@ import (
 
 // ClusterResponse represents a cluster in API responses.
 type ClusterResponse struct {
-	Name              string `json:"name"`
-	Status            string `json:"status"`
-	KubernetesVersion string `json:"kubernetes_version,omitempty"`
-	NodeCount         int32  `json:"node_count,omitempty"`
-	Region            string `json:"region,omitempty"`
-	Provider          string `json:"provider,omitempty"`
+	Name   string `json:"name"`
+	Status string `json:"status"`
 }
 
 // ExecRequest represents a command execution request.
@@ -150,12 +146,8 @@ func (s *HTTPServer) handleListClusters(c *gin.Context) {
 	clusters := make([]ClusterResponse, 0, len(agents))
 	for _, agent := range agents {
 		clusters = append(clusters, ClusterResponse{
-			Name:              agent.ClusterName,
-			Status:            agent.Status,
-			KubernetesVersion: agent.KubernetesVersion,
-			NodeCount:         agent.NodeCount,
-			Region:            agent.Region,
-			Provider:          agent.Provider,
+			Name:   agent.ClusterName,
+			Status: agent.Status,
 		})
 	}
 

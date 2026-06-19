@@ -44,12 +44,8 @@ func TestAgentStore_Register(t *testing.T) {
 	store := NewAgentStore()
 
 	info := &AgentInfo{
-		ID:                "agent-1",
-		ClusterName:       "test-cluster",
-		KubernetesVersion: "1.28.0",
-		NodeCount:         3,
-		Region:            "us-east-1",
-		Provider:          "aws",
+		ID:          "agent-1",
+		ClusterName: "test-cluster",
 	}
 
 	store.Register(info)

@@ -58,9 +58,6 @@ func runStatus(cmd *cobra.Command, args []string) error {
 				fmt.Printf("          (cluster not found: %v)\n", err)
 			} else {
 				fmt.Printf("          Status: %s\n", cluster.Status)
-				if cluster.KubernetesVersion != "" {
-					fmt.Printf("          Version: %s\n", cluster.KubernetesVersion)
-				}
 			}
 		}
 	}

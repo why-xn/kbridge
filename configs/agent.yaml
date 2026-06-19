@@ -11,7 +11,3 @@ central:
 
 cluster:
   name: dev-cluster
-  kubernetes_version: "1.28.0"
-  node_count: 3
-  region: us-east-1
-  provider: aws

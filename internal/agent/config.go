@@ -32,13 +32,9 @@ type AgentTLSConfig struct {
 	Insecure bool   `yaml:"insecure"`
 }
 
-// ClusterConfig holds the cluster metadata configuration.
+// ClusterConfig holds the cluster identification configuration.
 type ClusterConfig struct {
-	Name              string `yaml:"name"`
-	KubernetesVersion string `yaml:"kubernetes_version"`
-	NodeCount         int32  `yaml:"node_count"`
-	Region            string `yaml:"region"`
-	Provider          string `yaml:"provider"`
+	Name string `yaml:"name"`
 }
 
 // DefaultConfig returns a Config with sensible default values.
@@ -49,11 +45,7 @@ func DefaultConfig() *Config {
 			Token: "",
 		},
 		Cluster: ClusterConfig{
-			Name:              "default",
-			KubernetesVersion: "unknown",
-			NodeCount:         1,
-			Region:            "unknown",
-			Provider:          "unknown",
+			Name: "default",
 		},
 	}
 }
@@ -97,12 +89,6 @@ func applyEnvOverrides(cfg *Config) {
 	}
 	if name := os.Getenv("KBRIDGE_CLUSTER_NAME"); name != "" {
 		cfg.Cluster.Name = name
-	}
-	if region := os.Getenv("KBRIDGE_CLUSTER_REGION"); region != "" {
-		cfg.Cluster.Region = region
-	}
-	if provider := os.Getenv("KBRIDGE_CLUSTER_PROVIDER"); provider != "" {
-		cfg.Cluster.Provider = provider
 	}
 }
 

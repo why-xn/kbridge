@@ -171,11 +171,9 @@ func (s *SQLiteStore) CreateCluster(ctx context.Context, cluster *Cluster) error
 	}
 	now := time.Now().UTC().Format(timeFormat)
 	_, err := s.db.ExecContext(ctx,
-		`INSERT INTO clusters (id, name, status, agent_id, kubernetes_version, node_count, region, provider, last_seen_at, created_at, updated_at)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		`INSERT INTO clusters (id, name, status, agent_id, last_seen_at, created_at, updated_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?)`,
 		cluster.ID, cluster.Name, cluster.Status, nilIfEmpty(cluster.AgentID),
-		nilIfEmpty(cluster.KubernetesVersion), cluster.NodeCount,
-		nilIfEmpty(cluster.Region), nilIfEmpty(cluster.Provider),
 		formatNullableTime(cluster.LastSeenAt), now, now,
 	)
 	if err != nil {
@@ -195,22 +193,21 @@ func nilIfEmpty(s string) *string {
 
 func (s *SQLiteStore) GetClusterByID(ctx context.Context, id string) (*Cluster, error) {
 	return s.scanCluster(s.db.QueryRowContext(ctx,
-		`SELECT id, name, status, agent_id, kubernetes_version, node_count, region, provider, last_seen_at, created_at, updated_at
+		`SELECT id, name, status, agent_id, last_seen_at, created_at, updated_at
 		 FROM clusters WHERE id = ?`, id))
 }
 
 func (s *SQLiteStore) GetClusterByName(ctx context.Context, name string) (*Cluster, error) {
 	return s.scanCluster(s.db.QueryRowContext(ctx,
-		`SELECT id, name, status, agent_id, kubernetes_version, node_count, region, provider, last_seen_at, created_at, updated_at
+		`SELECT id, name, status, agent_id, last_seen_at, created_at, updated_at
 		 FROM clusters WHERE name = ?`, name))
 }
 
 func (s *SQLiteStore) scanCluster(row *sql.Row) (*Cluster, error) {
 	var c Cluster
-	var agentID, k8sVer, region, provider, lastSeen *string
+	var agentID, lastSeen *string
 	var createdAt, updatedAt string
-	err := row.Scan(&c.ID, &c.Name, &c.Status, &agentID, &k8sVer,
-		&c.NodeCount, &region, &provider, &lastSeen, &createdAt, &updatedAt)
+	err := row.Scan(&c.ID, &c.Name, &c.Status, &agentID, &lastSeen, &createdAt, &updatedAt)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
@@ -218,9 +215,6 @@ func (s *SQLiteStore) scanCluster(row *sql.Row) (*Cluster, error) {
 		return nil, fmt.Errorf("scan cluster: %w", err)
 	}
 	c.AgentID = derefStr(agentID)
-	c.KubernetesVersion = derefStr(k8sVer)
-	c.Region = derefStr(region)
-	c.Provider = derefStr(provider)
 	c.LastSeenAt = parseNullableTime(lastSeen)
 	c.CreatedAt, _ = time.Parse(timeFormat, createdAt)
 	c.UpdatedAt, _ = time.Parse(timeFormat, updatedAt)
@@ -236,7 +230,7 @@ func derefStr(s *string) string {
 
 func (s *SQLiteStore) ListClusters(ctx context.Context) ([]*Cluster, error) {
 	rows, err := s.db.QueryContext(ctx,
-		`SELECT id, name, status, agent_id, kubernetes_version, node_count, region, provider, last_seen_at, created_at, updated_at
+		`SELECT id, name, status, agent_id, last_seen_at, created_at, updated_at
 		 FROM clusters`)
 	if err != nil {
 		return nil, fmt.Errorf("list clusters: %w", err)
@@ -246,17 +240,13 @@ func (s *SQLiteStore) ListClusters(ctx context.Context) ([]*Cluster, error) {
 	var clusters []*Cluster
 	for rows.Next() {
 		var c Cluster
-		var agentID, k8sVer, region, provider, lastSeen *string
+		var agentID, lastSeen *string
 		var createdAt, updatedAt string
-		err := rows.Scan(&c.ID, &c.Name, &c.Status, &agentID, &k8sVer,
-			&c.NodeCount, &region, &provider, &lastSeen, &createdAt, &updatedAt)
+		err := rows.Scan(&c.ID, &c.Name, &c.Status, &agentID, &lastSeen, &createdAt, &updatedAt)
 		if err != nil {
 			return nil, fmt.Errorf("scan cluster row: %w", err)
 		}
 		c.AgentID = derefStr(agentID)
-		c.KubernetesVersion = derefStr(k8sVer)
-		c.Region = derefStr(region)
-		c.Provider = derefStr(provider)
 		c.LastSeenAt = parseNullableTime(lastSeen)
 		c.CreatedAt, _ = time.Parse(timeFormat, createdAt)
 		c.UpdatedAt, _ = time.Parse(timeFormat, updatedAt)
@@ -268,12 +258,9 @@ func (s *SQLiteStore) ListClusters(ctx context.Context) ([]*Cluster, error) {
 func (s *SQLiteStore) UpdateCluster(ctx context.Context, cluster *Cluster) error {
 	now := time.Now().UTC().Format(timeFormat)
 	_, err := s.db.ExecContext(ctx,
-		`UPDATE clusters SET name = ?, status = ?, agent_id = ?, kubernetes_version = ?,
-		 node_count = ?, region = ?, provider = ?, last_seen_at = ?, updated_at = ?
+		`UPDATE clusters SET name = ?, status = ?, agent_id = ?, last_seen_at = ?, updated_at = ?
 		 WHERE id = ?`,
 		cluster.Name, cluster.Status, nilIfEmpty(cluster.AgentID),
-		nilIfEmpty(cluster.KubernetesVersion), cluster.NodeCount,
-		nilIfEmpty(cluster.Region), nilIfEmpty(cluster.Provider),
 		formatNullableTime(cluster.LastSeenAt), now, cluster.ID,
 	)
 	if err != nil {

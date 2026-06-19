@@ -18,17 +18,13 @@ CREATE TABLE IF NOT EXISTS users (
 CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email ON users(email);
 
 CREATE TABLE IF NOT EXISTS clusters (
-    id                 TEXT PRIMARY KEY,
-    name               TEXT NOT NULL UNIQUE,
-    status             TEXT NOT NULL DEFAULT 'disconnected',
-    agent_id           TEXT,
-    kubernetes_version TEXT,
-    node_count         INTEGER,
-    region             TEXT,
-    provider           TEXT,
-    last_seen_at       TEXT,
-    created_at         TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
-    updated_at         TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+    id           TEXT PRIMARY KEY,
+    name         TEXT NOT NULL UNIQUE,
+    status       TEXT NOT NULL DEFAULT 'disconnected',
+    agent_id     TEXT,
+    last_seen_at TEXT,
+    created_at   TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
+    updated_at   TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
 );
 CREATE UNIQUE INDEX IF NOT EXISTS idx_clusters_name ON clusters(name);
 CREATE INDEX IF NOT EXISTS idx_clusters_status ON clusters(status);

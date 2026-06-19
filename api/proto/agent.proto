@@ -37,23 +37,7 @@ message RegisterRequest {
   // cluster_name is the unique name identifying this cluster.
   string cluster_name = 2;
 
-  // metadata contains additional information about the cluster.
-  ClusterMetadata metadata = 3;
-}
-
-// ClusterMetadata contains information about the Kubernetes cluster.
-message ClusterMetadata {
-  // kubernetes_version is the version of the Kubernetes cluster (e.g., "1.28.0").
-  string kubernetes_version = 1;
-
-  // node_count is the number of nodes in the cluster.
-  int32 node_count = 2;
-
-  // region is the cloud region where the cluster is deployed (e.g., "us-east-1").
-  string region = 3;
-
-  // provider is the cloud provider or platform (e.g., "aws", "gcp", "azure", "on-prem").
-  string provider = 4;
+  reserved 3;
 }
 
 // RegisterResponse is returned after an agent registration attempt.

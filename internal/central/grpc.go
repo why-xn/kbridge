@@ -81,14 +81,6 @@ func (s *GRPCServer) Register(ctx context.Context, req *agentpb.RegisterRequest)
 		Token:       req.GetAgentToken(),
 	}
 
-	// Extract metadata if provided
-	if meta := req.GetMetadata(); meta != nil {
-		info.KubernetesVersion = meta.GetKubernetesVersion()
-		info.NodeCount = meta.GetNodeCount()
-		info.Region = meta.GetRegion()
-		info.Provider = meta.GetProvider()
-	}
-
 	// Persist the cluster's connected state, then track the agent in memory
 	// for live command routing.
 	s.markClusterConnected(ctx, cluster, agentID, info)
@@ -107,10 +99,6 @@ func (s *GRPCServer) markClusterConnected(ctx context.Context, cluster *Cluster,
 	now := time.Now().UTC()
 	cluster.Status = AgentStatusConnected
 	cluster.AgentID = agentID
-	cluster.KubernetesVersion = info.KubernetesVersion
-	cluster.NodeCount = info.NodeCount
-	cluster.Region = info.Region
-	cluster.Provider = info.Provider
 	cluster.LastSeenAt = &now
 	if err := s.authn.store.UpdateCluster(ctx, cluster); err != nil {
 		log.Printf("Warning: failed to persist cluster %s state: %v", cluster.Name, err)

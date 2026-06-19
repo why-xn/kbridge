@@ -67,10 +67,6 @@ central:
 
 cluster:
   name: dev-cluster        # unique cluster identifier (must match the token)
-  kubernetes_version: "1.28.0"
-  node_count: 3
-  region: us-east-1
-  provider: aws
 ```
 
 ### Agent environment variables
@@ -81,8 +77,6 @@ cluster:
 | `KBRIDGE_CENTRAL_URL` | `central.url` | `localhost:9090` |
 | `KBRIDGE_AGENT_TOKEN` / `AGENT_TOKEN` | `central.token` | — |
 | `KBRIDGE_CLUSTER_NAME` | `cluster.name` | `default` |
-| `KBRIDGE_CLUSTER_REGION` | `cluster.region` | `unknown` |
-| `KBRIDGE_CLUSTER_PROVIDER` | `cluster.provider` | `unknown` |
 
 ## CLI (`~/.kbridge/config.yaml`)
 

@@ -133,9 +133,7 @@ type RegisterRequest struct {
 	// agent_token is the pre-shared token used to authenticate the agent.
 	AgentToken string `protobuf:"bytes,1,opt,name=agent_token,json=agentToken,proto3" json:"agent_token,omitempty"`
 	// cluster_name is the unique name identifying this cluster.
-	ClusterName string `protobuf:"bytes,2,opt,name=cluster_name,json=clusterName,proto3" json:"cluster_name,omitempty"`
-	// metadata contains additional information about the cluster.
-	Metadata      *ClusterMetadata `protobuf:"bytes,3,opt,name=metadata,proto3" json:"metadata,omitempty"`
+	ClusterName   string `protobuf:"bytes,2,opt,name=cluster_name,json=clusterName,proto3" json:"cluster_name,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -184,86 +182,6 @@ func (x *RegisterRequest) GetClusterName() string {
 	return ""
 }
 
-func (x *RegisterRequest) GetMetadata() *ClusterMetadata {
-	if x != nil {
-		return x.Metadata
-	}
-	return nil
-}
-
-// ClusterMetadata contains information about the Kubernetes cluster.
-type ClusterMetadata struct {
-	state protoimpl.MessageState `protogen:"open.v1"`
-	// kubernetes_version is the version of the Kubernetes cluster (e.g., "1.28.0").
-	KubernetesVersion string `protobuf:"bytes,1,opt,name=kubernetes_version,json=kubernetesVersion,proto3" json:"kubernetes_version,omitempty"`
-	// node_count is the number of nodes in the cluster.
-	NodeCount int32 `protobuf:"varint,2,opt,name=node_count,json=nodeCount,proto3" json:"node_count,omitempty"`
-	// region is the cloud region where the cluster is deployed (e.g., "us-east-1").
-	Region string `protobuf:"bytes,3,opt,name=region,proto3" json:"region,omitempty"`
-	// provider is the cloud provider or platform (e.g., "aws", "gcp", "azure", "on-prem").
-	Provider      string `protobuf:"bytes,4,opt,name=provider,proto3" json:"provider,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *ClusterMetadata) Reset() {
-	*x = ClusterMetadata{}
-	mi := &file_agent_proto_msgTypes[1]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *ClusterMetadata) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*ClusterMetadata) ProtoMessage() {}
-
-func (x *ClusterMetadata) ProtoReflect() protoreflect.Message {
-	mi := &file_agent_proto_msgTypes[1]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use ClusterMetadata.ProtoReflect.Descriptor instead.
-func (*ClusterMetadata) Descriptor() ([]byte, []int) {
-	return file_agent_proto_rawDescGZIP(), []int{1}
-}
-
-func (x *ClusterMetadata) GetKubernetesVersion() string {
-	if x != nil {
-		return x.KubernetesVersion
-	}
-	return ""
-}
-
-func (x *ClusterMetadata) GetNodeCount() int32 {
-	if x != nil {
-		return x.NodeCount
-	}
-	return 0
-}
-
-func (x *ClusterMetadata) GetRegion() string {
-	if x != nil {
-		return x.Region
-	}
-	return ""
-}
-
-func (x *ClusterMetadata) GetProvider() string {
-	if x != nil {
-		return x.Provider
-	}
-	return ""
-}
-
 // RegisterResponse is returned after an agent registration attempt.
 type RegisterResponse struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
@@ -280,7 +198,7 @@ type RegisterResponse struct {
 
 func (x *RegisterResponse) Reset() {
 	*x = RegisterResponse{}
-	mi := &file_agent_proto_msgTypes[2]
+	mi := &file_agent_proto_msgTypes[1]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -292,7 +210,7 @@ func (x *RegisterResponse) String() string {
 func (*RegisterResponse) ProtoMessage() {}
 
 func (x *RegisterResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_agent_proto_msgTypes[2]
+	mi := &file_agent_proto_msgTypes[1]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -305,7 +223,7 @@ func (x *RegisterResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RegisterResponse.ProtoReflect.Descriptor instead.
 func (*RegisterResponse) Descriptor() ([]byte, []int) {
-	return file_agent_proto_rawDescGZIP(), []int{2}
+	return file_agent_proto_rawDescGZIP(), []int{1}
 }
 
 func (x *RegisterResponse) GetSuccess() bool {
@@ -342,7 +260,7 @@ type HeartbeatRequest struct {
 
 func (x *HeartbeatRequest) Reset() {
 	*x = HeartbeatRequest{}
-	mi := &file_agent_proto_msgTypes[3]
+	mi := &file_agent_proto_msgTypes[2]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -354,7 +272,7 @@ func (x *HeartbeatRequest) String() string {
 func (*HeartbeatRequest) ProtoMessage() {}
 
 func (x *HeartbeatRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_agent_proto_msgTypes[3]
+	mi := &file_agent_proto_msgTypes[2]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -367,7 +285,7 @@ func (x *HeartbeatRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use HeartbeatRequest.ProtoReflect.Descriptor instead.
 func (*HeartbeatRequest) Descriptor() ([]byte, []int) {
-	return file_agent_proto_rawDescGZIP(), []int{3}
+	return file_agent_proto_rawDescGZIP(), []int{2}
 }
 
 func (x *HeartbeatRequest) GetAgentId() string {
@@ -397,7 +315,7 @@ type HeartbeatResponse struct {
 
 func (x *HeartbeatResponse) Reset() {
 	*x = HeartbeatResponse{}
-	mi := &file_agent_proto_msgTypes[4]
+	mi := &file_agent_proto_msgTypes[3]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -409,7 +327,7 @@ func (x *HeartbeatResponse) String() string {
 func (*HeartbeatResponse) ProtoMessage() {}
 
 func (x *HeartbeatResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_agent_proto_msgTypes[4]
+	mi := &file_agent_proto_msgTypes[3]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -422,7 +340,7 @@ func (x *HeartbeatResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use HeartbeatResponse.ProtoReflect.Descriptor instead.
 func (*HeartbeatResponse) Descriptor() ([]byte, []int) {
-	return file_agent_proto_rawDescGZIP(), []int{4}
+	return file_agent_proto_rawDescGZIP(), []int{3}
 }
 
 func (x *HeartbeatResponse) GetAcknowledged() bool {
@@ -461,7 +379,7 @@ type CommandRequest struct {
 
 func (x *CommandRequest) Reset() {
 	*x = CommandRequest{}
-	mi := &file_agent_proto_msgTypes[5]
+	mi := &file_agent_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -473,7 +391,7 @@ func (x *CommandRequest) String() string {
 func (*CommandRequest) ProtoMessage() {}
 
 func (x *CommandRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_agent_proto_msgTypes[5]
+	mi := &file_agent_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -486,7 +404,7 @@ func (x *CommandRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CommandRequest.ProtoReflect.Descriptor instead.
 func (*CommandRequest) Descriptor() ([]byte, []int) {
-	return file_agent_proto_rawDescGZIP(), []int{5}
+	return file_agent_proto_rawDescGZIP(), []int{4}
 }
 
 func (x *CommandRequest) GetRequestId() string {
@@ -553,7 +471,7 @@ type CommandResponse struct {
 
 func (x *CommandResponse) Reset() {
 	*x = CommandResponse{}
-	mi := &file_agent_proto_msgTypes[6]
+	mi := &file_agent_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -565,7 +483,7 @@ func (x *CommandResponse) String() string {
 func (*CommandResponse) ProtoMessage() {}
 
 func (x *CommandResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_agent_proto_msgTypes[6]
+	mi := &file_agent_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -578,7 +496,7 @@ func (x *CommandResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CommandResponse.ProtoReflect.Descriptor instead.
 func (*CommandResponse) Descriptor() ([]byte, []int) {
-	return file_agent_proto_rawDescGZIP(), []int{6}
+	return file_agent_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *CommandResponse) GetRequestId() string {
@@ -634,7 +552,7 @@ type GetPendingCommandsRequest struct {
 
 func (x *GetPendingCommandsRequest) Reset() {
 	*x = GetPendingCommandsRequest{}
-	mi := &file_agent_proto_msgTypes[7]
+	mi := &file_agent_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -646,7 +564,7 @@ func (x *GetPendingCommandsRequest) String() string {
 func (*GetPendingCommandsRequest) ProtoMessage() {}
 
 func (x *GetPendingCommandsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_agent_proto_msgTypes[7]
+	mi := &file_agent_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -659,7 +577,7 @@ func (x *GetPendingCommandsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetPendingCommandsRequest.ProtoReflect.Descriptor instead.
 func (*GetPendingCommandsRequest) Descriptor() ([]byte, []int) {
-	return file_agent_proto_rawDescGZIP(), []int{7}
+	return file_agent_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *GetPendingCommandsRequest) GetAgentId() string {
@@ -680,7 +598,7 @@ type GetPendingCommandsResponse struct {
 
 func (x *GetPendingCommandsResponse) Reset() {
 	*x = GetPendingCommandsResponse{}
-	mi := &file_agent_proto_msgTypes[8]
+	mi := &file_agent_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -692,7 +610,7 @@ func (x *GetPendingCommandsResponse) String() string {
 func (*GetPendingCommandsResponse) ProtoMessage() {}
 
 func (x *GetPendingCommandsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_agent_proto_msgTypes[8]
+	mi := &file_agent_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -705,7 +623,7 @@ func (x *GetPendingCommandsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetPendingCommandsResponse.ProtoReflect.Descriptor instead.
 func (*GetPendingCommandsResponse) Descriptor() ([]byte, []int) {
-	return file_agent_proto_rawDescGZIP(), []int{8}
+	return file_agent_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *GetPendingCommandsResponse) GetCommands() []*CommandRequest {
@@ -734,7 +652,7 @@ type SubmitCommandResultRequest struct {
 
 func (x *SubmitCommandResultRequest) Reset() {
 	*x = SubmitCommandResultRequest{}
-	mi := &file_agent_proto_msgTypes[9]
+	mi := &file_agent_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -746,7 +664,7 @@ func (x *SubmitCommandResultRequest) String() string {
 func (*SubmitCommandResultRequest) ProtoMessage() {}
 
 func (x *SubmitCommandResultRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_agent_proto_msgTypes[9]
+	mi := &file_agent_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -759,7 +677,7 @@ func (x *SubmitCommandResultRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SubmitCommandResultRequest.ProtoReflect.Descriptor instead.
 func (*SubmitCommandResultRequest) Descriptor() ([]byte, []int) {
-	return file_agent_proto_rawDescGZIP(), []int{9}
+	return file_agent_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *SubmitCommandResultRequest) GetRequestId() string {
@@ -808,7 +726,7 @@ type SubmitCommandResultResponse struct {
 
 func (x *SubmitCommandResultResponse) Reset() {
 	*x = SubmitCommandResultResponse{}
-	mi := &file_agent_proto_msgTypes[10]
+	mi := &file_agent_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -820,7 +738,7 @@ func (x *SubmitCommandResultResponse) String() string {
 func (*SubmitCommandResultResponse) ProtoMessage() {}
 
 func (x *SubmitCommandResultResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_agent_proto_msgTypes[10]
+	mi := &file_agent_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -833,7 +751,7 @@ func (x *SubmitCommandResultResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SubmitCommandResultResponse.ProtoReflect.Descriptor instead.
 func (*SubmitCommandResultResponse) Descriptor() ([]byte, []int) {
-	return file_agent_proto_rawDescGZIP(), []int{10}
+	return file_agent_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *SubmitCommandResultResponse) GetSuccess() bool {
@@ -862,7 +780,7 @@ type CentralStreamMessage struct {
 
 func (x *CentralStreamMessage) Reset() {
 	*x = CentralStreamMessage{}
-	mi := &file_agent_proto_msgTypes[11]
+	mi := &file_agent_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -874,7 +792,7 @@ func (x *CentralStreamMessage) String() string {
 func (*CentralStreamMessage) ProtoMessage() {}
 
 func (x *CentralStreamMessage) ProtoReflect() protoreflect.Message {
-	mi := &file_agent_proto_msgTypes[11]
+	mi := &file_agent_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -887,7 +805,7 @@ func (x *CentralStreamMessage) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CentralStreamMessage.ProtoReflect.Descriptor instead.
 func (*CentralStreamMessage) Descriptor() ([]byte, []int) {
-	return file_agent_proto_rawDescGZIP(), []int{11}
+	return file_agent_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *CentralStreamMessage) GetMsg() isCentralStreamMessage_Msg {
@@ -1035,7 +953,7 @@ type StartStream struct {
 
 func (x *StartStream) Reset() {
 	*x = StartStream{}
-	mi := &file_agent_proto_msgTypes[12]
+	mi := &file_agent_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1047,7 +965,7 @@ func (x *StartStream) String() string {
 func (*StartStream) ProtoMessage() {}
 
 func (x *StartStream) ProtoReflect() protoreflect.Message {
-	mi := &file_agent_proto_msgTypes[12]
+	mi := &file_agent_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1060,7 +978,7 @@ func (x *StartStream) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StartStream.ProtoReflect.Descriptor instead.
 func (*StartStream) Descriptor() ([]byte, []int) {
-	return file_agent_proto_rawDescGZIP(), []int{12}
+	return file_agent_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *StartStream) GetSessionId() string {
@@ -1114,7 +1032,7 @@ type CancelStream struct {
 
 func (x *CancelStream) Reset() {
 	*x = CancelStream{}
-	mi := &file_agent_proto_msgTypes[13]
+	mi := &file_agent_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1126,7 +1044,7 @@ func (x *CancelStream) String() string {
 func (*CancelStream) ProtoMessage() {}
 
 func (x *CancelStream) ProtoReflect() protoreflect.Message {
-	mi := &file_agent_proto_msgTypes[13]
+	mi := &file_agent_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1139,7 +1057,7 @@ func (x *CancelStream) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CancelStream.ProtoReflect.Descriptor instead.
 func (*CancelStream) Descriptor() ([]byte, []int) {
-	return file_agent_proto_rawDescGZIP(), []int{13}
+	return file_agent_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *CancelStream) GetSessionId() string {
@@ -1159,7 +1077,7 @@ type StdinData struct {
 
 func (x *StdinData) Reset() {
 	*x = StdinData{}
-	mi := &file_agent_proto_msgTypes[14]
+	mi := &file_agent_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1171,7 +1089,7 @@ func (x *StdinData) String() string {
 func (*StdinData) ProtoMessage() {}
 
 func (x *StdinData) ProtoReflect() protoreflect.Message {
-	mi := &file_agent_proto_msgTypes[14]
+	mi := &file_agent_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1184,7 +1102,7 @@ func (x *StdinData) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StdinData.ProtoReflect.Descriptor instead.
 func (*StdinData) Descriptor() ([]byte, []int) {
-	return file_agent_proto_rawDescGZIP(), []int{14}
+	return file_agent_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *StdinData) GetSessionId() string {
@@ -1212,7 +1130,7 @@ type Resize struct {
 
 func (x *Resize) Reset() {
 	*x = Resize{}
-	mi := &file_agent_proto_msgTypes[15]
+	mi := &file_agent_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1224,7 +1142,7 @@ func (x *Resize) String() string {
 func (*Resize) ProtoMessage() {}
 
 func (x *Resize) ProtoReflect() protoreflect.Message {
-	mi := &file_agent_proto_msgTypes[15]
+	mi := &file_agent_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1237,7 +1155,7 @@ func (x *Resize) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Resize.ProtoReflect.Descriptor instead.
 func (*Resize) Descriptor() ([]byte, []int) {
-	return file_agent_proto_rawDescGZIP(), []int{15}
+	return file_agent_proto_rawDescGZIP(), []int{14}
 }
 
 func (x *Resize) GetSessionId() string {
@@ -1280,7 +1198,7 @@ type AgentStreamMessage struct {
 
 func (x *AgentStreamMessage) Reset() {
 	*x = AgentStreamMessage{}
-	mi := &file_agent_proto_msgTypes[16]
+	mi := &file_agent_proto_msgTypes[15]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1292,7 +1210,7 @@ func (x *AgentStreamMessage) String() string {
 func (*AgentStreamMessage) ProtoMessage() {}
 
 func (x *AgentStreamMessage) ProtoReflect() protoreflect.Message {
-	mi := &file_agent_proto_msgTypes[16]
+	mi := &file_agent_proto_msgTypes[15]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1305,7 +1223,7 @@ func (x *AgentStreamMessage) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AgentStreamMessage.ProtoReflect.Descriptor instead.
 func (*AgentStreamMessage) Descriptor() ([]byte, []int) {
-	return file_agent_proto_rawDescGZIP(), []int{16}
+	return file_agent_proto_rawDescGZIP(), []int{15}
 }
 
 func (x *AgentStreamMessage) GetMsg() isAgentStreamMessage_Msg {
@@ -1448,7 +1366,7 @@ type StreamRegister struct {
 
 func (x *StreamRegister) Reset() {
 	*x = StreamRegister{}
-	mi := &file_agent_proto_msgTypes[17]
+	mi := &file_agent_proto_msgTypes[16]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1460,7 +1378,7 @@ func (x *StreamRegister) String() string {
 func (*StreamRegister) ProtoMessage() {}
 
 func (x *StreamRegister) ProtoReflect() protoreflect.Message {
-	mi := &file_agent_proto_msgTypes[17]
+	mi := &file_agent_proto_msgTypes[16]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1473,7 +1391,7 @@ func (x *StreamRegister) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StreamRegister.ProtoReflect.Descriptor instead.
 func (*StreamRegister) Descriptor() ([]byte, []int) {
-	return file_agent_proto_rawDescGZIP(), []int{17}
+	return file_agent_proto_rawDescGZIP(), []int{16}
 }
 
 func (x *StreamRegister) GetAgentId() string {
@@ -1494,7 +1412,7 @@ type StreamOutput struct {
 
 func (x *StreamOutput) Reset() {
 	*x = StreamOutput{}
-	mi := &file_agent_proto_msgTypes[18]
+	mi := &file_agent_proto_msgTypes[17]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1506,7 +1424,7 @@ func (x *StreamOutput) String() string {
 func (*StreamOutput) ProtoMessage() {}
 
 func (x *StreamOutput) ProtoReflect() protoreflect.Message {
-	mi := &file_agent_proto_msgTypes[18]
+	mi := &file_agent_proto_msgTypes[17]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1519,7 +1437,7 @@ func (x *StreamOutput) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StreamOutput.ProtoReflect.Descriptor instead.
 func (*StreamOutput) Descriptor() ([]byte, []int) {
-	return file_agent_proto_rawDescGZIP(), []int{18}
+	return file_agent_proto_rawDescGZIP(), []int{17}
 }
 
 func (x *StreamOutput) GetSessionId() string {
@@ -1554,7 +1472,7 @@ type StreamExit struct {
 
 func (x *StreamExit) Reset() {
 	*x = StreamExit{}
-	mi := &file_agent_proto_msgTypes[19]
+	mi := &file_agent_proto_msgTypes[18]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1566,7 +1484,7 @@ func (x *StreamExit) String() string {
 func (*StreamExit) ProtoMessage() {}
 
 func (x *StreamExit) ProtoReflect() protoreflect.Message {
-	mi := &file_agent_proto_msgTypes[19]
+	mi := &file_agent_proto_msgTypes[18]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1579,7 +1497,7 @@ func (x *StreamExit) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StreamExit.ProtoReflect.Descriptor instead.
 func (*StreamExit) Descriptor() ([]byte, []int) {
-	return file_agent_proto_rawDescGZIP(), []int{19}
+	return file_agent_proto_rawDescGZIP(), []int{18}
 }
 
 func (x *StreamExit) GetSessionId() string {
@@ -1615,7 +1533,7 @@ type PortForwardStart struct {
 
 func (x *PortForwardStart) Reset() {
 	*x = PortForwardStart{}
-	mi := &file_agent_proto_msgTypes[20]
+	mi := &file_agent_proto_msgTypes[19]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1627,7 +1545,7 @@ func (x *PortForwardStart) String() string {
 func (*PortForwardStart) ProtoMessage() {}
 
 func (x *PortForwardStart) ProtoReflect() protoreflect.Message {
-	mi := &file_agent_proto_msgTypes[20]
+	mi := &file_agent_proto_msgTypes[19]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1640,7 +1558,7 @@ func (x *PortForwardStart) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PortForwardStart.ProtoReflect.Descriptor instead.
 func (*PortForwardStart) Descriptor() ([]byte, []int) {
-	return file_agent_proto_rawDescGZIP(), []int{20}
+	return file_agent_proto_rawDescGZIP(), []int{19}
 }
 
 func (x *PortForwardStart) GetSessionId() string {
@@ -1682,7 +1600,7 @@ type PfOpen struct {
 
 func (x *PfOpen) Reset() {
 	*x = PfOpen{}
-	mi := &file_agent_proto_msgTypes[21]
+	mi := &file_agent_proto_msgTypes[20]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1694,7 +1612,7 @@ func (x *PfOpen) String() string {
 func (*PfOpen) ProtoMessage() {}
 
 func (x *PfOpen) ProtoReflect() protoreflect.Message {
-	mi := &file_agent_proto_msgTypes[21]
+	mi := &file_agent_proto_msgTypes[20]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1707,7 +1625,7 @@ func (x *PfOpen) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PfOpen.ProtoReflect.Descriptor instead.
 func (*PfOpen) Descriptor() ([]byte, []int) {
-	return file_agent_proto_rawDescGZIP(), []int{21}
+	return file_agent_proto_rawDescGZIP(), []int{20}
 }
 
 func (x *PfOpen) GetSessionId() string {
@@ -1742,7 +1660,7 @@ type PfData struct {
 
 func (x *PfData) Reset() {
 	*x = PfData{}
-	mi := &file_agent_proto_msgTypes[22]
+	mi := &file_agent_proto_msgTypes[21]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1754,7 +1672,7 @@ func (x *PfData) String() string {
 func (*PfData) ProtoMessage() {}
 
 func (x *PfData) ProtoReflect() protoreflect.Message {
-	mi := &file_agent_proto_msgTypes[22]
+	mi := &file_agent_proto_msgTypes[21]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1767,7 +1685,7 @@ func (x *PfData) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PfData.ProtoReflect.Descriptor instead.
 func (*PfData) Descriptor() ([]byte, []int) {
-	return file_agent_proto_rawDescGZIP(), []int{22}
+	return file_agent_proto_rawDescGZIP(), []int{21}
 }
 
 func (x *PfData) GetSessionId() string {
@@ -1801,7 +1719,7 @@ type PfClose struct {
 
 func (x *PfClose) Reset() {
 	*x = PfClose{}
-	mi := &file_agent_proto_msgTypes[23]
+	mi := &file_agent_proto_msgTypes[22]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1813,7 +1731,7 @@ func (x *PfClose) String() string {
 func (*PfClose) ProtoMessage() {}
 
 func (x *PfClose) ProtoReflect() protoreflect.Message {
-	mi := &file_agent_proto_msgTypes[23]
+	mi := &file_agent_proto_msgTypes[22]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1826,7 +1744,7 @@ func (x *PfClose) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PfClose.ProtoReflect.Descriptor instead.
 func (*PfClose) Descriptor() ([]byte, []int) {
-	return file_agent_proto_rawDescGZIP(), []int{23}
+	return file_agent_proto_rawDescGZIP(), []int{22}
 }
 
 func (x *PfClose) GetSessionId() string {
@@ -1854,7 +1772,7 @@ type PfConnError struct {
 
 func (x *PfConnError) Reset() {
 	*x = PfConnError{}
-	mi := &file_agent_proto_msgTypes[24]
+	mi := &file_agent_proto_msgTypes[23]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1866,7 +1784,7 @@ func (x *PfConnError) String() string {
 func (*PfConnError) ProtoMessage() {}
 
 func (x *PfConnError) ProtoReflect() protoreflect.Message {
-	mi := &file_agent_proto_msgTypes[24]
+	mi := &file_agent_proto_msgTypes[23]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1879,7 +1797,7 @@ func (x *PfConnError) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PfConnError.ProtoReflect.Descriptor instead.
 func (*PfConnError) Descriptor() ([]byte, []int) {
-	return file_agent_proto_rawDescGZIP(), []int{24}
+	return file_agent_proto_rawDescGZIP(), []int{23}
 }
 
 func (x *PfConnError) GetSessionId() string {
@@ -1912,7 +1830,7 @@ type PfReady struct {
 
 func (x *PfReady) Reset() {
 	*x = PfReady{}
-	mi := &file_agent_proto_msgTypes[25]
+	mi := &file_agent_proto_msgTypes[24]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1924,7 +1842,7 @@ func (x *PfReady) String() string {
 func (*PfReady) ProtoMessage() {}
 
 func (x *PfReady) ProtoReflect() protoreflect.Message {
-	mi := &file_agent_proto_msgTypes[25]
+	mi := &file_agent_proto_msgTypes[24]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1937,7 +1855,7 @@ func (x *PfReady) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PfReady.ProtoReflect.Descriptor instead.
 func (*PfReady) Descriptor() ([]byte, []int) {
-	return file_agent_proto_rawDescGZIP(), []int{25}
+	return file_agent_proto_rawDescGZIP(), []int{24}
 }
 
 func (x *PfReady) GetSessionId() string {
@@ -1957,7 +1875,7 @@ type PfSessionError struct {
 
 func (x *PfSessionError) Reset() {
 	*x = PfSessionError{}
-	mi := &file_agent_proto_msgTypes[26]
+	mi := &file_agent_proto_msgTypes[25]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1969,7 +1887,7 @@ func (x *PfSessionError) String() string {
 func (*PfSessionError) ProtoMessage() {}
 
 func (x *PfSessionError) ProtoReflect() protoreflect.Message {
-	mi := &file_agent_proto_msgTypes[26]
+	mi := &file_agent_proto_msgTypes[25]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1982,7 +1900,7 @@ func (x *PfSessionError) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PfSessionError.ProtoReflect.Descriptor instead.
 func (*PfSessionError) Descriptor() ([]byte, []int) {
-	return file_agent_proto_rawDescGZIP(), []int{26}
+	return file_agent_proto_rawDescGZIP(), []int{25}
 }
 
 func (x *PfSessionError) GetSessionId() string {
@@ -2003,18 +1921,11 @@ var File_agent_proto protoreflect.FileDescriptor
 
 const file_agent_proto_rawDesc = "" +
 	"\n" +
-	"\vagent.proto\x12\x10kbridge.agent.v1\"\x94\x01\n" +
+	"\vagent.proto\x12\x10kbridge.agent.v1\"[\n" +
 	"\x0fRegisterRequest\x12\x1f\n" +
 	"\vagent_token\x18\x01 \x01(\tR\n" +
 	"agentToken\x12!\n" +
-	"\fcluster_name\x18\x02 \x01(\tR\vclusterName\x12=\n" +
-	"\bmetadata\x18\x03 \x01(\v2!.kbridge.agent.v1.ClusterMetadataR\bmetadata\"\x93\x01\n" +
-	"\x0fClusterMetadata\x12-\n" +
-	"\x12kubernetes_version\x18\x01 \x01(\tR\x11kubernetesVersion\x12\x1d\n" +
-	"\n" +
-	"node_count\x18\x02 \x01(\x05R\tnodeCount\x12\x16\n" +
-	"\x06region\x18\x03 \x01(\tR\x06region\x12\x1a\n" +
-	"\bprovider\x18\x04 \x01(\tR\bprovider\"l\n" +
+	"\fcluster_name\x18\x02 \x01(\tR\vclusterNameJ\x04\b\x03\x10\x04\"l\n" +
 	"\x10RegisterResponse\x12\x18\n" +
 	"\asuccess\x18\x01 \x01(\bR\asuccess\x12\x19\n" +
 	"\bagent_id\x18\x02 \x01(\tR\aagentId\x12#\n" +
@@ -2170,75 +2081,73 @@ func file_agent_proto_rawDescGZIP() []byte {
 }
 
 var file_agent_proto_enumTypes = make([]protoimpl.EnumInfo, 2)
-var file_agent_proto_msgTypes = make([]protoimpl.MessageInfo, 27)
+var file_agent_proto_msgTypes = make([]protoimpl.MessageInfo, 26)
 var file_agent_proto_goTypes = []any{
 	(AgentStatus)(0),                    // 0: kbridge.agent.v1.AgentStatus
 	(OutputType)(0),                     // 1: kbridge.agent.v1.OutputType
 	(*RegisterRequest)(nil),             // 2: kbridge.agent.v1.RegisterRequest
-	(*ClusterMetadata)(nil),             // 3: kbridge.agent.v1.ClusterMetadata
-	(*RegisterResponse)(nil),            // 4: kbridge.agent.v1.RegisterResponse
-	(*HeartbeatRequest)(nil),            // 5: kbridge.agent.v1.HeartbeatRequest
-	(*HeartbeatResponse)(nil),           // 6: kbridge.agent.v1.HeartbeatResponse
-	(*CommandRequest)(nil),              // 7: kbridge.agent.v1.CommandRequest
-	(*CommandResponse)(nil),             // 8: kbridge.agent.v1.CommandResponse
-	(*GetPendingCommandsRequest)(nil),   // 9: kbridge.agent.v1.GetPendingCommandsRequest
-	(*GetPendingCommandsResponse)(nil),  // 10: kbridge.agent.v1.GetPendingCommandsResponse
-	(*SubmitCommandResultRequest)(nil),  // 11: kbridge.agent.v1.SubmitCommandResultRequest
-	(*SubmitCommandResultResponse)(nil), // 12: kbridge.agent.v1.SubmitCommandResultResponse
-	(*CentralStreamMessage)(nil),        // 13: kbridge.agent.v1.CentralStreamMessage
-	(*StartStream)(nil),                 // 14: kbridge.agent.v1.StartStream
-	(*CancelStream)(nil),                // 15: kbridge.agent.v1.CancelStream
-	(*StdinData)(nil),                   // 16: kbridge.agent.v1.StdinData
-	(*Resize)(nil),                      // 17: kbridge.agent.v1.Resize
-	(*AgentStreamMessage)(nil),          // 18: kbridge.agent.v1.AgentStreamMessage
-	(*StreamRegister)(nil),              // 19: kbridge.agent.v1.StreamRegister
-	(*StreamOutput)(nil),                // 20: kbridge.agent.v1.StreamOutput
-	(*StreamExit)(nil),                  // 21: kbridge.agent.v1.StreamExit
-	(*PortForwardStart)(nil),            // 22: kbridge.agent.v1.PortForwardStart
-	(*PfOpen)(nil),                      // 23: kbridge.agent.v1.PfOpen
-	(*PfData)(nil),                      // 24: kbridge.agent.v1.PfData
-	(*PfClose)(nil),                     // 25: kbridge.agent.v1.PfClose
-	(*PfConnError)(nil),                 // 26: kbridge.agent.v1.PfConnError
-	(*PfReady)(nil),                     // 27: kbridge.agent.v1.PfReady
-	(*PfSessionError)(nil),              // 28: kbridge.agent.v1.PfSessionError
+	(*RegisterResponse)(nil),            // 3: kbridge.agent.v1.RegisterResponse
+	(*HeartbeatRequest)(nil),            // 4: kbridge.agent.v1.HeartbeatRequest
+	(*HeartbeatResponse)(nil),           // 5: kbridge.agent.v1.HeartbeatResponse
+	(*CommandRequest)(nil),              // 6: kbridge.agent.v1.CommandRequest
+	(*CommandResponse)(nil),             // 7: kbridge.agent.v1.CommandResponse
+	(*GetPendingCommandsRequest)(nil),   // 8: kbridge.agent.v1.GetPendingCommandsRequest
+	(*GetPendingCommandsResponse)(nil),  // 9: kbridge.agent.v1.GetPendingCommandsResponse
+	(*SubmitCommandResultRequest)(nil),  // 10: kbridge.agent.v1.SubmitCommandResultRequest
+	(*SubmitCommandResultResponse)(nil), // 11: kbridge.agent.v1.SubmitCommandResultResponse
+	(*CentralStreamMessage)(nil),        // 12: kbridge.agent.v1.CentralStreamMessage
+	(*StartStream)(nil),                 // 13: kbridge.agent.v1.StartStream
+	(*CancelStream)(nil),                // 14: kbridge.agent.v1.CancelStream
+	(*StdinData)(nil),                   // 15: kbridge.agent.v1.StdinData
+	(*Resize)(nil),                      // 16: kbridge.agent.v1.Resize
+	(*AgentStreamMessage)(nil),          // 17: kbridge.agent.v1.AgentStreamMessage
+	(*StreamRegister)(nil),              // 18: kbridge.agent.v1.StreamRegister
+	(*StreamOutput)(nil),                // 19: kbridge.agent.v1.StreamOutput
+	(*StreamExit)(nil),                  // 20: kbridge.agent.v1.StreamExit
+	(*PortForwardStart)(nil),            // 21: kbridge.agent.v1.PortForwardStart
+	(*PfOpen)(nil),                      // 22: kbridge.agent.v1.PfOpen
+	(*PfData)(nil),                      // 23: kbridge.agent.v1.PfData
+	(*PfClose)(nil),                     // 24: kbridge.agent.v1.PfClose
+	(*PfConnError)(nil),                 // 25: kbridge.agent.v1.PfConnError
+	(*PfReady)(nil),                     // 26: kbridge.agent.v1.PfReady
+	(*PfSessionError)(nil),              // 27: kbridge.agent.v1.PfSessionError
 }
 var file_agent_proto_depIdxs = []int32{
-	3,  // 0: kbridge.agent.v1.RegisterRequest.metadata:type_name -> kbridge.agent.v1.ClusterMetadata
-	0,  // 1: kbridge.agent.v1.HeartbeatRequest.status:type_name -> kbridge.agent.v1.AgentStatus
-	1,  // 2: kbridge.agent.v1.CommandResponse.type:type_name -> kbridge.agent.v1.OutputType
-	7,  // 3: kbridge.agent.v1.GetPendingCommandsResponse.commands:type_name -> kbridge.agent.v1.CommandRequest
-	14, // 4: kbridge.agent.v1.CentralStreamMessage.start:type_name -> kbridge.agent.v1.StartStream
-	15, // 5: kbridge.agent.v1.CentralStreamMessage.cancel:type_name -> kbridge.agent.v1.CancelStream
-	16, // 6: kbridge.agent.v1.CentralStreamMessage.stdin:type_name -> kbridge.agent.v1.StdinData
-	17, // 7: kbridge.agent.v1.CentralStreamMessage.resize:type_name -> kbridge.agent.v1.Resize
-	22, // 8: kbridge.agent.v1.CentralStreamMessage.pf_start:type_name -> kbridge.agent.v1.PortForwardStart
-	23, // 9: kbridge.agent.v1.CentralStreamMessage.pf_open:type_name -> kbridge.agent.v1.PfOpen
-	24, // 10: kbridge.agent.v1.CentralStreamMessage.pf_data:type_name -> kbridge.agent.v1.PfData
-	25, // 11: kbridge.agent.v1.CentralStreamMessage.pf_close:type_name -> kbridge.agent.v1.PfClose
-	19, // 12: kbridge.agent.v1.AgentStreamMessage.register:type_name -> kbridge.agent.v1.StreamRegister
-	20, // 13: kbridge.agent.v1.AgentStreamMessage.output:type_name -> kbridge.agent.v1.StreamOutput
-	21, // 14: kbridge.agent.v1.AgentStreamMessage.exit:type_name -> kbridge.agent.v1.StreamExit
-	27, // 15: kbridge.agent.v1.AgentStreamMessage.pf_ready:type_name -> kbridge.agent.v1.PfReady
-	24, // 16: kbridge.agent.v1.AgentStreamMessage.pf_data:type_name -> kbridge.agent.v1.PfData
-	25, // 17: kbridge.agent.v1.AgentStreamMessage.pf_close:type_name -> kbridge.agent.v1.PfClose
-	26, // 18: kbridge.agent.v1.AgentStreamMessage.pf_conn_error:type_name -> kbridge.agent.v1.PfConnError
-	28, // 19: kbridge.agent.v1.AgentStreamMessage.pf_session_error:type_name -> kbridge.agent.v1.PfSessionError
-	1,  // 20: kbridge.agent.v1.StreamOutput.type:type_name -> kbridge.agent.v1.OutputType
-	2,  // 21: kbridge.agent.v1.AgentService.Register:input_type -> kbridge.agent.v1.RegisterRequest
-	5,  // 22: kbridge.agent.v1.AgentService.Heartbeat:input_type -> kbridge.agent.v1.HeartbeatRequest
-	18, // 23: kbridge.agent.v1.AgentService.OpenStream:input_type -> kbridge.agent.v1.AgentStreamMessage
-	9,  // 24: kbridge.agent.v1.AgentService.GetPendingCommands:input_type -> kbridge.agent.v1.GetPendingCommandsRequest
-	11, // 25: kbridge.agent.v1.AgentService.SubmitCommandResult:input_type -> kbridge.agent.v1.SubmitCommandResultRequest
-	4,  // 26: kbridge.agent.v1.AgentService.Register:output_type -> kbridge.agent.v1.RegisterResponse
-	6,  // 27: kbridge.agent.v1.AgentService.Heartbeat:output_type -> kbridge.agent.v1.HeartbeatResponse
-	13, // 28: kbridge.agent.v1.AgentService.OpenStream:output_type -> kbridge.agent.v1.CentralStreamMessage
-	10, // 29: kbridge.agent.v1.AgentService.GetPendingCommands:output_type -> kbridge.agent.v1.GetPendingCommandsResponse
-	12, // 30: kbridge.agent.v1.AgentService.SubmitCommandResult:output_type -> kbridge.agent.v1.SubmitCommandResultResponse
-	26, // [26:31] is the sub-list for method output_type
-	21, // [21:26] is the sub-list for method input_type
-	21, // [21:21] is the sub-list for extension type_name
-	21, // [21:21] is the sub-list for extension extendee
-	0,  // [0:21] is the sub-list for field type_name
+	0,  // 0: kbridge.agent.v1.HeartbeatRequest.status:type_name -> kbridge.agent.v1.AgentStatus
+	1,  // 1: kbridge.agent.v1.CommandResponse.type:type_name -> kbridge.agent.v1.OutputType
+	6,  // 2: kbridge.agent.v1.GetPendingCommandsResponse.commands:type_name -> kbridge.agent.v1.CommandRequest
+	13, // 3: kbridge.agent.v1.CentralStreamMessage.start:type_name -> kbridge.agent.v1.StartStream
+	14, // 4: kbridge.agent.v1.CentralStreamMessage.cancel:type_name -> kbridge.agent.v1.CancelStream
+	15, // 5: kbridge.agent.v1.CentralStreamMessage.stdin:type_name -> kbridge.agent.v1.StdinData
+	16, // 6: kbridge.agent.v1.CentralStreamMessage.resize:type_name -> kbridge.agent.v1.Resize
+	21, // 7: kbridge.agent.v1.CentralStreamMessage.pf_start:type_name -> kbridge.agent.v1.PortForwardStart
+	22, // 8: kbridge.agent.v1.CentralStreamMessage.pf_open:type_name -> kbridge.agent.v1.PfOpen
+	23, // 9: kbridge.agent.v1.CentralStreamMessage.pf_data:type_name -> kbridge.agent.v1.PfData
+	24, // 10: kbridge.agent.v1.CentralStreamMessage.pf_close:type_name -> kbridge.agent.v1.PfClose
+	18, // 11: kbridge.agent.v1.AgentStreamMessage.register:type_name -> kbridge.agent.v1.StreamRegister
+	19, // 12: kbridge.agent.v1.AgentStreamMessage.output:type_name -> kbridge.agent.v1.StreamOutput
+	20, // 13: kbridge.agent.v1.AgentStreamMessage.exit:type_name -> kbridge.agent.v1.StreamExit
+	26, // 14: kbridge.agent.v1.AgentStreamMessage.pf_ready:type_name -> kbridge.agent.v1.PfReady
+	23, // 15: kbridge.agent.v1.AgentStreamMessage.pf_data:type_name -> kbridge.agent.v1.PfData
+	24, // 16: kbridge.agent.v1.AgentStreamMessage.pf_close:type_name -> kbridge.agent.v1.PfClose
+	25, // 17: kbridge.agent.v1.AgentStreamMessage.pf_conn_error:type_name -> kbridge.agent.v1.PfConnError
+	27, // 18: kbridge.agent.v1.AgentStreamMessage.pf_session_error:type_name -> kbridge.agent.v1.PfSessionError
+	1,  // 19: kbridge.agent.v1.StreamOutput.type:type_name -> kbridge.agent.v1.OutputType
+	2,  // 20: kbridge.agent.v1.AgentService.Register:input_type -> kbridge.agent.v1.RegisterRequest
+	4,  // 21: kbridge.agent.v1.AgentService.Heartbeat:input_type -> kbridge.agent.v1.HeartbeatRequest
+	17, // 22: kbridge.agent.v1.AgentService.OpenStream:input_type -> kbridge.agent.v1.AgentStreamMessage
+	8,  // 23: kbridge.agent.v1.AgentService.GetPendingCommands:input_type -> kbridge.agent.v1.GetPendingCommandsRequest
+	10, // 24: kbridge.agent.v1.AgentService.SubmitCommandResult:input_type -> kbridge.agent.v1.SubmitCommandResultRequest
+	3,  // 25: kbridge.agent.v1.AgentService.Register:output_type -> kbridge.agent.v1.RegisterResponse
+	5,  // 26: kbridge.agent.v1.AgentService.Heartbeat:output_type -> kbridge.agent.v1.HeartbeatResponse
+	12, // 27: kbridge.agent.v1.AgentService.OpenStream:output_type -> kbridge.agent.v1.CentralStreamMessage
+	9,  // 28: kbridge.agent.v1.AgentService.GetPendingCommands:output_type -> kbridge.agent.v1.GetPendingCommandsResponse
+	11, // 29: kbridge.agent.v1.AgentService.SubmitCommandResult:output_type -> kbridge.agent.v1.SubmitCommandResultResponse
+	25, // [25:30] is the sub-list for method output_type
+	20, // [20:25] is the sub-list for method input_type
+	20, // [20:20] is the sub-list for extension type_name
+	20, // [20:20] is the sub-list for extension extendee
+	0,  // [0:20] is the sub-list for field type_name
 }
 
 func init() { file_agent_proto_init() }
@@ -2246,7 +2155,7 @@ func file_agent_proto_init() {
 	if File_agent_proto != nil {
 		return
 	}
-	file_agent_proto_msgTypes[11].OneofWrappers = []any{
+	file_agent_proto_msgTypes[10].OneofWrappers = []any{
 		(*CentralStreamMessage_Start)(nil),
 		(*CentralStreamMessage_Cancel)(nil),
 		(*CentralStreamMessage_Stdin)(nil),
@@ -2256,7 +2165,7 @@ func file_agent_proto_init() {
 		(*CentralStreamMessage_PfData)(nil),
 		(*CentralStreamMessage_PfClose)(nil),
 	}
-	file_agent_proto_msgTypes[16].OneofWrappers = []any{
+	file_agent_proto_msgTypes[15].OneofWrappers = []any{
 		(*AgentStreamMessage_Register)(nil),
 		(*AgentStreamMessage_Output)(nil),
 		(*AgentStreamMessage_Exit)(nil),
@@ -2272,7 +2181,7 @@ func file_agent_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_agent_proto_rawDesc), len(file_agent_proto_rawDesc)),
 			NumEnums:      2,
-			NumMessages:   27,
+			NumMessages:   26,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

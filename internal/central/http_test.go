@@ -64,20 +64,12 @@ func TestHTTPServer_ListClusters_WithAgents(t *testing.T) {
 
 	// Register some agents
 	store.Register(&AgentInfo{
-		ID:                "agent-1",
-		ClusterName:       "production",
-		KubernetesVersion: "1.28.0",
-		NodeCount:         5,
-		Region:            "us-east-1",
-		Provider:          "aws",
+		ID:          "agent-1",
+		ClusterName: "production",
 	})
 	store.Register(&AgentInfo{
-		ID:                "agent-2",
-		ClusterName:       "staging",
-		KubernetesVersion: "1.27.0",
-		NodeCount:         3,
-		Region:            "us-west-2",
-		Provider:          "aws",
+		ID:          "agent-2",
+		ClusterName: "staging",
 	})
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/clusters", nil)
@@ -108,9 +100,6 @@ func TestHTTPServer_ListClusters_WithAgents(t *testing.T) {
 			foundProduction = true
 			if c.Status != AgentStatusConnected {
 				t.Errorf("expected status %q, got %q", AgentStatusConnected, c.Status)
-			}
-			if c.KubernetesVersion != "1.28.0" {
-				t.Errorf("expected k8s version '1.28.0', got %q", c.KubernetesVersion)
 			}
 		}
 		if c.Name == "staging" {

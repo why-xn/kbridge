@@ -115,12 +115,6 @@ func (a *Agent) register(ctx context.Context) error {
 	req := &agentpb.RegisterRequest{
 		AgentToken:  a.config.Central.Token,
 		ClusterName: a.config.Cluster.Name,
-		Metadata: &agentpb.ClusterMetadata{
-			KubernetesVersion: a.config.Cluster.KubernetesVersion,
-			NodeCount:         a.config.Cluster.NodeCount,
-			Region:            a.config.Cluster.Region,
-			Provider:          a.config.Cluster.Provider,
-		},
 	}
 
 	// Add timeout for registration

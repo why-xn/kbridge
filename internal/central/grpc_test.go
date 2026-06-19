@@ -34,12 +34,6 @@ func TestGRPCServer_Register_Success(t *testing.T) {
 	req := &agentpb.RegisterRequest{
 		AgentToken:  "valid-token",
 		ClusterName: "test-cluster",
-		Metadata: &agentpb.ClusterMetadata{
-			KubernetesVersion: "1.28.0",
-			NodeCount:         3,
-			Region:            "us-east-1",
-			Provider:          "aws",
-		},
 	}
 
 	resp, err := srv.Register(ctx, req)
@@ -64,10 +58,6 @@ func TestGRPCServer_Register_Success(t *testing.T) {
 	if agent.ClusterName != "test-cluster" {
 		t.Errorf("expected cluster name 'test-cluster', got %q", agent.ClusterName)
 	}
-
-	if agent.KubernetesVersion != "1.28.0" {
-		t.Errorf("expected kubernetes version '1.28.0', got %q", agent.KubernetesVersion)
-	}
 }
 
 func TestGRPCServer_Register_PersistsClusterConnected(t *testing.T) {
@@ -79,7 +69,6 @@ func TestGRPCServer_Register_PersistsClusterConnected(t *testing.T) {
 	resp, err := srv.Register(ctx, &agentpb.RegisterRequest{
 		AgentToken:  "edge-token",
 		ClusterName: "edge",
-		Metadata:    &agentpb.ClusterMetadata{KubernetesVersion: "1.30.0", NodeCount: 5},
 	})
 	if err != nil || !resp.Success {
 		t.Fatalf("register failed: err=%v resp=%+v", err, resp)
@@ -95,8 +84,8 @@ func TestGRPCServer_Register_PersistsClusterConnected(t *testing.T) {
 	if got.AgentID != resp.AgentId {
 		t.Errorf("want agent id %q, got %q", resp.AgentId, got.AgentID)
 	}
-	if got.KubernetesVersion != "1.30.0" || got.LastSeenAt == nil {
-		t.Errorf("expected metadata and last_seen persisted, got %+v", got)
+	if got.LastSeenAt == nil {
+		t.Errorf("expected last_seen persisted, got %+v", got)
 	}
 }
 

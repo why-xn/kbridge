@@ -30,12 +30,8 @@ type LoginResponse struct {
 
 // ClusterInfo represents a cluster returned by the API.
 type ClusterInfo struct {
-	Name              string `json:"name"`
-	Status            string `json:"status"`
-	KubernetesVersion string `json:"kubernetes_version,omitempty"`
-	NodeCount         int32  `json:"node_count,omitempty"`
-	Region            string `json:"region,omitempty"`
-	Provider          string `json:"provider,omitempty"`
+	Name   string `json:"name"`
+	Status string `json:"status"`
 }
 
 // ClustersResponse is the response from GET /api/v1/clusters.

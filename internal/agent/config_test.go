@@ -21,9 +21,6 @@ func TestDefaultConfig(t *testing.T) {
 		t.Errorf("expected default cluster name 'default', got %q", cfg.Cluster.Name)
 	}
 
-	if cfg.Cluster.NodeCount != 1 {
-		t.Errorf("expected default node count 1, got %d", cfg.Cluster.NodeCount)
-	}
 }
 
 func TestLoadConfig(t *testing.T) {
@@ -34,10 +31,6 @@ central:
   token: test-token
 cluster:
   name: production
-  kubernetes_version: "1.28.0"
-  node_count: 5
-  region: us-east-1
-  provider: aws
 `
 	tmpDir := t.TempDir()
 	configPath := filepath.Join(tmpDir, "agent.yaml")
@@ -60,14 +53,6 @@ cluster:
 
 	if cfg.Cluster.Name != "production" {
 		t.Errorf("expected cluster name 'production', got %q", cfg.Cluster.Name)
-	}
-
-	if cfg.Cluster.KubernetesVersion != "1.28.0" {
-		t.Errorf("expected k8s version '1.28.0', got %q", cfg.Cluster.KubernetesVersion)
-	}
-
-	if cfg.Cluster.NodeCount != 5 {
-		t.Errorf("expected node count 5, got %d", cfg.Cluster.NodeCount)
 	}
 }
 
@@ -174,14 +159,10 @@ func TestDefaultConfigWithEnv(t *testing.T) {
 	os.Setenv("KBRIDGE_CENTRAL_URL", "central.example.com:9090")
 	os.Setenv("KBRIDGE_AGENT_TOKEN", "env-agent-token")
 	os.Setenv("KBRIDGE_CLUSTER_NAME", "env-cluster")
-	os.Setenv("KBRIDGE_CLUSTER_REGION", "eu-west-1")
-	os.Setenv("KBRIDGE_CLUSTER_PROVIDER", "gcp")
 	defer func() {
 		os.Unsetenv("KBRIDGE_CENTRAL_URL")
 		os.Unsetenv("KBRIDGE_AGENT_TOKEN")
 		os.Unsetenv("KBRIDGE_CLUSTER_NAME")
-		os.Unsetenv("KBRIDGE_CLUSTER_REGION")
-		os.Unsetenv("KBRIDGE_CLUSTER_PROVIDER")
 	}()
 
 	cfg := DefaultConfigWithEnv()
@@ -196,14 +177,6 @@ func TestDefaultConfigWithEnv(t *testing.T) {
 
 	if cfg.Cluster.Name != "env-cluster" {
 		t.Errorf("expected cluster name 'env-cluster', got %q", cfg.Cluster.Name)
-	}
-
-	if cfg.Cluster.Region != "eu-west-1" {
-		t.Errorf("expected region 'eu-west-1', got %q", cfg.Cluster.Region)
-	}
-
-	if cfg.Cluster.Provider != "gcp" {
-		t.Errorf("expected provider 'gcp', got %q", cfg.Cluster.Provider)
 	}
 }
 

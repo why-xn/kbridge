@@ -14,17 +14,13 @@ type User struct {
 }
 
 type Cluster struct {
-	ID                string     `json:"id"`
-	Name              string     `json:"name"`
-	Status            string     `json:"status"`
-	AgentID           string     `json:"agent_id,omitempty"`
-	KubernetesVersion string     `json:"kubernetes_version,omitempty"`
-	NodeCount         int32      `json:"node_count,omitempty"`
-	Region            string     `json:"region,omitempty"`
-	Provider          string     `json:"provider,omitempty"`
-	LastSeenAt        *time.Time `json:"last_seen_at,omitempty"`
-	CreatedAt         time.Time  `json:"created_at"`
-	UpdatedAt         time.Time  `json:"updated_at"`
+	ID         string     `json:"id"`
+	Name       string     `json:"name"`
+	Status     string     `json:"status"`
+	AgentID    string     `json:"agent_id,omitempty"`
+	LastSeenAt *time.Time `json:"last_seen_at,omitempty"`
+	CreatedAt  time.Time  `json:"created_at"`
+	UpdatedAt  time.Time  `json:"updated_at"`
 }
 
 type AgentToken struct {

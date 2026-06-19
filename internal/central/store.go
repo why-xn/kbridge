@@ -7,16 +7,12 @@ import (
 
 // AgentInfo represents a registered agent and its current state.
 type AgentInfo struct {
-	ID                string
-	ClusterName       string
-	Token             string
-	Status            string
-	KubernetesVersion string
-	NodeCount         int32
-	Region            string
-	Provider          string
-	RegisteredAt      time.Time
-	LastSeen          time.Time
+	ID          string
+	ClusterName string
+	Token       string
+	Status      string
+	RegisteredAt time.Time
+	LastSeen    time.Time
 }
 
 // AgentStatus constants for agent connection state.

@@ -258,8 +258,6 @@ func TestSQLiteStore_Clusters(t *testing.T) {
 			c := &Cluster{Name: "update-cluster", Status: "disconnected"}
 			store.CreateCluster(ctx, c)
 			c.Status = "connected"
-			c.KubernetesVersion = "1.28.0"
-			c.NodeCount = 5
 			now := time.Now()
 			c.LastSeenAt = &now
 			if err := store.UpdateCluster(ctx, c); err != nil {
@@ -268,12 +266,6 @@ func TestSQLiteStore_Clusters(t *testing.T) {
 			got, _ := store.GetClusterByID(ctx, c.ID)
 			if got.Status != "connected" {
 				t.Errorf("expected status connected, got %q", got.Status)
-			}
-			if got.KubernetesVersion != "1.28.0" {
-				t.Errorf("expected k8s 1.28.0, got %q", got.KubernetesVersion)
-			}
-			if got.NodeCount != 5 {
-				t.Errorf("expected 5 nodes, got %d", got.NodeCount)
 			}
 			if got.LastSeenAt == nil {
 				t.Error("expected last_seen_at to be set")
