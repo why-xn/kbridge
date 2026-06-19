@@ -12,6 +12,8 @@ import (
 	"time"
 
 	"github.com/why-xn/kbridge/internal/auth"
+	"golang.org/x/net/http2"
+	"golang.org/x/net/http2/h2c"
 	"google.golang.org/grpc"
 )
 
@@ -90,9 +92,14 @@ func NewServer(cfg *Config) (*Server, error) {
 	grpcSrv := grpc.NewServer(grpcOpts...)
 	grpcHandler.RegisterWithServer(grpcSrv)
 
+	var httpHandlerFunc http.Handler = httpHandler.Handler()
+	if !cfg.TLS.Enabled {
+		// HTTP/2 over cleartext for the interactive exec bidi stream in dev.
+		httpHandlerFunc = h2c.NewHandler(httpHandlerFunc, &http2.Server{})
+	}
 	httpSrv := &http.Server{
 		Addr:              fmt.Sprintf(":%d", cfg.Server.HTTPPort),
-		Handler:           httpHandler.Handler(),
+		Handler:           httpHandlerFunc,
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 
