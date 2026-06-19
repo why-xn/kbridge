@@ -851,6 +851,10 @@ type CentralStreamMessage struct {
 	//	*CentralStreamMessage_Cancel
 	//	*CentralStreamMessage_Stdin
 	//	*CentralStreamMessage_Resize
+	//	*CentralStreamMessage_PfStart
+	//	*CentralStreamMessage_PfOpen
+	//	*CentralStreamMessage_PfData
+	//	*CentralStreamMessage_PfClose
 	Msg           isCentralStreamMessage_Msg `protobuf_oneof:"msg"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -929,6 +933,42 @@ func (x *CentralStreamMessage) GetResize() *Resize {
 	return nil
 }
 
+func (x *CentralStreamMessage) GetPfStart() *PortForwardStart {
+	if x != nil {
+		if x, ok := x.Msg.(*CentralStreamMessage_PfStart); ok {
+			return x.PfStart
+		}
+	}
+	return nil
+}
+
+func (x *CentralStreamMessage) GetPfOpen() *PfOpen {
+	if x != nil {
+		if x, ok := x.Msg.(*CentralStreamMessage_PfOpen); ok {
+			return x.PfOpen
+		}
+	}
+	return nil
+}
+
+func (x *CentralStreamMessage) GetPfData() *PfData {
+	if x != nil {
+		if x, ok := x.Msg.(*CentralStreamMessage_PfData); ok {
+			return x.PfData
+		}
+	}
+	return nil
+}
+
+func (x *CentralStreamMessage) GetPfClose() *PfClose {
+	if x != nil {
+		if x, ok := x.Msg.(*CentralStreamMessage_PfClose); ok {
+			return x.PfClose
+		}
+	}
+	return nil
+}
+
 type isCentralStreamMessage_Msg interface {
 	isCentralStreamMessage_Msg()
 }
@@ -949,6 +989,22 @@ type CentralStreamMessage_Resize struct {
 	Resize *Resize `protobuf:"bytes,4,opt,name=resize,proto3,oneof"`
 }
 
+type CentralStreamMessage_PfStart struct {
+	PfStart *PortForwardStart `protobuf:"bytes,5,opt,name=pf_start,json=pfStart,proto3,oneof"`
+}
+
+type CentralStreamMessage_PfOpen struct {
+	PfOpen *PfOpen `protobuf:"bytes,6,opt,name=pf_open,json=pfOpen,proto3,oneof"`
+}
+
+type CentralStreamMessage_PfData struct {
+	PfData *PfData `protobuf:"bytes,7,opt,name=pf_data,json=pfData,proto3,oneof"`
+}
+
+type CentralStreamMessage_PfClose struct {
+	PfClose *PfClose `protobuf:"bytes,8,opt,name=pf_close,json=pfClose,proto3,oneof"`
+}
+
 func (*CentralStreamMessage_Start) isCentralStreamMessage_Msg() {}
 
 func (*CentralStreamMessage_Cancel) isCentralStreamMessage_Msg() {}
@@ -956,6 +1012,14 @@ func (*CentralStreamMessage_Cancel) isCentralStreamMessage_Msg() {}
 func (*CentralStreamMessage_Stdin) isCentralStreamMessage_Msg() {}
 
 func (*CentralStreamMessage_Resize) isCentralStreamMessage_Msg() {}
+
+func (*CentralStreamMessage_PfStart) isCentralStreamMessage_Msg() {}
+
+func (*CentralStreamMessage_PfOpen) isCentralStreamMessage_Msg() {}
+
+func (*CentralStreamMessage_PfData) isCentralStreamMessage_Msg() {}
+
+func (*CentralStreamMessage_PfClose) isCentralStreamMessage_Msg() {}
 
 type StartStream struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
@@ -1204,6 +1268,11 @@ type AgentStreamMessage struct {
 	//	*AgentStreamMessage_Register
 	//	*AgentStreamMessage_Output
 	//	*AgentStreamMessage_Exit
+	//	*AgentStreamMessage_PfReady
+	//	*AgentStreamMessage_PfData
+	//	*AgentStreamMessage_PfClose
+	//	*AgentStreamMessage_PfConnError
+	//	*AgentStreamMessage_PfSessionError
 	Msg           isAgentStreamMessage_Msg `protobuf_oneof:"msg"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -1273,6 +1342,51 @@ func (x *AgentStreamMessage) GetExit() *StreamExit {
 	return nil
 }
 
+func (x *AgentStreamMessage) GetPfReady() *PfReady {
+	if x != nil {
+		if x, ok := x.Msg.(*AgentStreamMessage_PfReady); ok {
+			return x.PfReady
+		}
+	}
+	return nil
+}
+
+func (x *AgentStreamMessage) GetPfData() *PfData {
+	if x != nil {
+		if x, ok := x.Msg.(*AgentStreamMessage_PfData); ok {
+			return x.PfData
+		}
+	}
+	return nil
+}
+
+func (x *AgentStreamMessage) GetPfClose() *PfClose {
+	if x != nil {
+		if x, ok := x.Msg.(*AgentStreamMessage_PfClose); ok {
+			return x.PfClose
+		}
+	}
+	return nil
+}
+
+func (x *AgentStreamMessage) GetPfConnError() *PfConnError {
+	if x != nil {
+		if x, ok := x.Msg.(*AgentStreamMessage_PfConnError); ok {
+			return x.PfConnError
+		}
+	}
+	return nil
+}
+
+func (x *AgentStreamMessage) GetPfSessionError() *PfSessionError {
+	if x != nil {
+		if x, ok := x.Msg.(*AgentStreamMessage_PfSessionError); ok {
+			return x.PfSessionError
+		}
+	}
+	return nil
+}
+
 type isAgentStreamMessage_Msg interface {
 	isAgentStreamMessage_Msg()
 }
@@ -1289,11 +1403,41 @@ type AgentStreamMessage_Exit struct {
 	Exit *StreamExit `protobuf:"bytes,3,opt,name=exit,proto3,oneof"`
 }
 
+type AgentStreamMessage_PfReady struct {
+	PfReady *PfReady `protobuf:"bytes,4,opt,name=pf_ready,json=pfReady,proto3,oneof"`
+}
+
+type AgentStreamMessage_PfData struct {
+	PfData *PfData `protobuf:"bytes,5,opt,name=pf_data,json=pfData,proto3,oneof"`
+}
+
+type AgentStreamMessage_PfClose struct {
+	PfClose *PfClose `protobuf:"bytes,6,opt,name=pf_close,json=pfClose,proto3,oneof"`
+}
+
+type AgentStreamMessage_PfConnError struct {
+	PfConnError *PfConnError `protobuf:"bytes,7,opt,name=pf_conn_error,json=pfConnError,proto3,oneof"`
+}
+
+type AgentStreamMessage_PfSessionError struct {
+	PfSessionError *PfSessionError `protobuf:"bytes,8,opt,name=pf_session_error,json=pfSessionError,proto3,oneof"`
+}
+
 func (*AgentStreamMessage_Register) isAgentStreamMessage_Msg() {}
 
 func (*AgentStreamMessage_Output) isAgentStreamMessage_Msg() {}
 
 func (*AgentStreamMessage_Exit) isAgentStreamMessage_Msg() {}
+
+func (*AgentStreamMessage_PfReady) isAgentStreamMessage_Msg() {}
+
+func (*AgentStreamMessage_PfData) isAgentStreamMessage_Msg() {}
+
+func (*AgentStreamMessage_PfClose) isAgentStreamMessage_Msg() {}
+
+func (*AgentStreamMessage_PfConnError) isAgentStreamMessage_Msg() {}
+
+func (*AgentStreamMessage_PfSessionError) isAgentStreamMessage_Msg() {}
 
 type StreamRegister struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
@@ -1459,6 +1603,402 @@ func (x *StreamExit) GetErrorMessage() string {
 	return ""
 }
 
+type PortForwardStart struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	SessionId     string                 `protobuf:"bytes,1,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
+	Pod           string                 `protobuf:"bytes,2,opt,name=pod,proto3" json:"pod,omitempty"`
+	Namespace     string                 `protobuf:"bytes,3,opt,name=namespace,proto3" json:"namespace,omitempty"`
+	Ports         []uint32               `protobuf:"varint,4,rep,packed,name=ports,proto3" json:"ports,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *PortForwardStart) Reset() {
+	*x = PortForwardStart{}
+	mi := &file_agent_proto_msgTypes[20]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PortForwardStart) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PortForwardStart) ProtoMessage() {}
+
+func (x *PortForwardStart) ProtoReflect() protoreflect.Message {
+	mi := &file_agent_proto_msgTypes[20]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PortForwardStart.ProtoReflect.Descriptor instead.
+func (*PortForwardStart) Descriptor() ([]byte, []int) {
+	return file_agent_proto_rawDescGZIP(), []int{20}
+}
+
+func (x *PortForwardStart) GetSessionId() string {
+	if x != nil {
+		return x.SessionId
+	}
+	return ""
+}
+
+func (x *PortForwardStart) GetPod() string {
+	if x != nil {
+		return x.Pod
+	}
+	return ""
+}
+
+func (x *PortForwardStart) GetNamespace() string {
+	if x != nil {
+		return x.Namespace
+	}
+	return ""
+}
+
+func (x *PortForwardStart) GetPorts() []uint32 {
+	if x != nil {
+		return x.Ports
+	}
+	return nil
+}
+
+type PfOpen struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	SessionId     string                 `protobuf:"bytes,1,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
+	ConnId        uint32                 `protobuf:"varint,2,opt,name=conn_id,json=connId,proto3" json:"conn_id,omitempty"`
+	RemotePort    uint32                 `protobuf:"varint,3,opt,name=remote_port,json=remotePort,proto3" json:"remote_port,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *PfOpen) Reset() {
+	*x = PfOpen{}
+	mi := &file_agent_proto_msgTypes[21]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PfOpen) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PfOpen) ProtoMessage() {}
+
+func (x *PfOpen) ProtoReflect() protoreflect.Message {
+	mi := &file_agent_proto_msgTypes[21]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PfOpen.ProtoReflect.Descriptor instead.
+func (*PfOpen) Descriptor() ([]byte, []int) {
+	return file_agent_proto_rawDescGZIP(), []int{21}
+}
+
+func (x *PfOpen) GetSessionId() string {
+	if x != nil {
+		return x.SessionId
+	}
+	return ""
+}
+
+func (x *PfOpen) GetConnId() uint32 {
+	if x != nil {
+		return x.ConnId
+	}
+	return 0
+}
+
+func (x *PfOpen) GetRemotePort() uint32 {
+	if x != nil {
+		return x.RemotePort
+	}
+	return 0
+}
+
+type PfData struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	SessionId     string                 `protobuf:"bytes,1,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
+	ConnId        uint32                 `protobuf:"varint,2,opt,name=conn_id,json=connId,proto3" json:"conn_id,omitempty"`
+	Data          []byte                 `protobuf:"bytes,3,opt,name=data,proto3" json:"data,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *PfData) Reset() {
+	*x = PfData{}
+	mi := &file_agent_proto_msgTypes[22]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PfData) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PfData) ProtoMessage() {}
+
+func (x *PfData) ProtoReflect() protoreflect.Message {
+	mi := &file_agent_proto_msgTypes[22]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PfData.ProtoReflect.Descriptor instead.
+func (*PfData) Descriptor() ([]byte, []int) {
+	return file_agent_proto_rawDescGZIP(), []int{22}
+}
+
+func (x *PfData) GetSessionId() string {
+	if x != nil {
+		return x.SessionId
+	}
+	return ""
+}
+
+func (x *PfData) GetConnId() uint32 {
+	if x != nil {
+		return x.ConnId
+	}
+	return 0
+}
+
+func (x *PfData) GetData() []byte {
+	if x != nil {
+		return x.Data
+	}
+	return nil
+}
+
+type PfClose struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	SessionId     string                 `protobuf:"bytes,1,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
+	ConnId        uint32                 `protobuf:"varint,2,opt,name=conn_id,json=connId,proto3" json:"conn_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *PfClose) Reset() {
+	*x = PfClose{}
+	mi := &file_agent_proto_msgTypes[23]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PfClose) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PfClose) ProtoMessage() {}
+
+func (x *PfClose) ProtoReflect() protoreflect.Message {
+	mi := &file_agent_proto_msgTypes[23]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PfClose.ProtoReflect.Descriptor instead.
+func (*PfClose) Descriptor() ([]byte, []int) {
+	return file_agent_proto_rawDescGZIP(), []int{23}
+}
+
+func (x *PfClose) GetSessionId() string {
+	if x != nil {
+		return x.SessionId
+	}
+	return ""
+}
+
+func (x *PfClose) GetConnId() uint32 {
+	if x != nil {
+		return x.ConnId
+	}
+	return 0
+}
+
+type PfConnError struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	SessionId     string                 `protobuf:"bytes,1,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
+	ConnId        uint32                 `protobuf:"varint,2,opt,name=conn_id,json=connId,proto3" json:"conn_id,omitempty"`
+	Error         string                 `protobuf:"bytes,3,opt,name=error,proto3" json:"error,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *PfConnError) Reset() {
+	*x = PfConnError{}
+	mi := &file_agent_proto_msgTypes[24]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PfConnError) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PfConnError) ProtoMessage() {}
+
+func (x *PfConnError) ProtoReflect() protoreflect.Message {
+	mi := &file_agent_proto_msgTypes[24]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PfConnError.ProtoReflect.Descriptor instead.
+func (*PfConnError) Descriptor() ([]byte, []int) {
+	return file_agent_proto_rawDescGZIP(), []int{24}
+}
+
+func (x *PfConnError) GetSessionId() string {
+	if x != nil {
+		return x.SessionId
+	}
+	return ""
+}
+
+func (x *PfConnError) GetConnId() uint32 {
+	if x != nil {
+		return x.ConnId
+	}
+	return 0
+}
+
+func (x *PfConnError) GetError() string {
+	if x != nil {
+		return x.Error
+	}
+	return ""
+}
+
+type PfReady struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	SessionId     string                 `protobuf:"bytes,1,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *PfReady) Reset() {
+	*x = PfReady{}
+	mi := &file_agent_proto_msgTypes[25]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PfReady) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PfReady) ProtoMessage() {}
+
+func (x *PfReady) ProtoReflect() protoreflect.Message {
+	mi := &file_agent_proto_msgTypes[25]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PfReady.ProtoReflect.Descriptor instead.
+func (*PfReady) Descriptor() ([]byte, []int) {
+	return file_agent_proto_rawDescGZIP(), []int{25}
+}
+
+func (x *PfReady) GetSessionId() string {
+	if x != nil {
+		return x.SessionId
+	}
+	return ""
+}
+
+type PfSessionError struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	SessionId     string                 `protobuf:"bytes,1,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
+	Error         string                 `protobuf:"bytes,2,opt,name=error,proto3" json:"error,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *PfSessionError) Reset() {
+	*x = PfSessionError{}
+	mi := &file_agent_proto_msgTypes[26]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PfSessionError) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PfSessionError) ProtoMessage() {}
+
+func (x *PfSessionError) ProtoReflect() protoreflect.Message {
+	mi := &file_agent_proto_msgTypes[26]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PfSessionError.ProtoReflect.Descriptor instead.
+func (*PfSessionError) Descriptor() ([]byte, []int) {
+	return file_agent_proto_rawDescGZIP(), []int{26}
+}
+
+func (x *PfSessionError) GetSessionId() string {
+	if x != nil {
+		return x.SessionId
+	}
+	return ""
+}
+
+func (x *PfSessionError) GetError() string {
+	if x != nil {
+		return x.Error
+	}
+	return ""
+}
+
 var File_agent_proto protoreflect.FileDescriptor
 
 const file_agent_proto_rawDesc = "" +
@@ -1513,12 +2053,16 @@ const file_agent_proto_rawDesc = "" +
 	"\texit_code\x18\x04 \x01(\x05R\bexitCode\x12#\n" +
 	"\rerror_message\x18\x05 \x01(\tR\ferrorMessage\"7\n" +
 	"\x1bSubmitCommandResultResponse\x12\x18\n" +
-	"\asuccess\x18\x01 \x01(\bR\asuccess\"\xf7\x01\n" +
+	"\asuccess\x18\x01 \x01(\bR\asuccess\"\xda\x03\n" +
 	"\x14CentralStreamMessage\x125\n" +
 	"\x05start\x18\x01 \x01(\v2\x1d.kbridge.agent.v1.StartStreamH\x00R\x05start\x128\n" +
 	"\x06cancel\x18\x02 \x01(\v2\x1e.kbridge.agent.v1.CancelStreamH\x00R\x06cancel\x123\n" +
 	"\x05stdin\x18\x03 \x01(\v2\x1b.kbridge.agent.v1.StdinDataH\x00R\x05stdin\x122\n" +
-	"\x06resize\x18\x04 \x01(\v2\x18.kbridge.agent.v1.ResizeH\x00R\x06resizeB\x05\n" +
+	"\x06resize\x18\x04 \x01(\v2\x18.kbridge.agent.v1.ResizeH\x00R\x06resize\x12?\n" +
+	"\bpf_start\x18\x05 \x01(\v2\".kbridge.agent.v1.PortForwardStartH\x00R\apfStart\x123\n" +
+	"\apf_open\x18\x06 \x01(\v2\x18.kbridge.agent.v1.PfOpenH\x00R\x06pfOpen\x123\n" +
+	"\apf_data\x18\a \x01(\v2\x18.kbridge.agent.v1.PfDataH\x00R\x06pfData\x126\n" +
+	"\bpf_close\x18\b \x01(\v2\x19.kbridge.agent.v1.PfCloseH\x00R\apfCloseB\x05\n" +
 	"\x03msg\"\x9e\x01\n" +
 	"\vStartStream\x12\x1d\n" +
 	"\n" +
@@ -1539,11 +2083,16 @@ const file_agent_proto_rawDesc = "" +
 	"\n" +
 	"session_id\x18\x01 \x01(\tR\tsessionId\x12\x12\n" +
 	"\x04rows\x18\x02 \x01(\rR\x04rows\x12\x12\n" +
-	"\x04cols\x18\x03 \x01(\rR\x04cols\"\xc9\x01\n" +
+	"\x04cols\x18\x03 \x01(\rR\x04cols\"\x81\x04\n" +
 	"\x12AgentStreamMessage\x12>\n" +
 	"\bregister\x18\x01 \x01(\v2 .kbridge.agent.v1.StreamRegisterH\x00R\bregister\x128\n" +
 	"\x06output\x18\x02 \x01(\v2\x1e.kbridge.agent.v1.StreamOutputH\x00R\x06output\x122\n" +
-	"\x04exit\x18\x03 \x01(\v2\x1c.kbridge.agent.v1.StreamExitH\x00R\x04exitB\x05\n" +
+	"\x04exit\x18\x03 \x01(\v2\x1c.kbridge.agent.v1.StreamExitH\x00R\x04exit\x126\n" +
+	"\bpf_ready\x18\x04 \x01(\v2\x19.kbridge.agent.v1.PfReadyH\x00R\apfReady\x123\n" +
+	"\apf_data\x18\x05 \x01(\v2\x18.kbridge.agent.v1.PfDataH\x00R\x06pfData\x126\n" +
+	"\bpf_close\x18\x06 \x01(\v2\x19.kbridge.agent.v1.PfCloseH\x00R\apfClose\x12C\n" +
+	"\rpf_conn_error\x18\a \x01(\v2\x1d.kbridge.agent.v1.PfConnErrorH\x00R\vpfConnError\x12L\n" +
+	"\x10pf_session_error\x18\b \x01(\v2 .kbridge.agent.v1.PfSessionErrorH\x00R\x0epfSessionErrorB\x05\n" +
 	"\x03msg\"+\n" +
 	"\x0eStreamRegister\x12\x19\n" +
 	"\bagent_id\x18\x01 \x01(\tR\aagentId\"s\n" +
@@ -1557,7 +2106,40 @@ const file_agent_proto_rawDesc = "" +
 	"\n" +
 	"session_id\x18\x01 \x01(\tR\tsessionId\x12\x1b\n" +
 	"\texit_code\x18\x02 \x01(\x05R\bexitCode\x12#\n" +
-	"\rerror_message\x18\x03 \x01(\tR\ferrorMessage*\\\n" +
+	"\rerror_message\x18\x03 \x01(\tR\ferrorMessage\"w\n" +
+	"\x10PortForwardStart\x12\x1d\n" +
+	"\n" +
+	"session_id\x18\x01 \x01(\tR\tsessionId\x12\x10\n" +
+	"\x03pod\x18\x02 \x01(\tR\x03pod\x12\x1c\n" +
+	"\tnamespace\x18\x03 \x01(\tR\tnamespace\x12\x14\n" +
+	"\x05ports\x18\x04 \x03(\rR\x05ports\"a\n" +
+	"\x06PfOpen\x12\x1d\n" +
+	"\n" +
+	"session_id\x18\x01 \x01(\tR\tsessionId\x12\x17\n" +
+	"\aconn_id\x18\x02 \x01(\rR\x06connId\x12\x1f\n" +
+	"\vremote_port\x18\x03 \x01(\rR\n" +
+	"remotePort\"T\n" +
+	"\x06PfData\x12\x1d\n" +
+	"\n" +
+	"session_id\x18\x01 \x01(\tR\tsessionId\x12\x17\n" +
+	"\aconn_id\x18\x02 \x01(\rR\x06connId\x12\x12\n" +
+	"\x04data\x18\x03 \x01(\fR\x04data\"A\n" +
+	"\aPfClose\x12\x1d\n" +
+	"\n" +
+	"session_id\x18\x01 \x01(\tR\tsessionId\x12\x17\n" +
+	"\aconn_id\x18\x02 \x01(\rR\x06connId\"[\n" +
+	"\vPfConnError\x12\x1d\n" +
+	"\n" +
+	"session_id\x18\x01 \x01(\tR\tsessionId\x12\x17\n" +
+	"\aconn_id\x18\x02 \x01(\rR\x06connId\x12\x14\n" +
+	"\x05error\x18\x03 \x01(\tR\x05error\"(\n" +
+	"\aPfReady\x12\x1d\n" +
+	"\n" +
+	"session_id\x18\x01 \x01(\tR\tsessionId\"E\n" +
+	"\x0ePfSessionError\x12\x1d\n" +
+	"\n" +
+	"session_id\x18\x01 \x01(\tR\tsessionId\x12\x14\n" +
+	"\x05error\x18\x02 \x01(\tR\x05error*\\\n" +
 	"\vAgentStatus\x12\x18\n" +
 	"\x14AGENT_STATUS_UNKNOWN\x10\x00\x12\x18\n" +
 	"\x14AGENT_STATUS_HEALTHY\x10\x01\x12\x19\n" +
@@ -1588,7 +2170,7 @@ func file_agent_proto_rawDescGZIP() []byte {
 }
 
 var file_agent_proto_enumTypes = make([]protoimpl.EnumInfo, 2)
-var file_agent_proto_msgTypes = make([]protoimpl.MessageInfo, 20)
+var file_agent_proto_msgTypes = make([]protoimpl.MessageInfo, 27)
 var file_agent_proto_goTypes = []any{
 	(AgentStatus)(0),                    // 0: kbridge.agent.v1.AgentStatus
 	(OutputType)(0),                     // 1: kbridge.agent.v1.OutputType
@@ -1612,6 +2194,13 @@ var file_agent_proto_goTypes = []any{
 	(*StreamRegister)(nil),              // 19: kbridge.agent.v1.StreamRegister
 	(*StreamOutput)(nil),                // 20: kbridge.agent.v1.StreamOutput
 	(*StreamExit)(nil),                  // 21: kbridge.agent.v1.StreamExit
+	(*PortForwardStart)(nil),            // 22: kbridge.agent.v1.PortForwardStart
+	(*PfOpen)(nil),                      // 23: kbridge.agent.v1.PfOpen
+	(*PfData)(nil),                      // 24: kbridge.agent.v1.PfData
+	(*PfClose)(nil),                     // 25: kbridge.agent.v1.PfClose
+	(*PfConnError)(nil),                 // 26: kbridge.agent.v1.PfConnError
+	(*PfReady)(nil),                     // 27: kbridge.agent.v1.PfReady
+	(*PfSessionError)(nil),              // 28: kbridge.agent.v1.PfSessionError
 }
 var file_agent_proto_depIdxs = []int32{
 	3,  // 0: kbridge.agent.v1.RegisterRequest.metadata:type_name -> kbridge.agent.v1.ClusterMetadata
@@ -1622,25 +2211,34 @@ var file_agent_proto_depIdxs = []int32{
 	15, // 5: kbridge.agent.v1.CentralStreamMessage.cancel:type_name -> kbridge.agent.v1.CancelStream
 	16, // 6: kbridge.agent.v1.CentralStreamMessage.stdin:type_name -> kbridge.agent.v1.StdinData
 	17, // 7: kbridge.agent.v1.CentralStreamMessage.resize:type_name -> kbridge.agent.v1.Resize
-	19, // 8: kbridge.agent.v1.AgentStreamMessage.register:type_name -> kbridge.agent.v1.StreamRegister
-	20, // 9: kbridge.agent.v1.AgentStreamMessage.output:type_name -> kbridge.agent.v1.StreamOutput
-	21, // 10: kbridge.agent.v1.AgentStreamMessage.exit:type_name -> kbridge.agent.v1.StreamExit
-	1,  // 11: kbridge.agent.v1.StreamOutput.type:type_name -> kbridge.agent.v1.OutputType
-	2,  // 12: kbridge.agent.v1.AgentService.Register:input_type -> kbridge.agent.v1.RegisterRequest
-	5,  // 13: kbridge.agent.v1.AgentService.Heartbeat:input_type -> kbridge.agent.v1.HeartbeatRequest
-	18, // 14: kbridge.agent.v1.AgentService.OpenStream:input_type -> kbridge.agent.v1.AgentStreamMessage
-	9,  // 15: kbridge.agent.v1.AgentService.GetPendingCommands:input_type -> kbridge.agent.v1.GetPendingCommandsRequest
-	11, // 16: kbridge.agent.v1.AgentService.SubmitCommandResult:input_type -> kbridge.agent.v1.SubmitCommandResultRequest
-	4,  // 17: kbridge.agent.v1.AgentService.Register:output_type -> kbridge.agent.v1.RegisterResponse
-	6,  // 18: kbridge.agent.v1.AgentService.Heartbeat:output_type -> kbridge.agent.v1.HeartbeatResponse
-	13, // 19: kbridge.agent.v1.AgentService.OpenStream:output_type -> kbridge.agent.v1.CentralStreamMessage
-	10, // 20: kbridge.agent.v1.AgentService.GetPendingCommands:output_type -> kbridge.agent.v1.GetPendingCommandsResponse
-	12, // 21: kbridge.agent.v1.AgentService.SubmitCommandResult:output_type -> kbridge.agent.v1.SubmitCommandResultResponse
-	17, // [17:22] is the sub-list for method output_type
-	12, // [12:17] is the sub-list for method input_type
-	12, // [12:12] is the sub-list for extension type_name
-	12, // [12:12] is the sub-list for extension extendee
-	0,  // [0:12] is the sub-list for field type_name
+	22, // 8: kbridge.agent.v1.CentralStreamMessage.pf_start:type_name -> kbridge.agent.v1.PortForwardStart
+	23, // 9: kbridge.agent.v1.CentralStreamMessage.pf_open:type_name -> kbridge.agent.v1.PfOpen
+	24, // 10: kbridge.agent.v1.CentralStreamMessage.pf_data:type_name -> kbridge.agent.v1.PfData
+	25, // 11: kbridge.agent.v1.CentralStreamMessage.pf_close:type_name -> kbridge.agent.v1.PfClose
+	19, // 12: kbridge.agent.v1.AgentStreamMessage.register:type_name -> kbridge.agent.v1.StreamRegister
+	20, // 13: kbridge.agent.v1.AgentStreamMessage.output:type_name -> kbridge.agent.v1.StreamOutput
+	21, // 14: kbridge.agent.v1.AgentStreamMessage.exit:type_name -> kbridge.agent.v1.StreamExit
+	27, // 15: kbridge.agent.v1.AgentStreamMessage.pf_ready:type_name -> kbridge.agent.v1.PfReady
+	24, // 16: kbridge.agent.v1.AgentStreamMessage.pf_data:type_name -> kbridge.agent.v1.PfData
+	25, // 17: kbridge.agent.v1.AgentStreamMessage.pf_close:type_name -> kbridge.agent.v1.PfClose
+	26, // 18: kbridge.agent.v1.AgentStreamMessage.pf_conn_error:type_name -> kbridge.agent.v1.PfConnError
+	28, // 19: kbridge.agent.v1.AgentStreamMessage.pf_session_error:type_name -> kbridge.agent.v1.PfSessionError
+	1,  // 20: kbridge.agent.v1.StreamOutput.type:type_name -> kbridge.agent.v1.OutputType
+	2,  // 21: kbridge.agent.v1.AgentService.Register:input_type -> kbridge.agent.v1.RegisterRequest
+	5,  // 22: kbridge.agent.v1.AgentService.Heartbeat:input_type -> kbridge.agent.v1.HeartbeatRequest
+	18, // 23: kbridge.agent.v1.AgentService.OpenStream:input_type -> kbridge.agent.v1.AgentStreamMessage
+	9,  // 24: kbridge.agent.v1.AgentService.GetPendingCommands:input_type -> kbridge.agent.v1.GetPendingCommandsRequest
+	11, // 25: kbridge.agent.v1.AgentService.SubmitCommandResult:input_type -> kbridge.agent.v1.SubmitCommandResultRequest
+	4,  // 26: kbridge.agent.v1.AgentService.Register:output_type -> kbridge.agent.v1.RegisterResponse
+	6,  // 27: kbridge.agent.v1.AgentService.Heartbeat:output_type -> kbridge.agent.v1.HeartbeatResponse
+	13, // 28: kbridge.agent.v1.AgentService.OpenStream:output_type -> kbridge.agent.v1.CentralStreamMessage
+	10, // 29: kbridge.agent.v1.AgentService.GetPendingCommands:output_type -> kbridge.agent.v1.GetPendingCommandsResponse
+	12, // 30: kbridge.agent.v1.AgentService.SubmitCommandResult:output_type -> kbridge.agent.v1.SubmitCommandResultResponse
+	26, // [26:31] is the sub-list for method output_type
+	21, // [21:26] is the sub-list for method input_type
+	21, // [21:21] is the sub-list for extension type_name
+	21, // [21:21] is the sub-list for extension extendee
+	0,  // [0:21] is the sub-list for field type_name
 }
 
 func init() { file_agent_proto_init() }
@@ -1653,11 +2251,20 @@ func file_agent_proto_init() {
 		(*CentralStreamMessage_Cancel)(nil),
 		(*CentralStreamMessage_Stdin)(nil),
 		(*CentralStreamMessage_Resize)(nil),
+		(*CentralStreamMessage_PfStart)(nil),
+		(*CentralStreamMessage_PfOpen)(nil),
+		(*CentralStreamMessage_PfData)(nil),
+		(*CentralStreamMessage_PfClose)(nil),
 	}
 	file_agent_proto_msgTypes[16].OneofWrappers = []any{
 		(*AgentStreamMessage_Register)(nil),
 		(*AgentStreamMessage_Output)(nil),
 		(*AgentStreamMessage_Exit)(nil),
+		(*AgentStreamMessage_PfReady)(nil),
+		(*AgentStreamMessage_PfData)(nil),
+		(*AgentStreamMessage_PfClose)(nil),
+		(*AgentStreamMessage_PfConnError)(nil),
+		(*AgentStreamMessage_PfSessionError)(nil),
 	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
@@ -1665,7 +2272,7 @@ func file_agent_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_agent_proto_rawDesc), len(file_agent_proto_rawDesc)),
 			NumEnums:      2,
-			NumMessages:   20,
+			NumMessages:   27,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

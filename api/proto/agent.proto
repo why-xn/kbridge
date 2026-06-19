@@ -193,10 +193,14 @@ message SubmitCommandResultResponse {
 
 message CentralStreamMessage {
   oneof msg {
-    StartStream  start  = 1;
-    CancelStream cancel = 2;
-    StdinData    stdin  = 3;
-    Resize       resize = 4;
+    StartStream      start    = 1;
+    CancelStream     cancel   = 2;
+    StdinData        stdin    = 3;
+    Resize           resize   = 4;
+    PortForwardStart pf_start = 5;
+    PfOpen           pf_open  = 6;
+    PfData           pf_data  = 7;
+    PfClose          pf_close = 8;
   }
 }
 message StartStream  {
@@ -213,11 +217,24 @@ message Resize       { string session_id = 1; uint32 rows = 2; uint32 cols = 3; 
 
 message AgentStreamMessage {
   oneof msg {
-    StreamRegister register = 1;
-    StreamOutput   output   = 2;
-    StreamExit     exit     = 3;
+    StreamRegister register         = 1;
+    StreamOutput   output           = 2;
+    StreamExit     exit             = 3;
+    PfReady        pf_ready         = 4;
+    PfData         pf_data          = 5;
+    PfClose        pf_close         = 6;
+    PfConnError    pf_conn_error    = 7;
+    PfSessionError pf_session_error = 8;
   }
 }
 message StreamRegister { string agent_id = 1; }
 message StreamOutput   { string session_id = 1; OutputType type = 2; bytes data = 3; }
 message StreamExit     { string session_id = 1; int32 exit_code = 2; string error_message = 3; }
+
+message PortForwardStart { string session_id = 1; string pod = 2; string namespace = 3; repeated uint32 ports = 4; }
+message PfOpen           { string session_id = 1; uint32 conn_id = 2; uint32 remote_port = 3; }
+message PfData           { string session_id = 1; uint32 conn_id = 2; bytes  data = 3; }
+message PfClose          { string session_id = 1; uint32 conn_id = 2; }
+message PfConnError      { string session_id = 1; uint32 conn_id = 2; string error = 3; }
+message PfReady          { string session_id = 1; }
+message PfSessionError   { string session_id = 1; string error = 2; }
