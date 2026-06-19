@@ -105,6 +105,7 @@ func (s *HTTPServer) setupRoutes() {
 		if s.sessions != nil {
 			api.POST("/clusters/:name/stream", s.handleStreamCommand)
 			api.POST("/clusters/:name/exec/attach", s.handleExecAttach)
+			api.POST("/clusters/:name/port-forward", s.handlePortForward)
 		}
 
 		// Auth routes that require authentication
