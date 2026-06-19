@@ -107,8 +107,21 @@ func (m *SessionManager) UnregisterAgentStream(agentID string) {
 	}
 }
 
-// Start opens a new session on the agent and pushes StartStream down its stream.
+// Start opens a non-interactive session (logs -f / get -w).
 func (m *SessionManager) Start(agentID string, command []string, namespace string) (*Session, error) {
+	return m.startSession(agentID, &agentpb.StartStream{Command: command, Namespace: namespace})
+}
+
+// StartInteractive opens an interactive (tty) session and includes the initial size.
+func (m *SessionManager) StartInteractive(agentID string, command []string, namespace string, rows, cols uint16) (*Session, error) {
+	return m.startSession(agentID, &agentpb.StartStream{
+		Command: command, Namespace: namespace, Tty: true, Rows: uint32(rows), Cols: uint32(cols),
+	})
+}
+
+// startSession is the shared open path: send StartStream before inserting into
+// the maps to close the phantom-session window (see prior comment).
+func (m *SessionManager) startSession(agentID string, start *agentpb.StartStream) (*Session, error) {
 	m.mu.Lock()
 	conn := m.agents[agentID]
 	if conn == nil {
@@ -133,10 +146,10 @@ func (m *SessionManager) Start(agentID string, command []string, namespace strin
 	// safe because the agent cannot produce StreamOutput until it receives
 	// StartStream, spawns the kubectl process, and reads its first output — all of
 	// which take far longer than the map insert that follows immediately after.
-	err := sendLocked(conn, &agentpb.CentralStreamMessage{Msg: &agentpb.CentralStreamMessage_Start{
-		Start: &agentpb.StartStream{SessionId: sess.ID, Command: command, Namespace: namespace},
-	}})
-	if err != nil {
+	start.SessionId = sess.ID
+	if err := sendLocked(conn, &agentpb.CentralStreamMessage{
+		Msg: &agentpb.CentralStreamMessage_Start{Start: start},
+	}); err != nil {
 		// Send failed: nothing was inserted, so there is nothing to clean up.
 		return nil, err
 	}
@@ -145,8 +158,39 @@ func (m *SessionManager) Start(agentID string, command []string, namespace strin
 	conn.sessions[sess.ID] = sess
 	m.sessions[sess.ID] = sess
 	m.mu.Unlock()
-
 	return sess, nil
+}
+
+// SendStdin forwards stdin bytes to a session's agent.
+func (m *SessionManager) SendStdin(sessionID string, data []byte) error {
+	conn := m.connFor(sessionID)
+	if conn == nil {
+		return ErrNoAgentStream
+	}
+	return sendLocked(conn, &agentpb.CentralStreamMessage{Msg: &agentpb.CentralStreamMessage_Stdin{
+		Stdin: &agentpb.StdinData{SessionId: sessionID, Data: data},
+	}})
+}
+
+// SendResize forwards a window-size change to a session's agent.
+func (m *SessionManager) SendResize(sessionID string, rows, cols uint32) error {
+	conn := m.connFor(sessionID)
+	if conn == nil {
+		return ErrNoAgentStream
+	}
+	return sendLocked(conn, &agentpb.CentralStreamMessage{Msg: &agentpb.CentralStreamMessage_Resize{
+		Resize: &agentpb.Resize{SessionId: sessionID, Rows: rows, Cols: cols},
+	}})
+}
+
+func (m *SessionManager) connFor(sessionID string) *agentConn {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	sess := m.sessions[sessionID]
+	if sess == nil {
+		return nil
+	}
+	return m.agents[sess.AgentID]
 }
 
 // Route delivers an agent message to its session.

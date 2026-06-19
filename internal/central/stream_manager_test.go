@@ -118,3 +118,58 @@ func TestSessionManager_AgentDisconnectClosesSessions(t *testing.T) {
 		t.Error("expected output channel closed after disconnect")
 	}
 }
+
+// recordingSender captures messages sent to an agent.
+type recordingSender struct {
+	mu   sync.Mutex
+	msgs []*agentpb.CentralStreamMessage
+}
+
+func (r *recordingSender) Send(m *agentpb.CentralStreamMessage) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.msgs = append(r.msgs, m)
+	return nil
+}
+
+func (r *recordingSender) last() *agentpb.CentralStreamMessage {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if len(r.msgs) == 0 {
+		return nil
+	}
+	return r.msgs[len(r.msgs)-1]
+}
+
+func TestSessionManager_StartInteractiveAndControl(t *testing.T) {
+	m := NewSessionManager(10)
+	rs := &recordingSender{}
+	m.RegisterAgentStream("agent-1", rs)
+
+	sess, err := m.StartInteractive("agent-1", []string{"exec", "-i", "-t", "p", "--", "sh"}, "ns", 40, 120)
+	if err != nil {
+		t.Fatalf("start interactive: %v", err)
+	}
+	start := rs.last().GetStart()
+	if start == nil || !start.GetTty() || start.GetRows() != 40 || start.GetCols() != 120 {
+		t.Fatalf("StartStream tty/size wrong: %+v", start)
+	}
+
+	if err := m.SendStdin(sess.ID, []byte("ls\n")); err != nil {
+		t.Fatalf("send stdin: %v", err)
+	}
+	if sd := rs.last().GetStdin(); sd == nil || sd.GetSessionId() != sess.ID || string(sd.GetData()) != "ls\n" {
+		t.Fatalf("StdinData wrong: %+v", rs.last())
+	}
+
+	if err := m.SendResize(sess.ID, 50, 200); err != nil {
+		t.Fatalf("send resize: %v", err)
+	}
+	if rz := rs.last().GetResize(); rz == nil || rz.GetRows() != 50 || rz.GetCols() != 200 {
+		t.Fatalf("Resize wrong: %+v", rs.last())
+	}
+
+	if err := m.SendStdin("nope", []byte("x")); err != ErrNoAgentStream {
+		t.Fatalf("unknown session: want ErrNoAgentStream, got %v", err)
+	}
+}
