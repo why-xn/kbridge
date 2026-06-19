@@ -145,9 +145,9 @@ func runAdminUsersList(cmd *cobra.Command, args []string) error {
 	}
 
 	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-	fmt.Fprintln(w, "EMAIL\tNAME\tACTIVE\tID")
+	fmt.Fprintln(w, "EMAIL\tNAME\tACTIVE\tADMIN\tID")
 	for _, u := range users {
-		fmt.Fprintf(w, "%s\t%s\t%t\t%s\n", u.Email, u.Name, u.IsActive, u.ID)
+		fmt.Fprintf(w, "%s\t%s\t%t\t%t\t%s\n", u.Email, u.Name, u.IsActive, u.IsAdmin, u.ID)
 	}
 	return w.Flush()
 }

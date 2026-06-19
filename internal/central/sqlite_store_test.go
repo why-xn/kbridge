@@ -28,65 +28,49 @@ func TestSQLiteStore_Migrate(t *testing.T) {
 	ctx := context.Background()
 
 	tests := []struct {
-		name  string
-		query string
+		name string
+		fn   func(t *testing.T)
 	}{
-		{"users table", "SELECT COUNT(*) FROM users"},
-		{"clusters table", "SELECT COUNT(*) FROM clusters"},
-		{"agent_tokens table", "SELECT COUNT(*) FROM agent_tokens"},
-		{"roles table", "SELECT COUNT(*) FROM roles"},
-		{"permissions table", "SELECT COUNT(*) FROM permissions"},
-		{"user_roles table", "SELECT COUNT(*) FROM user_roles"},
-		{"audit_logs table", "SELECT COUNT(*) FROM audit_logs"},
-		{"refresh_tokens table", "SELECT COUNT(*) FROM refresh_tokens"},
-	}
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
+		{"users table", func(t *testing.T) {
 			var count int
-			if err := store.db.QueryRowContext(ctx, tc.query).Scan(&count); err != nil {
+			if err := store.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM users").Scan(&count); err != nil {
 				t.Fatalf("table should exist: %v", err)
 			}
-		})
+		}},
+		{"clusters table", func(t *testing.T) {
+			var count int
+			if err := store.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM clusters").Scan(&count); err != nil {
+				t.Fatalf("table should exist: %v", err)
+			}
+		}},
+		{"agent_tokens table", func(t *testing.T) {
+			var count int
+			if err := store.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM agent_tokens").Scan(&count); err != nil {
+				t.Fatalf("table should exist: %v", err)
+			}
+		}},
+		{"audit_logs table", func(t *testing.T) {
+			var count int
+			if err := store.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM audit_logs").Scan(&count); err != nil {
+				t.Fatalf("table should exist: %v", err)
+			}
+		}},
+		{"refresh_tokens table", func(t *testing.T) {
+			var count int
+			if err := store.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM refresh_tokens").Scan(&count); err != nil {
+				t.Fatalf("table should exist: %v", err)
+			}
+		}},
+		{"is_admin column", func(t *testing.T) {
+			var count int
+			if err := store.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM users WHERE is_admin = 0").Scan(&count); err != nil {
+				t.Fatalf("is_admin column should exist: %v", err)
+			}
+		}},
 	}
-
-	// Verify system roles seeded
-	t.Run("admin role seeded", func(t *testing.T) {
-		role, err := store.GetRoleByName(ctx, "admin")
-		if err != nil {
-			t.Fatalf("get admin role: %v", err)
-		}
-		if role == nil {
-			t.Fatal("admin role not found")
-		}
-		if !role.IsSystem {
-			t.Error("admin role should be system role")
-		}
-		if len(role.Permissions) != 1 {
-			t.Fatalf("expected 1 permission, got %d", len(role.Permissions))
-		}
-		if role.Permissions[0].Verbs != "*" {
-			t.Errorf("expected verbs '*', got %q", role.Permissions[0].Verbs)
-		}
-	})
-
-	t.Run("viewer role seeded", func(t *testing.T) {
-		role, err := store.GetRoleByName(ctx, "viewer")
-		if err != nil {
-			t.Fatalf("get viewer role: %v", err)
-		}
-		if role == nil {
-			t.Fatal("viewer role not found")
-		}
-		if !role.IsSystem {
-			t.Error("viewer role should be system role")
-		}
-		if len(role.Permissions) != 1 {
-			t.Fatalf("expected 1 permission, got %d", len(role.Permissions))
-		}
-		if role.Permissions[0].Verbs != "get,list,describe,logs" {
-			t.Errorf("expected verbs 'get,list,describe,logs', got %q", role.Permissions[0].Verbs)
-		}
-	})
+	for _, tc := range tests {
+		t.Run(tc.name, tc.fn)
+	}
 
 	// Verify idempotency
 	t.Run("migrate is idempotent", func(t *testing.T) {
@@ -189,6 +173,22 @@ func TestSQLiteStore_Users(t *testing.T) {
 			err := store.CreateUser(ctx, user2)
 			if err == nil {
 				t.Error("expected error for duplicate email")
+			}
+		}},
+		{"is_admin persisted", func(t *testing.T) {
+			user := &User{Email: "admin@test.com", PasswordHash: "h", Name: "Admin", IsActive: true, IsAdmin: true}
+			if err := store.CreateUser(ctx, user); err != nil {
+				t.Fatalf("create admin user: %v", err)
+			}
+			got, _ := store.GetUserByID(ctx, user.ID)
+			if !got.IsAdmin {
+				t.Error("expected is_admin true")
+			}
+			got.IsAdmin = false
+			store.UpdateUser(ctx, got)
+			updated, _ := store.GetUserByID(ctx, got.ID)
+			if updated.IsAdmin {
+				t.Error("expected is_admin false after update")
 			}
 		}},
 	}
@@ -359,239 +359,6 @@ func TestSQLiteStore_AgentTokens(t *testing.T) {
 			got, _ := store.GetAgentTokenByHash(ctx, "revokeme")
 			if !got.IsRevoked {
 				t.Error("token should be revoked")
-			}
-		}},
-	}
-
-	for _, tc := range tests {
-		t.Run(tc.name, tc.fn)
-	}
-}
-
-func TestSQLiteStore_Roles(t *testing.T) {
-	store := newTestStore(t)
-	ctx := context.Background()
-
-	tests := []struct {
-		name string
-		fn   func(t *testing.T)
-	}{
-		{"create and get by ID", func(t *testing.T) {
-			role := &Role{Name: "editor", Description: "Can edit"}
-			if err := store.CreateRole(ctx, role); err != nil {
-				t.Fatalf("create role: %v", err)
-			}
-			got, err := store.GetRoleByID(ctx, role.ID)
-			if err != nil {
-				t.Fatalf("get role: %v", err)
-			}
-			if got.Name != "editor" {
-				t.Errorf("expected name editor, got %q", got.Name)
-			}
-		}},
-		{"get by name", func(t *testing.T) {
-			got, err := store.GetRoleByName(ctx, "admin")
-			if err != nil {
-				t.Fatalf("get role by name: %v", err)
-			}
-			if got == nil {
-				t.Fatal("admin role not found")
-			}
-			if !got.IsSystem {
-				t.Error("admin should be system role")
-			}
-		}},
-		{"get non-existent returns nil", func(t *testing.T) {
-			got, err := store.GetRoleByID(ctx, "nonexistent")
-			if err != nil {
-				t.Fatalf("unexpected error: %v", err)
-			}
-			if got != nil {
-				t.Error("expected nil for non-existent role")
-			}
-		}},
-		{"list roles with permissions", func(t *testing.T) {
-			roles, err := store.ListRoles(ctx)
-			if err != nil {
-				t.Fatalf("list roles: %v", err)
-			}
-			if len(roles) < 2 {
-				t.Fatalf("expected at least 2 roles, got %d", len(roles))
-			}
-			// Check system roles have permissions loaded
-			for _, r := range roles {
-				if r.IsSystem && len(r.Permissions) == 0 {
-					t.Errorf("system role %q should have permissions", r.Name)
-				}
-			}
-		}},
-		{"update role", func(t *testing.T) {
-			role := &Role{Name: "updatable", Description: "Before"}
-			store.CreateRole(ctx, role)
-			role.Description = "After"
-			if err := store.UpdateRole(ctx, role); err != nil {
-				t.Fatalf("update role: %v", err)
-			}
-			got, _ := store.GetRoleByID(ctx, role.ID)
-			if got.Description != "After" {
-				t.Errorf("expected description After, got %q", got.Description)
-			}
-		}},
-		{"delete non-system role", func(t *testing.T) {
-			role := &Role{Name: "deletable", Description: "To delete"}
-			store.CreateRole(ctx, role)
-			if err := store.DeleteRole(ctx, role.ID); err != nil {
-				t.Fatalf("delete role: %v", err)
-			}
-			got, _ := store.GetRoleByID(ctx, role.ID)
-			if got != nil {
-				t.Error("role should be deleted")
-			}
-		}},
-		{"cannot delete system role", func(t *testing.T) {
-			// Attempt to delete admin role
-			store.DeleteRole(ctx, adminRoleID)
-			got, _ := store.GetRoleByID(ctx, adminRoleID)
-			if got == nil {
-				t.Error("system role should not be deleted")
-			}
-		}},
-	}
-
-	for _, tc := range tests {
-		t.Run(tc.name, tc.fn)
-	}
-}
-
-func TestSQLiteStore_Permissions(t *testing.T) {
-	store := newTestStore(t)
-	ctx := context.Background()
-
-	role := &Role{Name: "perm-test-role"}
-	store.CreateRole(ctx, role)
-
-	tests := []struct {
-		name string
-		fn   func(t *testing.T)
-	}{
-		{"create and list by role", func(t *testing.T) {
-			perm := &Permission{
-				RoleID:           role.ID,
-				ClusterPattern:   "prod-*",
-				NamespacePattern: "default",
-				ResourcePattern:  "pods",
-				Verbs:            "get,list",
-			}
-			if err := store.CreatePermission(ctx, perm); err != nil {
-				t.Fatalf("create permission: %v", err)
-			}
-			perms, err := store.ListPermissionsByRole(ctx, role.ID)
-			if err != nil {
-				t.Fatalf("list permissions: %v", err)
-			}
-			if len(perms) != 1 {
-				t.Fatalf("expected 1 permission, got %d", len(perms))
-			}
-			if perms[0].ClusterPattern != "prod-*" {
-				t.Errorf("expected cluster_pattern 'prod-*', got %q", perms[0].ClusterPattern)
-			}
-		}},
-		{"delete permission", func(t *testing.T) {
-			perm := &Permission{
-				RoleID: role.ID, ClusterPattern: "*",
-				NamespacePattern: "*", ResourcePattern: "*", Verbs: "*",
-			}
-			store.CreatePermission(ctx, perm)
-			if err := store.DeletePermission(ctx, perm.ID); err != nil {
-				t.Fatalf("delete permission: %v", err)
-			}
-			perms, _ := store.ListPermissionsByRole(ctx, role.ID)
-			for _, p := range perms {
-				if p.ID == perm.ID {
-					t.Error("permission should be deleted")
-				}
-			}
-		}},
-		{"delete by role", func(t *testing.T) {
-			r2 := &Role{Name: "perm-del-role"}
-			store.CreateRole(ctx, r2)
-			store.CreatePermission(ctx, &Permission{
-				RoleID: r2.ID, ClusterPattern: "*",
-				NamespacePattern: "*", ResourcePattern: "*", Verbs: "*",
-			})
-			store.CreatePermission(ctx, &Permission{
-				RoleID: r2.ID, ClusterPattern: "dev",
-				NamespacePattern: "*", ResourcePattern: "*", Verbs: "get",
-			})
-			if err := store.DeletePermissionsByRole(ctx, r2.ID); err != nil {
-				t.Fatalf("delete permissions by role: %v", err)
-			}
-			perms, _ := store.ListPermissionsByRole(ctx, r2.ID)
-			if len(perms) != 0 {
-				t.Errorf("expected 0 permissions, got %d", len(perms))
-			}
-		}},
-	}
-
-	for _, tc := range tests {
-		t.Run(tc.name, tc.fn)
-	}
-}
-
-func TestSQLiteStore_UserRoles(t *testing.T) {
-	store := newTestStore(t)
-	ctx := context.Background()
-
-	user := &User{Email: "ur@test.com", PasswordHash: "h", Name: "UR", IsActive: true}
-	store.CreateUser(ctx, user)
-	role := &Role{Name: "custom-role"}
-	store.CreateRole(ctx, role)
-
-	tests := []struct {
-		name string
-		fn   func(t *testing.T)
-	}{
-		{"assign and list roles by user", func(t *testing.T) {
-			if err := store.AssignRole(ctx, user.ID, adminRoleID, ""); err != nil {
-				t.Fatalf("assign role: %v", err)
-			}
-			roles, err := store.ListRolesByUser(ctx, user.ID)
-			if err != nil {
-				t.Fatalf("list roles by user: %v", err)
-			}
-			if len(roles) != 1 {
-				t.Fatalf("expected 1 role, got %d", len(roles))
-			}
-			if roles[0].Name != "admin" {
-				t.Errorf("expected role admin, got %q", roles[0].Name)
-			}
-		}},
-		{"list users by role", func(t *testing.T) {
-			users, err := store.ListUsersByRole(ctx, adminRoleID)
-			if err != nil {
-				t.Fatalf("list users by role: %v", err)
-			}
-			if len(users) != 1 {
-				t.Fatalf("expected 1 user, got %d", len(users))
-			}
-			if users[0].Email != "ur@test.com" {
-				t.Errorf("expected email ur@test.com, got %q", users[0].Email)
-			}
-		}},
-		{"assign multiple roles", func(t *testing.T) {
-			store.AssignRole(ctx, user.ID, role.ID, "")
-			roles, _ := store.ListRolesByUser(ctx, user.ID)
-			if len(roles) != 2 {
-				t.Errorf("expected 2 roles, got %d", len(roles))
-			}
-		}},
-		{"unassign role", func(t *testing.T) {
-			if err := store.UnassignRole(ctx, user.ID, role.ID); err != nil {
-				t.Fatalf("unassign role: %v", err)
-			}
-			roles, _ := store.ListRolesByUser(ctx, user.ID)
-			if len(roles) != 1 {
-				t.Errorf("expected 1 role after unassign, got %d", len(roles))
 			}
 		}},
 	}

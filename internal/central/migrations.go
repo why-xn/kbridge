@@ -3,6 +3,7 @@ package central
 import (
 	"database/sql"
 	"fmt"
+	"strings"
 )
 
 const schemaSQL = `
@@ -12,6 +13,7 @@ CREATE TABLE IF NOT EXISTS users (
     password_hash TEXT NOT NULL,
     name          TEXT NOT NULL,
     is_active     INTEGER NOT NULL DEFAULT 1,
+    is_admin      INTEGER NOT NULL DEFAULT 0,
     created_at    TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
     updated_at    TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
 );
@@ -42,36 +44,6 @@ CREATE TABLE IF NOT EXISTS agent_tokens (
 );
 CREATE INDEX IF NOT EXISTS idx_agent_tokens_cluster_id ON agent_tokens(cluster_id);
 CREATE INDEX IF NOT EXISTS idx_agent_tokens_token_hash ON agent_tokens(token_hash);
-
-CREATE TABLE IF NOT EXISTS roles (
-    id          TEXT PRIMARY KEY,
-    name        TEXT NOT NULL UNIQUE,
-    description TEXT,
-    is_system   INTEGER NOT NULL DEFAULT 0,
-    created_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
-    updated_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
-);
-CREATE UNIQUE INDEX IF NOT EXISTS idx_roles_name ON roles(name);
-
-CREATE TABLE IF NOT EXISTS permissions (
-    id                TEXT PRIMARY KEY,
-    role_id           TEXT NOT NULL REFERENCES roles(id) ON DELETE CASCADE,
-    cluster_pattern   TEXT NOT NULL DEFAULT '*',
-    namespace_pattern TEXT NOT NULL DEFAULT '*',
-    resource_pattern  TEXT NOT NULL DEFAULT '*',
-    verbs             TEXT NOT NULL DEFAULT '*'
-);
-CREATE INDEX IF NOT EXISTS idx_permissions_role_id ON permissions(role_id);
-
-CREATE TABLE IF NOT EXISTS user_roles (
-    user_id     TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    role_id     TEXT NOT NULL REFERENCES roles(id) ON DELETE CASCADE,
-    assigned_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
-    assigned_by TEXT REFERENCES users(id) ON DELETE SET NULL,
-    PRIMARY KEY (user_id, role_id)
-);
-CREATE INDEX IF NOT EXISTS idx_user_roles_user_id ON user_roles(user_id);
-CREATE INDEX IF NOT EXISTS idx_user_roles_role_id ON user_roles(role_id);
 
 CREATE TABLE IF NOT EXISTS audit_logs (
     id            TEXT PRIMARY KEY,
@@ -104,44 +76,27 @@ CREATE INDEX IF NOT EXISTS idx_refresh_tokens_user_id ON refresh_tokens(user_id)
 CREATE INDEX IF NOT EXISTS idx_refresh_tokens_token_hash ON refresh_tokens(token_hash);
 `
 
-// System role IDs (fixed for idempotency).
-const (
-	adminRoleID      = "00000000-0000-0000-0000-000000000001"
-	viewerRoleID     = "00000000-0000-0000-0000-000000000002"
-	adminPermID      = "00000000-0000-0000-0000-000000000003"
-	viewerPermID     = "00000000-0000-0000-0000-000000000004"
-)
-
 func createSchema(db *sql.DB) error {
-	_, err := db.Exec(schemaSQL)
-	if err != nil {
+	if _, err := db.Exec(schemaSQL); err != nil {
 		return fmt.Errorf("create schema: %w", err)
+	}
+	// Add is_admin to existing DBs; ignore "duplicate column" on fresh ones.
+	if err := addIsAdminColumn(db); err != nil {
+		return err
+	}
+	// Drop obsolete tables if they exist (no-op on fresh DBs).
+	for _, tbl := range []string{"user_roles", "permissions", "roles"} {
+		if _, err := db.Exec("DROP TABLE IF EXISTS " + tbl); err != nil {
+			return fmt.Errorf("drop table %s: %w", tbl, err)
+		}
 	}
 	return nil
 }
 
-func seedSystemRoles(db *sql.DB) error {
-	if err := seedRole(db, adminRoleID, "admin", "Full administrative access", adminPermID, "*"); err != nil {
-		return err
-	}
-	return seedRole(db, viewerRoleID, "viewer", "Read-only access", viewerPermID, "get,list,describe,logs")
-}
-
-func seedRole(db *sql.DB, roleID, name, desc, permID, verbs string) error {
-	_, err := db.Exec(
-		`INSERT OR IGNORE INTO roles (id, name, description, is_system) VALUES (?, ?, ?, 1)`,
-		roleID, name, desc,
-	)
-	if err != nil {
-		return fmt.Errorf("seed role %s: %w", name, err)
-	}
-	_, err = db.Exec(
-		`INSERT OR IGNORE INTO permissions (id, role_id, cluster_pattern, namespace_pattern, resource_pattern, verbs)
-		 VALUES (?, ?, '*', '*', '*', ?)`,
-		permID, roleID, verbs,
-	)
-	if err != nil {
-		return fmt.Errorf("seed permission for %s: %w", name, err)
+func addIsAdminColumn(db *sql.DB) error {
+	_, err := db.Exec(`ALTER TABLE users ADD COLUMN is_admin INTEGER NOT NULL DEFAULT 0`)
+	if err != nil && !strings.Contains(err.Error(), "duplicate column") {
+		return fmt.Errorf("add is_admin column: %w", err)
 	}
 	return nil
 }

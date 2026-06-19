@@ -52,10 +52,10 @@ func TestAuthMiddleware(t *testing.T) {
 func TestAuthMiddleware_ValidToken(t *testing.T) {
 	jm := NewJWTManager("test-secret-at-least-32-chars!!", 24*time.Hour)
 	claims := &UserClaims{
-		UserID: "user-123",
-		Email:  "test@example.com",
-		Name:   "Test User",
-		Roles:  []string{"admin"},
+		UserID:  "user-123",
+		Email:   "test@example.com",
+		Name:    "Test User",
+		IsAdmin: true,
 	}
 	token, _ := jm.GenerateAccessToken(claims)
 
@@ -87,13 +87,11 @@ func TestAuthMiddleware_ValidToken(t *testing.T) {
 func TestAdminRequired(t *testing.T) {
 	tests := []struct {
 		name     string
-		roles    []string
+		isAdmin  bool
 		wantCode int
 	}{
-		{"admin role", []string{"admin"}, http.StatusOK},
-		{"viewer role only", []string{"viewer"}, http.StatusForbidden},
-		{"no roles", []string{}, http.StatusForbidden},
-		{"multiple roles including admin", []string{"viewer", "admin"}, http.StatusOK},
+		{"admin flag true", true, http.StatusOK},
+		{"admin flag false", false, http.StatusForbidden},
 	}
 
 	for _, tt := range tests {
@@ -103,8 +101,8 @@ func TestAdminRequired(t *testing.T) {
 
 			r.Use(func(c *gin.Context) {
 				c.Set(userContextKey, &UserClaims{
-					UserID: "user-123",
-					Roles:  tt.roles,
+					UserID:  "user-123",
+					IsAdmin: tt.isAdmin,
 				})
 				c.Next()
 			})

@@ -35,7 +35,7 @@ func AuthMiddleware(jm *JWTManager) gin.HandlerFunc {
 	}
 }
 
-// AdminRequired checks that the authenticated user has the admin role.
+// AdminRequired checks that the authenticated user has the admin flag set.
 func AdminRequired() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		claims := GetUserFromContext(c)
@@ -43,15 +43,11 @@ func AdminRequired() gin.HandlerFunc {
 			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "not authenticated"})
 			return
 		}
-
-		for _, role := range claims.Roles {
-			if role == "admin" {
-				c.Next()
-				return
-			}
+		if !claims.IsAdmin {
+			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "admin role required"})
+			return
 		}
-
-		c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "admin role required"})
+		c.Next()
 	}
 }
 

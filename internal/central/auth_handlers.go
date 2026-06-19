@@ -173,31 +173,22 @@ func (h *AuthHandlers) HandleChangePassword(c *gin.Context) {
 }
 
 func (h *AuthHandlers) issueTokens(c *gin.Context, user *User) {
-	roles, _ := h.store.ListRolesByUser(c.Request.Context(), user.ID)
-	roleNames := make([]string, len(roles))
-	for i, r := range roles {
-		roleNames[i] = r.Name
-	}
-
 	claims := &auth.UserClaims{
-		UserID: user.ID,
-		Email:  user.Email,
-		Name:   user.Name,
-		Roles:  roleNames,
+		UserID:  user.ID,
+		Email:   user.Email,
+		Name:    user.Name,
+		IsAdmin: user.IsAdmin,
 	}
-
 	accessToken, err := h.jwtManager.GenerateAccessToken(claims)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
 		return
 	}
-
 	plaintext, refreshHash, err := h.jwtManager.GenerateRefreshToken()
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
 		return
 	}
-
 	rt := &RefreshToken{
 		ID:        uuid.New().String(),
 		UserID:    user.ID,
@@ -208,7 +199,6 @@ func (h *AuthHandlers) issueTokens(c *gin.Context, user *User) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
 		return
 	}
-
 	c.JSON(http.StatusOK, tokenResponse{
 		AccessToken:  accessToken,
 		RefreshToken: plaintext,

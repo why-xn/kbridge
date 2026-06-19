@@ -33,12 +33,9 @@ func NewSQLiteStore(path string) (*SQLiteStore, error) {
 	return &SQLiteStore{db: db}, nil
 }
 
-// Migrate creates the schema and seeds system roles.
+// Migrate creates the schema.
 func (s *SQLiteStore) Migrate(ctx context.Context) error {
-	if err := createSchema(s.db); err != nil {
-		return err
-	}
-	return seedSystemRoles(s.db)
+	return createSchema(s.db)
 }
 
 // Close closes the database connection.
@@ -73,9 +70,9 @@ func (s *SQLiteStore) CreateUser(ctx context.Context, user *User) error {
 	}
 	now := time.Now().UTC().Format(timeFormat)
 	_, err := s.db.ExecContext(ctx,
-		`INSERT INTO users (id, email, password_hash, name, is_active, created_at, updated_at)
-		 VALUES (?, ?, ?, ?, ?, ?, ?)`,
-		user.ID, user.Email, user.PasswordHash, user.Name, user.IsActive, now, now,
+		`INSERT INTO users (id, email, password_hash, name, is_active, is_admin, created_at, updated_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+		user.ID, user.Email, user.PasswordHash, user.Name, user.IsActive, user.IsAdmin, now, now,
 	)
 	if err != nil {
 		return fmt.Errorf("create user: %w", err)
@@ -87,21 +84,21 @@ func (s *SQLiteStore) CreateUser(ctx context.Context, user *User) error {
 
 func (s *SQLiteStore) GetUserByID(ctx context.Context, id string) (*User, error) {
 	return s.scanUser(s.db.QueryRowContext(ctx,
-		`SELECT id, email, password_hash, name, is_active, created_at, updated_at
+		`SELECT id, email, password_hash, name, is_active, is_admin, created_at, updated_at
 		 FROM users WHERE id = ?`, id))
 }
 
 func (s *SQLiteStore) GetUserByEmail(ctx context.Context, email string) (*User, error) {
 	return s.scanUser(s.db.QueryRowContext(ctx,
-		`SELECT id, email, password_hash, name, is_active, created_at, updated_at
+		`SELECT id, email, password_hash, name, is_active, is_admin, created_at, updated_at
 		 FROM users WHERE email = ?`, email))
 }
 
 func (s *SQLiteStore) scanUser(row *sql.Row) (*User, error) {
 	var u User
-	var isActive int
+	var isActive, isAdmin int
 	var createdAt, updatedAt string
-	err := row.Scan(&u.ID, &u.Email, &u.PasswordHash, &u.Name, &isActive, &createdAt, &updatedAt)
+	err := row.Scan(&u.ID, &u.Email, &u.PasswordHash, &u.Name, &isActive, &isAdmin, &createdAt, &updatedAt)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
@@ -109,6 +106,7 @@ func (s *SQLiteStore) scanUser(row *sql.Row) (*User, error) {
 		return nil, fmt.Errorf("scan user: %w", err)
 	}
 	u.IsActive = isActive != 0
+	u.IsAdmin = isAdmin != 0
 	u.CreatedAt, _ = time.Parse(timeFormat, createdAt)
 	u.UpdatedAt, _ = time.Parse(timeFormat, updatedAt)
 	return &u, nil
@@ -116,7 +114,7 @@ func (s *SQLiteStore) scanUser(row *sql.Row) (*User, error) {
 
 func (s *SQLiteStore) ListUsers(ctx context.Context) ([]*User, error) {
 	rows, err := s.db.QueryContext(ctx,
-		`SELECT id, email, password_hash, name, is_active, created_at, updated_at FROM users`)
+		`SELECT id, email, password_hash, name, is_active, is_admin, created_at, updated_at FROM users`)
 	if err != nil {
 		return nil, fmt.Errorf("list users: %w", err)
 	}
@@ -128,13 +126,14 @@ func (s *SQLiteStore) scanUsers(rows *sql.Rows) ([]*User, error) {
 	var users []*User
 	for rows.Next() {
 		var u User
-		var isActive int
+		var isActive, isAdmin int
 		var createdAt, updatedAt string
-		err := rows.Scan(&u.ID, &u.Email, &u.PasswordHash, &u.Name, &isActive, &createdAt, &updatedAt)
+		err := rows.Scan(&u.ID, &u.Email, &u.PasswordHash, &u.Name, &isActive, &isAdmin, &createdAt, &updatedAt)
 		if err != nil {
 			return nil, fmt.Errorf("scan user row: %w", err)
 		}
 		u.IsActive = isActive != 0
+		u.IsAdmin = isAdmin != 0
 		u.CreatedAt, _ = time.Parse(timeFormat, createdAt)
 		u.UpdatedAt, _ = time.Parse(timeFormat, updatedAt)
 		users = append(users, &u)
@@ -145,8 +144,8 @@ func (s *SQLiteStore) scanUsers(rows *sql.Rows) ([]*User, error) {
 func (s *SQLiteStore) UpdateUser(ctx context.Context, user *User) error {
 	now := time.Now().UTC().Format(timeFormat)
 	_, err := s.db.ExecContext(ctx,
-		`UPDATE users SET email = ?, name = ?, password_hash = ?, is_active = ?, updated_at = ? WHERE id = ?`,
-		user.Email, user.Name, user.PasswordHash, user.IsActive, now, user.ID,
+		`UPDATE users SET email = ?, name = ?, password_hash = ?, is_active = ?, is_admin = ?, updated_at = ? WHERE id = ?`,
+		user.Email, user.Name, user.PasswordHash, user.IsActive, user.IsAdmin, now, user.ID,
 	)
 	if err != nil {
 		return fmt.Errorf("update user: %w", err)
@@ -370,255 +369,6 @@ func (s *SQLiteStore) TouchAgentToken(ctx context.Context, id string, usedAt tim
 		return fmt.Errorf("touch agent token: %w", err)
 	}
 	return nil
-}
-
-// --- Roles ---
-
-func (s *SQLiteStore) CreateRole(ctx context.Context, role *Role) error {
-	if role.ID == "" {
-		role.ID = uuid.New().String()
-	}
-	now := time.Now().UTC().Format(timeFormat)
-	_, err := s.db.ExecContext(ctx,
-		`INSERT INTO roles (id, name, description, is_system, created_at, updated_at)
-		 VALUES (?, ?, ?, ?, ?, ?)`,
-		role.ID, role.Name, role.Description, role.IsSystem, now, now,
-	)
-	if err != nil {
-		return fmt.Errorf("create role: %w", err)
-	}
-	role.CreatedAt, _ = time.Parse(timeFormat, now)
-	role.UpdatedAt = role.CreatedAt
-	return nil
-}
-
-func (s *SQLiteStore) GetRoleByID(ctx context.Context, id string) (*Role, error) {
-	role, err := s.scanRole(s.db.QueryRowContext(ctx,
-		`SELECT id, name, description, is_system, created_at, updated_at
-		 FROM roles WHERE id = ?`, id))
-	if err != nil || role == nil {
-		return role, err
-	}
-	role.Permissions, err = s.loadPermissions(ctx, role.ID)
-	return role, err
-}
-
-func (s *SQLiteStore) GetRoleByName(ctx context.Context, name string) (*Role, error) {
-	role, err := s.scanRole(s.db.QueryRowContext(ctx,
-		`SELECT id, name, description, is_system, created_at, updated_at
-		 FROM roles WHERE name = ?`, name))
-	if err != nil || role == nil {
-		return role, err
-	}
-	role.Permissions, err = s.loadPermissions(ctx, role.ID)
-	return role, err
-}
-
-func (s *SQLiteStore) scanRole(row *sql.Row) (*Role, error) {
-	var r Role
-	var isSystem int
-	var createdAt, updatedAt string
-	err := row.Scan(&r.ID, &r.Name, &r.Description, &isSystem, &createdAt, &updatedAt)
-	if err == sql.ErrNoRows {
-		return nil, nil
-	}
-	if err != nil {
-		return nil, fmt.Errorf("scan role: %w", err)
-	}
-	r.IsSystem = isSystem != 0
-	r.CreatedAt, _ = time.Parse(timeFormat, createdAt)
-	r.UpdatedAt, _ = time.Parse(timeFormat, updatedAt)
-	return &r, nil
-}
-
-func (s *SQLiteStore) loadPermissions(ctx context.Context, roleID string) ([]Permission, error) {
-	rows, err := s.db.QueryContext(ctx,
-		`SELECT id, role_id, cluster_pattern, namespace_pattern, resource_pattern, verbs
-		 FROM permissions WHERE role_id = ?`, roleID)
-	if err != nil {
-		return nil, fmt.Errorf("load permissions: %w", err)
-	}
-	defer rows.Close()
-
-	var perms []Permission
-	for rows.Next() {
-		var p Permission
-		if err := rows.Scan(&p.ID, &p.RoleID, &p.ClusterPattern, &p.NamespacePattern, &p.ResourcePattern, &p.Verbs); err != nil {
-			return nil, fmt.Errorf("scan permission: %w", err)
-		}
-		perms = append(perms, p)
-	}
-	return perms, rows.Err()
-}
-
-func (s *SQLiteStore) ListRoles(ctx context.Context) ([]*Role, error) {
-	rows, err := s.db.QueryContext(ctx,
-		`SELECT id, name, description, is_system, created_at, updated_at FROM roles`)
-	if err != nil {
-		return nil, fmt.Errorf("list roles: %w", err)
-	}
-	defer rows.Close()
-
-	var roles []*Role
-	for rows.Next() {
-		var r Role
-		var isSystem int
-		var createdAt, updatedAt string
-		if err := rows.Scan(&r.ID, &r.Name, &r.Description, &isSystem, &createdAt, &updatedAt); err != nil {
-			return nil, fmt.Errorf("scan role row: %w", err)
-		}
-		r.IsSystem = isSystem != 0
-		r.CreatedAt, _ = time.Parse(timeFormat, createdAt)
-		r.UpdatedAt, _ = time.Parse(timeFormat, updatedAt)
-		roles = append(roles, &r)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-
-	for _, role := range roles {
-		role.Permissions, err = s.loadPermissions(ctx, role.ID)
-		if err != nil {
-			return nil, err
-		}
-	}
-	return roles, nil
-}
-
-func (s *SQLiteStore) UpdateRole(ctx context.Context, role *Role) error {
-	now := time.Now().UTC().Format(timeFormat)
-	_, err := s.db.ExecContext(ctx,
-		`UPDATE roles SET name = ?, description = ?, updated_at = ? WHERE id = ?`,
-		role.Name, role.Description, now, role.ID,
-	)
-	if err != nil {
-		return fmt.Errorf("update role: %w", err)
-	}
-	role.UpdatedAt, _ = time.Parse(timeFormat, now)
-	return nil
-}
-
-func (s *SQLiteStore) DeleteRole(ctx context.Context, id string) error {
-	_, err := s.db.ExecContext(ctx, `DELETE FROM roles WHERE id = ? AND is_system = 0`, id)
-	if err != nil {
-		return fmt.Errorf("delete role: %w", err)
-	}
-	return nil
-}
-
-// --- Permissions ---
-
-func (s *SQLiteStore) CreatePermission(ctx context.Context, perm *Permission) error {
-	if perm.ID == "" {
-		perm.ID = uuid.New().String()
-	}
-	_, err := s.db.ExecContext(ctx,
-		`INSERT INTO permissions (id, role_id, cluster_pattern, namespace_pattern, resource_pattern, verbs)
-		 VALUES (?, ?, ?, ?, ?, ?)`,
-		perm.ID, perm.RoleID, perm.ClusterPattern, perm.NamespacePattern, perm.ResourcePattern, perm.Verbs,
-	)
-	if err != nil {
-		return fmt.Errorf("create permission: %w", err)
-	}
-	return nil
-}
-
-func (s *SQLiteStore) ListPermissionsByRole(ctx context.Context, roleID string) ([]*Permission, error) {
-	rows, err := s.db.QueryContext(ctx,
-		`SELECT id, role_id, cluster_pattern, namespace_pattern, resource_pattern, verbs
-		 FROM permissions WHERE role_id = ?`, roleID)
-	if err != nil {
-		return nil, fmt.Errorf("list permissions: %w", err)
-	}
-	defer rows.Close()
-
-	var perms []*Permission
-	for rows.Next() {
-		var p Permission
-		if err := rows.Scan(&p.ID, &p.RoleID, &p.ClusterPattern, &p.NamespacePattern, &p.ResourcePattern, &p.Verbs); err != nil {
-			return nil, fmt.Errorf("scan permission row: %w", err)
-		}
-		perms = append(perms, &p)
-	}
-	return perms, rows.Err()
-}
-
-func (s *SQLiteStore) DeletePermission(ctx context.Context, id string) error {
-	_, err := s.db.ExecContext(ctx, `DELETE FROM permissions WHERE id = ?`, id)
-	if err != nil {
-		return fmt.Errorf("delete permission: %w", err)
-	}
-	return nil
-}
-
-func (s *SQLiteStore) DeletePermissionsByRole(ctx context.Context, roleID string) error {
-	_, err := s.db.ExecContext(ctx, `DELETE FROM permissions WHERE role_id = ?`, roleID)
-	if err != nil {
-		return fmt.Errorf("delete permissions by role: %w", err)
-	}
-	return nil
-}
-
-// --- User-Role Assignments ---
-
-func (s *SQLiteStore) AssignRole(ctx context.Context, userID, roleID, assignedBy string) error {
-	now := time.Now().UTC().Format(timeFormat)
-	_, err := s.db.ExecContext(ctx,
-		`INSERT INTO user_roles (user_id, role_id, assigned_at, assigned_by)
-		 VALUES (?, ?, ?, ?)`,
-		userID, roleID, now, nilIfEmpty(assignedBy),
-	)
-	if err != nil {
-		return fmt.Errorf("assign role: %w", err)
-	}
-	return nil
-}
-
-func (s *SQLiteStore) UnassignRole(ctx context.Context, userID, roleID string) error {
-	_, err := s.db.ExecContext(ctx,
-		`DELETE FROM user_roles WHERE user_id = ? AND role_id = ?`, userID, roleID)
-	if err != nil {
-		return fmt.Errorf("unassign role: %w", err)
-	}
-	return nil
-}
-
-func (s *SQLiteStore) ListRolesByUser(ctx context.Context, userID string) ([]*Role, error) {
-	rows, err := s.db.QueryContext(ctx,
-		`SELECT r.id, r.name, r.description, r.is_system, r.created_at, r.updated_at
-		 FROM roles r JOIN user_roles ur ON r.id = ur.role_id
-		 WHERE ur.user_id = ?`, userID)
-	if err != nil {
-		return nil, fmt.Errorf("list roles by user: %w", err)
-	}
-	defer rows.Close()
-
-	var roles []*Role
-	for rows.Next() {
-		var r Role
-		var isSystem int
-		var createdAt, updatedAt string
-		if err := rows.Scan(&r.ID, &r.Name, &r.Description, &isSystem, &createdAt, &updatedAt); err != nil {
-			return nil, fmt.Errorf("scan role row: %w", err)
-		}
-		r.IsSystem = isSystem != 0
-		r.CreatedAt, _ = time.Parse(timeFormat, createdAt)
-		r.UpdatedAt, _ = time.Parse(timeFormat, updatedAt)
-		roles = append(roles, &r)
-	}
-	return roles, rows.Err()
-}
-
-func (s *SQLiteStore) ListUsersByRole(ctx context.Context, roleID string) ([]*User, error) {
-	rows, err := s.db.QueryContext(ctx,
-		`SELECT u.id, u.email, u.password_hash, u.name, u.is_active, u.created_at, u.updated_at
-		 FROM users u JOIN user_roles ur ON u.id = ur.user_id
-		 WHERE ur.role_id = ?`, roleID)
-	if err != nil {
-		return nil, fmt.Errorf("list users by role: %w", err)
-	}
-	defer rows.Close()
-	return s.scanUsers(rows)
 }
 
 // --- Refresh Tokens ---

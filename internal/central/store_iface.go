@@ -30,26 +30,6 @@ type Store interface {
 	RevokeAgentToken(ctx context.Context, id string) error
 	TouchAgentToken(ctx context.Context, id string, usedAt time.Time) error
 
-	// Roles
-	CreateRole(ctx context.Context, role *Role) error
-	GetRoleByID(ctx context.Context, id string) (*Role, error)
-	GetRoleByName(ctx context.Context, name string) (*Role, error)
-	ListRoles(ctx context.Context) ([]*Role, error)
-	UpdateRole(ctx context.Context, role *Role) error
-	DeleteRole(ctx context.Context, id string) error
-
-	// Permissions
-	CreatePermission(ctx context.Context, perm *Permission) error
-	ListPermissionsByRole(ctx context.Context, roleID string) ([]*Permission, error)
-	DeletePermission(ctx context.Context, id string) error
-	DeletePermissionsByRole(ctx context.Context, roleID string) error
-
-	// User-Role Assignments
-	AssignRole(ctx context.Context, userID, roleID, assignedBy string) error
-	UnassignRole(ctx context.Context, userID, roleID string) error
-	ListRolesByUser(ctx context.Context, userID string) ([]*Role, error)
-	ListUsersByRole(ctx context.Context, roleID string) ([]*User, error)
-
 	// Refresh Tokens
 	CreateRefreshToken(ctx context.Context, rt *RefreshToken) error
 	GetRefreshTokenByHash(ctx context.Context, tokenHash string) (*RefreshToken, error)

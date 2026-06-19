@@ -307,9 +307,9 @@ func TestAdminRoutes_RequireAdminRole(t *testing.T) {
 	srv := NewHTTPServer(NewAgentStore(), NewCommandQueue(),
 		NewAuthHandlers(store, jm, time.Hour), NewAdminHandlers(store, testPepper), nil, nil, nil, jm)
 
-	tokenFor := func(roles []string) string {
+	tokenFor := func(isAdmin bool) string {
 		tok, err := jm.GenerateAccessToken(&auth.UserClaims{
-			UserID: "u1", Email: "u@example.com", Roles: roles,
+			UserID: "u1", Email: "u@example.com", IsAdmin: isAdmin,
 		})
 		if err != nil {
 			t.Fatalf("generate token: %v", err)
@@ -323,8 +323,8 @@ func TestAdminRoutes_RequireAdminRole(t *testing.T) {
 		wantCode int
 	}{
 		{"no token", "", http.StatusUnauthorized},
-		{"non-admin role", "Bearer " + tokenFor([]string{"viewer"}), http.StatusForbidden},
-		{"admin role", "Bearer " + tokenFor([]string{"admin"}), http.StatusCreated},
+		{"non-admin", "Bearer " + tokenFor(false), http.StatusForbidden},
+		{"admin", "Bearer " + tokenFor(true), http.StatusCreated},
 	}
 
 	for _, tt := range tests {

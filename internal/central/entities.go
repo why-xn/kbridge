@@ -8,7 +8,7 @@ type User struct {
 	PasswordHash string    `json:"-"`
 	Name         string    `json:"name"`
 	IsActive     bool      `json:"is_active"`
-	Roles        []string  `json:"roles,omitempty"`
+	IsAdmin      bool      `json:"is_admin"`
 	CreatedAt    time.Time `json:"created_at"`
 	UpdatedAt    time.Time `json:"updated_at"`
 }
@@ -34,32 +34,6 @@ type AgentToken struct {
 	LastUsedAt  *time.Time `json:"last_used_at,omitempty"`
 	ExpiresAt   *time.Time `json:"expires_at,omitempty"`
 	CreatedAt   time.Time  `json:"created_at"`
-}
-
-type Role struct {
-	ID          string       `json:"id"`
-	Name        string       `json:"name"`
-	Description string       `json:"description,omitempty"`
-	IsSystem    bool         `json:"is_system"`
-	Permissions []Permission `json:"permissions,omitempty"`
-	CreatedAt   time.Time    `json:"created_at"`
-	UpdatedAt   time.Time    `json:"updated_at"`
-}
-
-type Permission struct {
-	ID               string `json:"id"`
-	RoleID           string `json:"role_id,omitempty"`
-	ClusterPattern   string `json:"cluster_pattern"`
-	NamespacePattern string `json:"namespace_pattern"`
-	ResourcePattern  string `json:"resource_pattern"`
-	Verbs            string `json:"verbs"`
-}
-
-type UserRole struct {
-	UserID     string    `json:"user_id"`
-	RoleID     string    `json:"role_id"`
-	AssignedAt time.Time `json:"assigned_at"`
-	AssignedBy string    `json:"assigned_by,omitempty"`
 }
 
 type AuditLog struct {

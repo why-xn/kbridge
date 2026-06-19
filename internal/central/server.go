@@ -121,33 +121,24 @@ func seedAdminUser(store *SQLiteStore, cfg *Config) {
 	if existing != nil {
 		return
 	}
-
 	hash, err := auth.HashPassword(cfg.Auth.AdminPassword)
 	if err != nil {
-		log.Printf("Warning: failed to hash admin password: %v", err)
+		log.Printf("warning: failed to hash admin password: %v", err)
 		return
 	}
-
 	name := cfg.Auth.AdminName
 	if name == "" {
 		name = "Admin"
 	}
-
 	user := &User{
 		Email:        cfg.Auth.AdminEmail,
 		PasswordHash: hash,
 		Name:         name,
 		IsActive:     true,
+		IsAdmin:      true,
 	}
 	if err := store.CreateUser(ctx, user); err != nil {
-		log.Printf("Warning: failed to create admin user: %v", err)
-		return
-	}
-
-	// Assign admin role
-	adminRoleID := "00000000-0000-0000-0000-000000000001"
-	if err := store.AssignRole(ctx, user.ID, adminRoleID, ""); err != nil {
-		log.Printf("Warning: failed to assign admin role: %v", err)
+		log.Printf("warning: failed to create admin user: %v", err)
 	}
 }
 

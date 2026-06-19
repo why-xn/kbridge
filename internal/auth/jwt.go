@@ -12,10 +12,10 @@ import (
 
 // UserClaims holds the custom claims embedded in access tokens.
 type UserClaims struct {
-	UserID string   `json:"user_id"`
-	Email  string   `json:"email"`
-	Name   string   `json:"name"`
-	Roles  []string `json:"roles"`
+	UserID  string `json:"user_id"`
+	Email   string `json:"email"`
+	Name    string `json:"name"`
+	IsAdmin bool   `json:"is_admin"`
 	jwt.RegisteredClaims
 }
 

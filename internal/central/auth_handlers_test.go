@@ -40,8 +40,6 @@ func seedTestUser(t *testing.T, store *SQLiteStore) *User {
 	if err := store.CreateUser(context.Background(), user); err != nil {
 		t.Fatalf("seed user: %v", err)
 	}
-	// Assign admin role
-	store.AssignRole(context.Background(), user.ID, "00000000-0000-0000-0000-000000000001", "")
 	return user
 }
 

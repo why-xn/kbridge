@@ -188,6 +188,7 @@ type UserInfo struct {
 	Email     string `json:"email"`
 	Name      string `json:"name"`
 	IsActive  bool   `json:"is_active"`
+	IsAdmin   bool   `json:"is_admin"`
 	CreatedAt string `json:"created_at"`
 }
 

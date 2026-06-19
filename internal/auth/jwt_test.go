@@ -8,10 +8,10 @@ import (
 func TestGenerateAccessToken(t *testing.T) {
 	jm := NewJWTManager("test-secret-at-least-32-chars!!", 24*time.Hour)
 	claims := &UserClaims{
-		UserID: "user-123",
-		Email:  "test@example.com",
-		Name:   "Test User",
-		Roles:  []string{"admin"},
+		UserID:  "user-123",
+		Email:   "test@example.com",
+		Name:    "Test User",
+		IsAdmin: true,
 	}
 
 	token, err := jm.GenerateAccessToken(claims)
@@ -26,10 +26,10 @@ func TestGenerateAccessToken(t *testing.T) {
 func TestValidateAccessToken(t *testing.T) {
 	jm := NewJWTManager("test-secret-at-least-32-chars!!", 24*time.Hour)
 	claims := &UserClaims{
-		UserID: "user-123",
-		Email:  "test@example.com",
-		Name:   "Test User",
-		Roles:  []string{"admin"},
+		UserID:  "user-123",
+		Email:   "test@example.com",
+		Name:    "Test User",
+		IsAdmin: true,
 	}
 
 	token, _ := jm.GenerateAccessToken(claims)
@@ -46,14 +46,14 @@ func TestValidateAccessToken(t *testing.T) {
 	if parsed.Name != "Test User" {
 		t.Errorf("expected Test User, got %q", parsed.Name)
 	}
-	if len(parsed.Roles) != 1 || parsed.Roles[0] != "admin" {
-		t.Errorf("expected [admin], got %v", parsed.Roles)
+	if !parsed.IsAdmin {
+		t.Error("expected IsAdmin true")
 	}
 }
 
 func TestValidateAccessToken_Expired(t *testing.T) {
 	jm := NewJWTManager("test-secret-at-least-32-chars!!", -1*time.Hour)
-	claims := &UserClaims{UserID: "user-123", Email: "test@example.com", Name: "Test", Roles: []string{}}
+	claims := &UserClaims{UserID: "user-123", Email: "test@example.com", Name: "Test"}
 	token, _ := jm.GenerateAccessToken(claims)
 	_, err := jm.ValidateAccessToken(token)
 	if err == nil {
@@ -64,7 +64,7 @@ func TestValidateAccessToken_Expired(t *testing.T) {
 func TestValidateAccessToken_WrongSecret(t *testing.T) {
 	jm1 := NewJWTManager("secret-one-at-least-32-chars!!!", 24*time.Hour)
 	jm2 := NewJWTManager("secret-two-at-least-32-chars!!!", 24*time.Hour)
-	claims := &UserClaims{UserID: "user-123", Email: "test@example.com", Name: "Test", Roles: []string{}}
+	claims := &UserClaims{UserID: "user-123", Email: "test@example.com", Name: "Test"}
 	token, _ := jm1.GenerateAccessToken(claims)
 	_, err := jm2.ValidateAccessToken(token)
 	if err == nil {
