@@ -69,6 +69,11 @@ func runKubectl(cmd *cobra.Command, args []string) error {
 		return execInteractiveFromConfig(tgt)
 	}
 
+	// Port-forward needs a bidi HTTP/2 stream with per-connection multiplexing.
+	if tgt, ok := parsePortForwardArgs(args); ok {
+		return portForwardFromConfig(tgt)
+	}
+
 	// Check central URL
 	centralURL := viper.GetString(ConfigKeyCentralURL)
 	if centralURL == "" {
