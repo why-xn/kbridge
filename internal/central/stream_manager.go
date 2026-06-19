@@ -28,13 +28,33 @@ type StreamChunk struct {
 	Data []byte
 }
 
+// PfKind tags a port-forward output chunk.
+type PfKind int
+
+const (
+	PfKindData PfKind = iota
+	PfKindClose
+	PfKindConnError
+	PfKindReady
+	PfKindSessionError
+)
+
+// PfChunk is one port-forward message routed from the agent to the handler.
+type PfChunk struct {
+	Kind   PfKind
+	ConnID uint32
+	Data   []byte
+	Err    string
+}
+
 // Session is a single streaming command in flight.
 type Session struct {
-	ID      string
-	AgentID string
-	Output  chan StreamChunk
-	done    chan struct{}
-	once    sync.Once
+	ID       string
+	AgentID  string
+	Output   chan StreamChunk
+	PfOutput chan PfChunk // non-nil only for port-forward sessions
+	done     chan struct{}
+	once     sync.Once
 	// exitCode and errMsg are written inside once.Do before closing done,
 	// so reads after <-done are race-free without additional locking.
 	exitCode int32
@@ -45,7 +65,12 @@ func (s *Session) close(exitCode int32, errMsg string) {
 	s.once.Do(func() {
 		s.exitCode = exitCode
 		s.errMsg = errMsg
-		close(s.Output)
+		if s.Output != nil {
+			close(s.Output)
+		}
+		if s.PfOutput != nil {
+			close(s.PfOutput)
+		}
 		close(s.done)
 	})
 }
@@ -190,6 +215,73 @@ func (m *SessionManager) SendResize(sessionID string, rows, cols uint32) error {
 	}})
 }
 
+// StartPortForward opens a port-forward session and pushes PortForwardStart.
+func (m *SessionManager) StartPortForward(agentID, pod, namespace string, ports []uint32) (*Session, error) {
+	m.mu.Lock()
+	conn := m.agents[agentID]
+	if conn == nil {
+		m.mu.Unlock()
+		return nil, ErrNoAgentStream
+	}
+	if len(m.sessions) >= m.max {
+		m.mu.Unlock()
+		return nil, ErrTooManyStreams
+	}
+	sess := &Session{
+		ID:       uuid.New().String(),
+		AgentID:  agentID,
+		PfOutput: make(chan PfChunk, sessionOutputBuffer),
+		done:     make(chan struct{}),
+	}
+	m.mu.Unlock()
+
+	err := sendLocked(conn, &agentpb.CentralStreamMessage{Msg: &agentpb.CentralStreamMessage_PfStart{
+		PfStart: &agentpb.PortForwardStart{SessionId: sess.ID, Pod: pod, Namespace: namespace, Ports: ports},
+	}})
+	if err != nil {
+		return nil, err
+	}
+
+	m.mu.Lock()
+	conn.sessions[sess.ID] = sess
+	m.sessions[sess.ID] = sess
+	m.mu.Unlock()
+	return sess, nil
+}
+
+// SendPfOpen forwards a new-connection request to the session's agent.
+func (m *SessionManager) SendPfOpen(sessionID string, connID, remotePort uint32) error {
+	conn := m.connFor(sessionID)
+	if conn == nil {
+		return ErrNoAgentStream
+	}
+	return sendLocked(conn, &agentpb.CentralStreamMessage{Msg: &agentpb.CentralStreamMessage_PfOpen{
+		PfOpen: &agentpb.PfOpen{SessionId: sessionID, ConnId: connID, RemotePort: remotePort},
+	}})
+}
+
+// SendPfData forwards client->pod bytes for a connection.
+func (m *SessionManager) SendPfData(sessionID string, connID uint32, data []byte) error {
+	conn := m.connFor(sessionID)
+	if conn == nil {
+		return ErrNoAgentStream
+	}
+	return sendLocked(conn, &agentpb.CentralStreamMessage{Msg: &agentpb.CentralStreamMessage_PfData{
+		PfData: &agentpb.PfData{SessionId: sessionID, ConnId: connID, Data: data},
+	}})
+}
+
+// SendPfClose forwards a connection close to the agent.
+func (m *SessionManager) SendPfClose(sessionID string, connID uint32) error {
+	conn := m.connFor(sessionID)
+	if conn == nil {
+		return ErrNoAgentStream
+	}
+	return sendLocked(conn, &agentpb.CentralStreamMessage{Msg: &agentpb.CentralStreamMessage_PfClose{
+		PfClose: &agentpb.PfClose{SessionId: sessionID, ConnId: connID},
+	}})
+}
+
 func (m *SessionManager) connFor(sessionID string) *agentConn {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -217,6 +309,31 @@ func (m *SessionManager) Route(msg *agentpb.AgentStreamMessage) {
 			m.dropSession(sess.ID)
 			sess.close(v.Exit.GetExitCode(), v.Exit.GetErrorMessage())
 		}
+	case *agentpb.AgentStreamMessage_PfReady:
+		m.routePf(v.PfReady.GetSessionId(), PfChunk{Kind: PfKindReady})
+	case *agentpb.AgentStreamMessage_PfData:
+		m.routePf(v.PfData.GetSessionId(), PfChunk{Kind: PfKindData, ConnID: v.PfData.GetConnId(), Data: v.PfData.GetData()})
+	case *agentpb.AgentStreamMessage_PfClose:
+		m.routePf(v.PfClose.GetSessionId(), PfChunk{Kind: PfKindClose, ConnID: v.PfClose.GetConnId()})
+	case *agentpb.AgentStreamMessage_PfConnError:
+		m.routePf(v.PfConnError.GetSessionId(), PfChunk{Kind: PfKindConnError, ConnID: v.PfConnError.GetConnId(), Err: v.PfConnError.GetError()})
+	case *agentpb.AgentStreamMessage_PfSessionError:
+		m.routePf(v.PfSessionError.GetSessionId(), PfChunk{Kind: PfKindSessionError, Err: v.PfSessionError.GetError()})
+	}
+}
+
+// routePf delivers a port-forward chunk to its session, cancelling the session
+// if the client is too slow to drain (bounded blast radius — never blocks the
+// shared recv loop).
+func (m *SessionManager) routePf(sessionID string, chunk PfChunk) {
+	sess := m.lookup(sessionID)
+	if sess == nil || sess.PfOutput == nil {
+		return
+	}
+	select {
+	case sess.PfOutput <- chunk:
+	default:
+		m.Cancel(sess.ID)
 	}
 }
 

@@ -141,6 +141,47 @@ func (r *recordingSender) last() *agentpb.CentralStreamMessage {
 	return r.msgs[len(r.msgs)-1]
 }
 
+func TestSessionManager_PortForward(t *testing.T) {
+	m := NewSessionManager(10)
+	rs := &recordingSender{}
+	m.RegisterAgentStream("a1", rs)
+
+	sess, err := m.StartPortForward("a1", "pod", "ns", []uint32{5432})
+	if err != nil {
+		t.Fatalf("start pf: %v", err)
+	}
+	if st := rs.last().GetPfStart(); st == nil || st.GetPod() != "pod" || len(st.GetPorts()) != 1 {
+		t.Fatalf("PortForwardStart wrong: %+v", rs.last())
+	}
+
+	if err := m.SendPfOpen(sess.ID, 1, 5432); err != nil {
+		t.Fatal(err)
+	}
+	if o := rs.last().GetPfOpen(); o == nil || o.GetConnId() != 1 || o.GetRemotePort() != 5432 {
+		t.Fatalf("PfOpen wrong: %+v", rs.last())
+	}
+	if err := m.SendPfData(sess.ID, 1, []byte("x")); err != nil {
+		t.Fatal(err)
+	}
+	if d := rs.last().GetPfData(); d == nil || d.GetConnId() != 1 || string(d.GetData()) != "x" {
+		t.Fatalf("PfData wrong: %+v", rs.last())
+	}
+
+	// Agent->central routing lands on PfOutput.
+	m.Route(&agentpb.AgentStreamMessage{Msg: &agentpb.AgentStreamMessage_PfReady{PfReady: &agentpb.PfReady{SessionId: sess.ID}}})
+	if c := <-sess.PfOutput; c.Kind != PfKindReady {
+		t.Fatalf("want PfKindReady, got %+v", c)
+	}
+	m.Route(&agentpb.AgentStreamMessage{Msg: &agentpb.AgentStreamMessage_PfData{PfData: &agentpb.PfData{SessionId: sess.ID, ConnId: 1, Data: []byte("hi")}}})
+	if c := <-sess.PfOutput; c.Kind != PfKindData || c.ConnID != 1 || string(c.Data) != "hi" {
+		t.Fatalf("want PfData chunk, got %+v", c)
+	}
+
+	if err := m.SendPfOpen("nope", 1, 1); err != ErrNoAgentStream {
+		t.Fatalf("unknown session: want ErrNoAgentStream, got %v", err)
+	}
+}
+
 func TestSessionManager_StartInteractiveAndControl(t *testing.T) {
 	m := NewSessionManager(10)
 	rs := &recordingSender{}
