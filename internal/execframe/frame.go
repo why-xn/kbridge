@@ -22,13 +22,13 @@ const (
 // MaxPayload bounds a single frame's payload to limit memory use.
 const MaxPayload = 1 << 20
 
-// Encode writes one framed message: [type:1][len:4 BE][payload].
-func Encode(w io.Writer, t Type, payload []byte) error {
+// WriteFrame writes one raw framed message: [type:1][len:4 BE][payload].
+func WriteFrame(w io.Writer, t byte, payload []byte) error {
 	if len(payload) > MaxPayload {
 		return fmt.Errorf("execframe: payload %d exceeds max %d", len(payload), MaxPayload)
 	}
 	var hdr [5]byte
-	hdr[0] = byte(t)
+	hdr[0] = t
 	binary.BigEndian.PutUint32(hdr[1:], uint32(len(payload)))
 	if _, err := w.Write(hdr[:]); err != nil {
 		return err
@@ -40,8 +40,8 @@ func Encode(w io.Writer, t Type, payload []byte) error {
 	return err
 }
 
-// Decode reads exactly one framed message from r.
-func Decode(r io.Reader) (Type, []byte, error) {
+// ReadFrame reads exactly one raw framed message from r.
+func ReadFrame(r io.Reader) (byte, []byte, error) {
 	var hdr [5]byte
 	if _, err := io.ReadFull(r, hdr[:]); err != nil {
 		return 0, nil, err
@@ -54,7 +54,16 @@ func Decode(r io.Reader) (Type, []byte, error) {
 	if _, err := io.ReadFull(r, payload); err != nil {
 		return 0, nil, err
 	}
-	return Type(hdr[0]), payload, nil
+	return hdr[0], payload, nil
+}
+
+// Encode writes one typed exec frame.
+func Encode(w io.Writer, t Type, payload []byte) error { return WriteFrame(w, byte(t), payload) }
+
+// Decode reads one typed exec frame.
+func Decode(r io.Reader) (Type, []byte, error) {
+	b, p, err := ReadFrame(r)
+	return Type(b), p, err
 }
 
 // EncodeResize / DecodeResize pack a window size into a RESIZE payload.
