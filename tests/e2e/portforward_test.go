@@ -166,10 +166,7 @@ func TestPortForwardMultiConn(t *testing.T) {
 }
 
 // TestPortForwardMissingPod verifies that forwarding to a non-existent pod
-// fails with either a non-zero exit code or an error message in the output.
-// NOTE: the current implementation prints the error to stderr and exits 0
-// (the SessionError frame is printed but not propagated as a Go error through
-// Cobra). The test therefore accepts a non-zero exit OR an error in output.
+// exits non-zero (SESSION_ERROR is now propagated as a Go error through Cobra).
 func TestPortForwardMissingPod(t *testing.T) {
 	if _, _, code := runCLI(t, "clusters", "use", *clusterName); code != 0 {
 		t.Fatal("select cluster")
@@ -179,15 +176,7 @@ func TestPortForwardMissingPod(t *testing.T) {
 	outStr := string(out)
 	t.Logf("missing pod output: %s", outStr)
 
-	// Accept either: non-zero exit code, or an error message in the output.
-	isNonZeroExit := cmd.ProcessState != nil && !cmd.ProcessState.Success()
-	hasErrorMsg := strings.Contains(outStr, "not found") ||
-		strings.Contains(outStr, "error") ||
-		strings.Contains(outStr, "Error") ||
-		strings.Contains(outStr, "did not establish") ||
-		strings.Contains(outStr, "no such")
-	if !isNonZeroExit && !hasErrorMsg {
-		t.Fatalf("expected failure (non-zero exit or error message) for missing pod, got exit=%v out: %s",
-			cmd.ProcessState, outStr)
+	if cmd.ProcessState == nil || cmd.ProcessState.Success() {
+		t.Fatalf("expected non-zero exit for missing pod, got exit=0; output: %s", outStr)
 	}
 }

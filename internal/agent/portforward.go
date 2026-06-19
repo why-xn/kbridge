@@ -29,6 +29,12 @@ func parseForwardLine(line string) (remote, local uint16, ok bool) {
 	return uint16(r), uint16(l), true
 }
 
+// pfConn holds a single forwarded TCP connection and its bounded inbound write channel.
+type pfConn struct {
+	conn net.Conn
+	in   chan []byte
+}
+
 // pfSession fans connections out to per-remote-port local kubectl listeners.
 type pfSession struct {
 	sessionID     string
@@ -36,7 +42,7 @@ type pfSession struct {
 	send          func(*agentpb.AgentStreamMessage)
 
 	mu    sync.Mutex
-	conns map[uint32]net.Conn
+	conns map[uint32]*pfConn
 }
 
 func newPfSession(sessionID string, remoteToLocal map[uint16]uint16, send func(*agentpb.AgentStreamMessage)) *pfSession {
@@ -44,7 +50,7 @@ func newPfSession(sessionID string, remoteToLocal map[uint16]uint16, send func(*
 		sessionID:     sessionID,
 		remoteToLocal: remoteToLocal,
 		send:          send,
-		conns:         make(map[uint32]net.Conn),
+		conns:         make(map[uint32]*pfConn),
 	}
 }
 
@@ -66,10 +72,21 @@ func (s *pfSession) open(connID uint32, remotePort uint16) {
 		s.connError(connID, fmt.Sprintf("dial: %v", err))
 		return
 	}
+	pc := &pfConn{conn: conn, in: make(chan []byte, 32)}
 	s.mu.Lock()
-	s.conns[connID] = conn
+	s.conns[connID] = pc
 	s.mu.Unlock()
 
+	// writer goroutine: drains pc.in so data() never blocks the recv loop.
+	go func() {
+		for d := range pc.in {
+			if _, err := pc.conn.Write(d); err != nil {
+				break
+			}
+		}
+	}()
+
+	// reader goroutine: pumps bytes from the pod socket back upstream.
 	go func() {
 		buf := make([]byte, 32*1024)
 		for {
@@ -94,30 +111,39 @@ func (s *pfSession) open(connID uint32, remotePort uint16) {
 
 func (s *pfSession) data(connID uint32, data []byte) {
 	s.mu.Lock()
-	conn := s.conns[connID]
+	pc := s.conns[connID]
 	s.mu.Unlock()
-	if conn != nil {
-		_, _ = conn.Write(data)
+	if pc == nil {
+		return
+	}
+	select {
+	case pc.in <- data:
+	default:
+		// Write channel full: slow/stuck connection — close it and report.
+		s.closeConn(connID)
+		s.connError(connID, "write buffer full: connection dropped")
 	}
 }
 
 func (s *pfSession) closeConn(connID uint32) {
 	s.mu.Lock()
-	conn := s.conns[connID]
+	pc := s.conns[connID]
 	delete(s.conns, connID)
 	s.mu.Unlock()
-	if conn != nil {
-		_ = conn.Close()
+	if pc != nil {
+		close(pc.in)
+		_ = pc.conn.Close()
 	}
 }
 
 func (s *pfSession) shutdown() {
 	s.mu.Lock()
 	conns := s.conns
-	s.conns = make(map[uint32]net.Conn)
+	s.conns = make(map[uint32]*pfConn)
 	s.mu.Unlock()
-	for _, c := range conns {
-		_ = c.Close()
+	for _, pc := range conns {
+		close(pc.in)
+		_ = pc.conn.Close()
 	}
 }
 
@@ -144,16 +170,41 @@ func (e *KubectlExecutor) startKubectlPortForward(ctx context.Context, pod, name
 		return nil, nil, fmt.Errorf("starting kubectl port-forward: %w", err)
 	}
 
-	m := make(map[uint16]uint16)
-	scanner := bufio.NewScanner(stdout)
-	for scanner.Scan() && len(m) < len(ports) {
-		if remote, local, ok := parseForwardLine(scanner.Text()); ok {
-			m[remote] = local
+	type scanResult struct {
+		m   map[uint16]uint16
+		err error
+	}
+	scanDone := make(chan scanResult, 1)
+	go func() {
+		m := make(map[uint16]uint16)
+		scanner := bufio.NewScanner(stdout)
+		for scanner.Scan() && len(m) < len(ports) {
+			if remote, local, ok := parseForwardLine(scanner.Text()); ok {
+				m[remote] = local
+			}
 		}
-	}
-	if len(m) < len(ports) {
+		if len(m) < len(ports) {
+			scanDone <- scanResult{err: fmt.Errorf("kubectl port-forward did not establish all ports")}
+			return
+		}
+		scanDone <- scanResult{m: m}
+	}()
+
+	select {
+	case res := <-scanDone:
+		if res.err != nil {
+			_ = cmd.Process.Kill()
+			_ = cmd.Wait()
+			return nil, nil, res.err
+		}
+		return res.m, cmd, nil
+	case <-time.After(15 * time.Second):
 		_ = cmd.Process.Kill()
-		return nil, nil, fmt.Errorf("kubectl port-forward did not establish all ports")
+		_ = cmd.Wait()
+		return nil, nil, fmt.Errorf("kubectl port-forward establishment timed out")
+	case <-ctx.Done():
+		_ = cmd.Process.Kill()
+		_ = cmd.Wait()
+		return nil, nil, fmt.Errorf("kubectl port-forward canceled during establishment")
 	}
-	return m, cmd, nil
 }

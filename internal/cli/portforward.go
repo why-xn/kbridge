@@ -135,19 +135,25 @@ func runPortForward(centralURL, cluster, token string, tgt pfTarget, insecure bo
 	select {
 	case <-readyCh:
 	case <-reg.done:
+		if reg.sessErr != "" {
+			return fmt.Errorf("port-forward failed: %s", reg.sessErr)
+		}
 		return nil
 	}
 
 	for _, m := range tgt.mappings {
-		if err := reg.listen(m); err != nil {
+		bound, err := reg.listen(m)
+		if err != nil {
 			return err
 		}
-		shown := m.local
-		fmt.Printf("Forwarding from 127.0.0.1:%d -> %d\n", shown, m.remote)
+		fmt.Printf("Forwarding from 127.0.0.1:%d -> %d\n", bound, m.remote)
 	}
 
 	// Block until the stream ends.
 	<-reg.done
+	if reg.sessErr != "" {
+		return fmt.Errorf("port-forward failed: %s", reg.sessErr)
+	}
 	return nil
 }
 
@@ -160,6 +166,7 @@ type pfConnRegistry struct {
 	wmu     sync.Mutex // serializes frame writes to pw
 	done    chan struct{}
 	doneOne sync.Once
+	sessErr string // set by readLoop before closing done; race-free: read only after <-done
 }
 
 func (r *pfConnRegistry) writeFrame(t pfframe.Type, payload []byte) {
@@ -168,11 +175,12 @@ func (r *pfConnRegistry) writeFrame(t pfframe.Type, payload []byte) {
 	_ = pfframe.Encode(r.pw, t, payload)
 }
 
-func (r *pfConnRegistry) listen(m portMapping) error {
+func (r *pfConnRegistry) listen(m portMapping) (uint16, error) {
 	ln, err := net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", m.local))
 	if err != nil {
-		return fmt.Errorf("listen on %d: %w", m.local, err)
+		return 0, fmt.Errorf("listen on %d: %w", m.local, err)
 	}
+	bound := uint16(ln.Addr().(*net.TCPAddr).Port)
 	go func() {
 		for {
 			c, err := ln.Accept()
@@ -182,7 +190,7 @@ func (r *pfConnRegistry) listen(m portMapping) error {
 			r.handleConn(c, m.remote)
 		}
 	}()
-	return nil
+	return bound, nil
 }
 
 func (r *pfConnRegistry) handleConn(c net.Conn, remote uint16) {
@@ -251,7 +259,8 @@ func (r *pfConnRegistry) readLoop(body io.Reader, readyCh chan struct{}) {
 				r.closeConn(id)
 			}
 		case pfframe.SessionError:
-			fmt.Fprintln(os.Stderr, string(payload))
+			r.sessErr = string(payload)
+			fmt.Fprintln(os.Stderr, r.sessErr)
 			return
 		}
 	}

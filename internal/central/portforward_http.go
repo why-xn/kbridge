@@ -128,11 +128,15 @@ func (s *HTTPServer) handlePortForward(c *gin.Context) {
 		}
 	}
 	start := time.Now()
+	defer c.Request.Body.Close() // unblocks the upstream Decode goroutine on return
 
 	errMsg := runPortForwardBridge(c.Request.Context(), c.Request.Body, c.Writer, sess, s.sessions, flush)
 
 	status := AuditStatusSuccess
-	if errMsg != "" && errMsg != "canceled" {
+	switch {
+	case errMsg == "canceled":
+		status = AuditStatusCanceled
+	case errMsg != "":
 		status = AuditStatusFailed
 	}
 	dur := time.Since(start).Milliseconds()
