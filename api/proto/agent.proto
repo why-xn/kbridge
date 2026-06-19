@@ -195,10 +195,21 @@ message CentralStreamMessage {
   oneof msg {
     StartStream  start  = 1;
     CancelStream cancel = 2;
+    StdinData    stdin  = 3;
+    Resize       resize = 4;
   }
 }
-message StartStream  { string session_id = 1; repeated string command = 2; string namespace = 3; }
+message StartStream  {
+  string session_id = 1;
+  repeated string command = 2;
+  string namespace = 3;
+  bool   tty = 4;
+  uint32 rows = 5;
+  uint32 cols = 6;
+}
 message CancelStream { string session_id = 1; }
+message StdinData    { string session_id = 1; bytes  data = 2; }
+message Resize       { string session_id = 1; uint32 rows = 2; uint32 cols = 3; }
 
 message AgentStreamMessage {
   oneof msg {
