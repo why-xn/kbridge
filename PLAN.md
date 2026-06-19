@@ -376,8 +376,7 @@ frees the bare `version` word for kubectl. Implemented as an arg rewrite
 - Mutual TLS (client certificates) — currently server-authenticated TLS only.
 - Drop the unused `roles`/`permissions`/`user_roles` tables (RBAC moved to the
   policy file), or keep them for a future DB-override layer.
-- `port-forward` — next interactive feature; builds on the same streaming and
-  session-manager foundation (its own design + plan).
+- ~~`port-forward`~~ — DONE (Phase 9).
 
 ## Phase 8: Interactive exec (`kb exec -it`) — DONE
 
@@ -392,3 +391,18 @@ bounds concurrent sessions (429 when exceeded). Terminal state is restored on
 exit (`defer`); orphan prevention via context cancellation and `WaitDelay`.
 Verified by unit tests (codec, bridge, session manager, registry, PTY pump) and
 e2e (`TestExecStdin`, `TestExecInteractiveTTY`, negative cases).
+
+## Phase 9: Port-forward (`kb port-forward`) — DONE
+
+Shipped after Phase 8. `kb port-forward <pod> [LOCAL:REMOTE ...]` opens local
+TCP listeners that tunnel through central to the pod. Port specs support
+`LOCAL:REMOTE`, bare `REMOTE` (local = remote), and `:REMOTE` (OS-assigned
+random local port); multiple ports in one command. Protocol-agnostic (any TCP —
+Postgres, Redis, HTTP, etc.). Binds localhost only (v1); no session timeout.
+Ctrl-C stops all listeners. RBAC (`port-forward` verb on `pods`) and audit are
+reused. The HTTP/2 bidi stream (`POST /api/v1/clusters/:name/port-forward`) uses
+a length-prefixed frame protocol with OPEN/DATA/CLOSE/CONN_ERROR per connection
+(`conn_id`) plus READY and SESSION_ERROR at the session level. `streams.max_concurrent`
+bounds concurrent sessions (429 when exceeded). Verified by unit tests (pfframe
+codec, port-spec parser, bridge, session manager, agent fan-out) and e2e
+(`TestPortForwardHTTP`, `TestPortForwardMultiConn`, negative cases).

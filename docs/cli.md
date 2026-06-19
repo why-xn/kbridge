@@ -78,6 +78,22 @@ kb exec -it <pod> -n <namespace> -- sh           # specific namespace
 kb exec -i <pod> -- sh -c "cat /etc/hosts"       # stdin, no TTY
 ```
 
+### `kb port-forward <pod> [LOCAL:REMOTE ...]`
+Opens local TCP listeners that tunnel to the pod's ports through central. Each
+port spec can be `LOCAL:REMOTE` (fixed local port), bare `REMOTE` (local equals
+remote), or `:REMOTE` (OS-assigned random local port). Multiple ports can be
+forwarded in a single command. Any TCP-based protocol works (Postgres, Redis,
+HTTP, etc.). Binds localhost only (v1). Press Ctrl-C to stop all listeners. There
+is no inactivity timeout — the session stays open until you stop it.
+
+```bash
+kb port-forward deploy/db 5432:5432              # fixed local port
+kb port-forward deploy/redis 6379                # local = remote
+kb port-forward deploy/db :5432 :6379            # random local ports
+kb port-forward deploy/db 5432:5432 -n prod      # specific namespace
+kb port-forward deploy/db 5432:5432 6379:6379    # multiple ports at once
+```
+
 ### `kb status`
 Shows the current central URL, authenticated user, and active cluster.
 

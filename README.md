@@ -79,6 +79,7 @@ kb get pods                   # Run kubectl on the selected cluster
 kb apply -f app.yaml          # Any kubectl command works
 kb logs -f deploy/api         # Follow/watch (-f/-w) streams live until Ctrl-C
 kb exec -it deploy/api -- sh  # Interactive shell (full TTY; -i for stdin-only)
+kb port-forward deploy/db 5432:5432  # Forward pod port to localhost
 kb kubectl get pods           # 'kubectl'/'k' force kubectl explicitly
 kb status                     # Show current context
 

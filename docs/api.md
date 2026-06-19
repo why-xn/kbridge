@@ -96,6 +96,47 @@ The stream ends when the remote process exits or the client disconnects.
 Every session is recorded in the audit log with outcome `success`, `failed`,
 `denied`, or `canceled`.
 
+### `POST /api/v1/clusters/{name}/port-forward`
+Opens a port-forward session over an HTTP/2 bidirectional stream. Local TCP
+connections made by the CLI are multiplexed over this single stream and tunneled
+through central to the agent, which forwards them to the pod via kubectl.
+
+**Query parameters:**
+
+| Parameter | Required | Description |
+|-----------|----------|-------------|
+| `pod` | yes | Pod name |
+| `namespace` | no | Kubernetes namespace |
+| `port` | no (repeated) | Remote port numbers, one per param |
+
+**Auth:** `Authorization: Bearer <jwt>`. RBAC must grant the `port-forward` verb
+on `pods` for the target cluster and namespace.
+
+**Frame protocol.** On `200` the response body is a length-prefixed frame stream
+shared by all connections in the session. Each frame carries a `conn_id` that
+identifies the individual TCP connection. Frame types:
+
+| Type | Direction | Description |
+|------|-----------|-------------|
+| `READY` | server → client | Session is up; forwarding may begin |
+| `OPEN` | client → server | New connection for `conn_id` on `remote_port` |
+| `DATA` | both | Payload bytes for `conn_id` |
+| `CLOSE` | both | Half-close or full teardown of `conn_id` |
+| `CONN_ERROR` | server → client | Error for a single `conn_id`; other connections continue |
+| `SESSION_ERROR` | server → client | Fatal session error; stream ends |
+
+**Status codes:**
+
+| Code | Meaning |
+|------|---------|
+| 200 | Session established; frame stream follows |
+| 403 | Denied by RBAC policy |
+| 404 | Cluster not found |
+| 429 | Over `streams.max_concurrent` limit |
+| 503 | Cluster agent disconnected |
+
+Every session is recorded in the audit log.
+
 ## Admin — agent tokens
 
 ### `POST /api/v1/admin/agent-tokens`
