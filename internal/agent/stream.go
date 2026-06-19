@@ -73,10 +73,11 @@ func (a *Agent) openAndServeStream(ctx context.Context) error {
 					a.runInteractiveSession(sctx, &mu, stream, start, stdin, resize)
 				}(v.Start)
 			} else {
-				sessions.add(sid, cancel, nil, nil)
+				stdin := make(chan []byte, 16)
+				sessions.add(sid, cancel, stdin, nil)
 				go func(start *agentpb.StartStream) {
 					defer sessions.cancel(sid) // cancel + forget on completion
-					a.runStreamSession(sctx, &mu, stream, start)
+					a.runStreamSession(sctx, &mu, stream, start, stdin)
 				}(v.Start)
 			}
 		case *agentpb.CentralStreamMessage_Stdin:
@@ -164,14 +165,14 @@ func (s *sessionCancels) len() int {
 	return len(s.sessions)
 }
 
-func (a *Agent) runStreamSession(ctx context.Context, mu *sync.Mutex, stream agentpb.AgentService_OpenStreamClient, start *agentpb.StartStream) {
+func (a *Agent) runStreamSession(ctx context.Context, mu *sync.Mutex, stream agentpb.AgentService_OpenStreamClient, start *agentpb.StartStream, stdin <-chan []byte) {
 	sid := start.GetSessionId()
 	send := func(m *agentpb.AgentStreamMessage) {
 		mu.Lock()
 		defer mu.Unlock()
 		_ = stream.Send(m)
 	}
-	code, err := a.executor.ExecuteStream(ctx, start.GetCommand(), start.GetNamespace(),
+	code, err := a.executor.ExecuteInteractiveNoTTY(ctx, start.GetCommand(), start.GetNamespace(), stdin,
 		func(stdout bool, data []byte) {
 			send(&agentpb.AgentStreamMessage{Msg: &agentpb.AgentStreamMessage_Output{
 				Output: &agentpb.StreamOutput{SessionId: sid, Type: outputTypeFor(stdout), Data: data},

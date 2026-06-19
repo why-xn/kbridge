@@ -109,7 +109,13 @@ func (s *HTTPServer) handleExecAttach(c *gin.Context) {
 		return // 403 + denied audit already written
 	}
 
-	sess, err := s.sessions.StartInteractive(agent.ID, args, namespace, uint16(rows), uint16(cols))
+	var sess *Session
+	var err error
+	if tty {
+		sess, err = s.sessions.StartInteractive(agent.ID, args, namespace, uint16(rows), uint16(cols))
+	} else {
+		sess, err = s.sessions.StartWithStdin(agent.ID, args, namespace)
+	}
 	if err != nil {
 		if err == ErrTooManyStreams {
 			c.JSON(http.StatusTooManyRequests, gin.H{"error": "too many concurrent streams"})
@@ -119,13 +125,18 @@ func (s *HTTPServer) handleExecAttach(c *gin.Context) {
 		return
 	}
 
-	c.Status(http.StatusOK)
+	// Send 200 headers immediately so the HTTP/2 client's Do() returns and the
+	// client-side stdin goroutine can start. Without this flush the response
+	// headers are not sent until the first Write, causing a deadlock: the server
+	// waits for stdin (from the client) while the client waits for headers.
+	c.Writer.WriteHeader(http.StatusOK)
 	flusher, _ := c.Writer.(http.Flusher)
 	flush := func() {
 		if flusher != nil {
 			flusher.Flush()
 		}
 	}
+	flush()
 	start := time.Now()
 
 	runExecBridge(c.Request.Context(), c.Request.Body, c.Writer, sess, s.sessions, flush)

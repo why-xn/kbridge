@@ -119,6 +119,13 @@ func (m *SessionManager) StartInteractive(agentID string, command []string, name
 	})
 }
 
+// StartWithStdin opens a stdin-streaming session without a TTY.
+func (m *SessionManager) StartWithStdin(agentID string, command []string, namespace string) (*Session, error) {
+	return m.startSession(agentID, &agentpb.StartStream{
+		Command: command, Namespace: namespace, Tty: false,
+	})
+}
+
 // startSession is the shared open path: send StartStream before inserting into
 // the maps to close the phantom-session window (see prior comment).
 func (m *SessionManager) startSession(agentID string, start *agentpb.StartStream) (*Session, error) {

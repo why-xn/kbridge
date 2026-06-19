@@ -6,6 +6,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"os"
 	"os/exec"
 	"sync"
 	"time"
@@ -252,6 +253,79 @@ func (e *KubectlExecutor) ExecuteStreaming(ctx context.Context, args []string, n
 	}
 
 	return result
+}
+
+// ExecuteInteractiveNoTTY runs a kubectl command with piped stdin (no PTY), pumping
+// stdin from the channel and streaming stdout/stderr to onOutput. It returns the
+// exit code when the process exits or ctx is cancelled.
+func (e *KubectlExecutor) ExecuteInteractiveNoTTY(ctx context.Context, args []string, namespace string, stdin <-chan []byte, onOutput func(bool, []byte)) (int, error) {
+	cmdArgs := args
+	if namespace != "" {
+		cmdArgs = append([]string{"-n", namespace}, args...)
+	}
+	cmd := exec.CommandContext(ctx, e.kubectlPath, cmdArgs...)
+	cmd.WaitDelay = 500 * time.Millisecond
+
+	stdinPr, stdinPw, err := os.Pipe()
+	if err != nil {
+		return -1, fmt.Errorf("stdin pipe: %w", err)
+	}
+	cmd.Stdin = stdinPr
+
+	stdoutPipe, err := cmd.StdoutPipe()
+	if err != nil {
+		stdinPr.Close()
+		stdinPw.Close()
+		return -1, fmt.Errorf("stdout pipe: %w", err)
+	}
+	stderrPipe, err := cmd.StderrPipe()
+	if err != nil {
+		stdinPr.Close()
+		stdinPw.Close()
+		return -1, fmt.Errorf("stderr pipe: %w", err)
+	}
+
+	if err := cmd.Start(); err != nil {
+		stdinPr.Close()
+		stdinPw.Close()
+		return -1, fmt.Errorf("starting kubectl: %w", err)
+	}
+	stdinPr.Close() // child owns read end; parent writes to stdinPw
+
+	// Forward stdin channel to the process.
+	go func() {
+		defer stdinPw.Close()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case data, ok := <-stdin:
+				if !ok {
+					return
+				}
+				if _, werr := stdinPw.Write(data); werr != nil {
+					return
+				}
+			}
+		}
+	}()
+
+	var wg sync.WaitGroup
+	wg.Add(2)
+	go pumpStream(&wg, stdoutPipe, true, onOutput)
+	go pumpStream(&wg, stderrPipe, false, onOutput)
+	wg.Wait()
+
+	if werr := cmd.Wait(); werr != nil {
+		if exitErr, ok := werr.(*exec.ExitError); ok {
+			return exitErr.ExitCode(), nil
+		}
+		if ctx.Err() != nil {
+			return -1, ctx.Err()
+		}
+		return -1, fmt.Errorf("kubectl wait: %w", werr)
+	}
+	return 0, nil
 }
 
 // ExecuteInteractive runs a kubectl command attached to a PTY, pumping stdin and
