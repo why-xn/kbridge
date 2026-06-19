@@ -765,6 +765,19 @@ data:
 }
 
 // Test: kubectl edit deployment
+// waitForRollout blocks until a deployment has fully rolled out, so its
+// resourceVersion stops churning. Editing a still-progressing deployment races
+// the controller's status updates and fails the apply with a
+// "the object has been modified" conflict.
+func waitForRollout(t *testing.T, name, namespace string) {
+	t.Helper()
+	_, stderr, exitCode := runCLI(t, "kubectl", "rollout", "status",
+		"deployment/"+name, "-n", namespace, "--timeout=60s")
+	if exitCode != 0 {
+		t.Fatalf("deployment %q did not roll out: %s", name, stderr)
+	}
+}
+
 func TestKubectlEditDeployment(t *testing.T) {
 	// Ensure cluster is selected
 	_, _, exitCode := runCLI(t, "clusters", "use", *clusterName)
@@ -818,8 +831,9 @@ spec:
 		runCLI(t, "kubectl", "delete", "deployment", deploymentName, "-n", namespace, "--ignore-not-found")
 	}()
 
-	// Wait a moment for the deployment to be ready
-	time.Sleep(2 * time.Second)
+	// Wait for the rollout to finish so the deployment's resourceVersion stops
+	// churning before we edit it (avoids an optimistic-concurrency conflict).
+	waitForRollout(t, deploymentName, namespace)
 
 	// Step 2: Create editor script that changes nginx:1.19 to nginx:1.21
 	editorScript := createEditorScript(t, "s/nginx:1.19/nginx:1.21/g")
