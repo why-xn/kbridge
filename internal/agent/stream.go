@@ -49,8 +49,11 @@ func (a *Agent) openAndServeStream(ctx context.Context) error {
 	log.Printf("Opened command stream to central")
 
 	var mu sync.Mutex // guards stream.Send across session goroutines
-	cancels := make(map[string]context.CancelFunc)
-	var cmu sync.Mutex
+	sessions := newSessionCancels()
+	// When the stream tears down (drop, error, or ctx cancel), cancel every
+	// in-flight session so its kubectl process is killed rather than orphaned
+	// until agent shutdown.
+	defer sessions.cancelAll()
 
 	for {
 		msg, err := stream.Recv()
@@ -60,19 +63,61 @@ func (a *Agent) openAndServeStream(ctx context.Context) error {
 		switch v := msg.GetMsg().(type) {
 		case *agentpb.CentralStreamMessage_Start:
 			sctx, cancel := context.WithCancel(ctx)
-			cmu.Lock()
-			cancels[v.Start.GetSessionId()] = cancel
-			cmu.Unlock()
-			go a.runStreamSession(sctx, &mu, stream, v.Start)
+			sid := v.Start.GetSessionId()
+			sessions.add(sid, cancel)
+			go func(start *agentpb.StartStream) {
+				defer sessions.cancel(sid) // cancel + forget on completion
+				a.runStreamSession(sctx, &mu, stream, start)
+			}(v.Start)
 		case *agentpb.CentralStreamMessage_Cancel:
-			cmu.Lock()
-			if cancel := cancels[v.Cancel.GetSessionId()]; cancel != nil {
-				cancel()
-				delete(cancels, v.Cancel.GetSessionId())
-			}
-			cmu.Unlock()
+			sessions.cancel(v.Cancel.GetSessionId())
 		}
 	}
+}
+
+// sessionCancels tracks the cancel func of each in-flight stream session and
+// guarantees they are all invoked when the stream tears down.
+type sessionCancels struct {
+	mu      sync.Mutex
+	cancels map[string]context.CancelFunc
+}
+
+func newSessionCancels() *sessionCancels {
+	return &sessionCancels{cancels: make(map[string]context.CancelFunc)}
+}
+
+func (s *sessionCancels) add(id string, cancel context.CancelFunc) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.cancels[id] = cancel
+}
+
+// cancel cancels and forgets a single session; it is a no-op for an unknown id
+// and safe to call more than once (e.g. session completion after an explicit
+// cancel).
+func (s *sessionCancels) cancel(id string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if cancel := s.cancels[id]; cancel != nil {
+		cancel()
+		delete(s.cancels, id)
+	}
+}
+
+// cancelAll cancels and forgets every tracked session.
+func (s *sessionCancels) cancelAll() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for id, cancel := range s.cancels {
+		cancel()
+		delete(s.cancels, id)
+	}
+}
+
+func (s *sessionCancels) len() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return len(s.cancels)
 }
 
 func (a *Agent) runStreamSession(ctx context.Context, mu *sync.Mutex, stream agentpb.AgentService_OpenStreamClient, start *agentpb.StartStream) {

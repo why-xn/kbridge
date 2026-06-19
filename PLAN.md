@@ -338,9 +338,11 @@ The one-shot exec path is unchanged. Verified by unit, integration, and e2e
 (`TestStreamingLogsFollow`).
 
 **Follow-ups specific to streaming (tracked, not blocking):**
-- Agent stream-drop process leak: on a transient stream drop+reconnect, in-flight
-  sessions' kubectl processes are only torn down at agent shutdown (not on the
-  blip). Proactively cancel a connection's sessions when its stream ends.
+- ~~Agent stream-drop process leak: on a transient stream drop+reconnect, in-flight
+  sessions' kubectl processes are only torn down at agent shutdown.~~ DONE —
+  `openAndServeStream` now tracks per-session cancels (`sessionCancels`) and
+  `defer cancelAll()` kills in-flight sessions when the stream ends; sessions
+  also forget themselves on completion to bound map growth.
 - `SessionManager` max-concurrent is a TOCTOU check (the count is read, then the
   send happens unlocked, then the insert) — a burst can transiently exceed the
   cap by a few. Reserve the slot under the lock if a hard cap is needed.
