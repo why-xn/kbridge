@@ -86,7 +86,57 @@ func (a *Agent) openAndServeStream(ctx context.Context) error {
 			sessions.resizeTo(v.Resize.GetSessionId(), uint16(v.Resize.GetRows()), uint16(v.Resize.GetCols()))
 		case *agentpb.CentralStreamMessage_Cancel:
 			sessions.cancel(v.Cancel.GetSessionId())
+		case *agentpb.CentralStreamMessage_PfStart:
+			sctx, cancel := context.WithCancel(ctx)
+			sid := v.PfStart.GetSessionId()
+			sessions.add(sid, cancel, nil, nil)
+			go func(start *agentpb.PortForwardStart) {
+				defer sessions.cancel(sid)
+				a.runPortForwardSession(sctx, &mu, stream, start, sessions)
+			}(v.PfStart)
+		case *agentpb.CentralStreamMessage_PfOpen:
+			if pf := sessions.pfFor(v.PfOpen.GetSessionId()); pf != nil {
+				pf.open(v.PfOpen.GetConnId(), uint16(v.PfOpen.GetRemotePort()))
+			}
+		case *agentpb.CentralStreamMessage_PfData:
+			if pf := sessions.pfFor(v.PfData.GetSessionId()); pf != nil {
+				pf.data(v.PfData.GetConnId(), v.PfData.GetData())
+			}
+		case *agentpb.CentralStreamMessage_PfClose:
+			if pf := sessions.pfFor(v.PfClose.GetSessionId()); pf != nil {
+				pf.closeConn(v.PfClose.GetConnId())
+			}
 		}
+	}
+}
+
+func (a *Agent) runPortForwardSession(ctx context.Context, mu *sync.Mutex, stream agentpb.AgentService_OpenStreamClient, start *agentpb.PortForwardStart, sessions *sessionCancels) {
+	sid := start.GetSessionId()
+	send := func(m *agentpb.AgentStreamMessage) {
+		mu.Lock()
+		defer mu.Unlock()
+		_ = stream.Send(m)
+	}
+	m, cmd, err := a.executor.startKubectlPortForward(ctx, start.GetPod(), start.GetNamespace(), start.GetPorts())
+	if err != nil {
+		send(&agentpb.AgentStreamMessage{Msg: &agentpb.AgentStreamMessage_PfSessionError{
+			PfSessionError: &agentpb.PfSessionError{SessionId: sid, Error: err.Error()},
+		}})
+		return
+	}
+	pf := newPfSession(sid, m, send)
+	sessions.setPf(sid, pf)
+	defer pf.shutdown()
+
+	send(&agentpb.AgentStreamMessage{Msg: &agentpb.AgentStreamMessage_PfReady{PfReady: &agentpb.PfReady{SessionId: sid}}})
+
+	// Block until ctx cancel (session end / stream drop) or kubectl exits.
+	waitCh := make(chan struct{})
+	go func() { _ = cmd.Wait(); close(waitCh) }()
+	select {
+	case <-ctx.Done():
+		_ = cmd.Process.Kill()
+	case <-waitCh:
 	}
 }
 
@@ -94,6 +144,7 @@ type streamSession struct {
 	cancel context.CancelFunc
 	stdin  chan []byte
 	resize chan [2]uint16
+	pf     *pfSession
 }
 
 // sessionCancels tracks in-flight stream sessions, guaranteeing cancellation
@@ -157,6 +208,23 @@ func (s *sessionCancels) resizeTo(id string, rows, cols uint16) {
 		default: // resize is best-effort; coalesce by dropping
 		}
 	}
+}
+
+func (s *sessionCancels) setPf(id string, pf *pfSession) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if sess := s.sessions[id]; sess != nil {
+		sess.pf = pf
+	}
+}
+
+func (s *sessionCancels) pfFor(id string) *pfSession {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if sess := s.sessions[id]; sess != nil {
+		return sess.pf
+	}
+	return nil
 }
 
 func (s *sessionCancels) len() int {
