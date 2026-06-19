@@ -3,7 +3,9 @@ package agent
 import (
 	"context"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -215,5 +217,48 @@ func TestKubectlExecutor_ExecuteStream_Cancel(t *testing.T) {
 	_, _ = e.ExecuteStream(ctx, []string{"-c", "sleep 10"}, "", func(bool, []byte) {})
 	if time.Since(start) > 3*time.Second {
 		t.Error("expected cancel to kill the process quickly")
+	}
+}
+
+func TestExecuteInteractive_EchoAndExit(t *testing.T) {
+	if _, err := exec.LookPath("cat"); err != nil {
+		t.Skip("cat not available")
+	}
+	e := &KubectlExecutor{kubectlPath: "cat"} // stand-in for kubectl under a PTY
+	stdin := make(chan []byte, 1)
+	resize := make(chan [2]uint16, 1)
+	var mu sync.Mutex
+	var out []byte
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	done := make(chan struct{})
+	go func() {
+		_, _ = e.ExecuteInteractive(ctx, nil, "", 24, 80, stdin, resize,
+			func(b []byte) { mu.Lock(); out = append(out, b...); mu.Unlock() })
+		close(done)
+	}()
+
+	stdin <- []byte("ping\n")
+	// cat echoes via the PTY; give it a moment, then cancel to end the process.
+	deadline := time.After(2 * time.Second)
+	for {
+		mu.Lock()
+		got := string(out)
+		mu.Unlock()
+		if strings.Contains(got, "ping") {
+			break
+		}
+		select {
+		case <-deadline:
+			t.Fatal("did not observe echoed stdin")
+		case <-time.After(20 * time.Millisecond):
+		}
+	}
+	cancel()
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("ExecuteInteractive did not return after cancel (orphaned process)")
 	}
 }

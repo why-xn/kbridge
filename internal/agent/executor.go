@@ -9,6 +9,8 @@ import (
 	"os/exec"
 	"sync"
 	"time"
+
+	"github.com/creack/pty"
 )
 
 // CommandResult holds the result of a kubectl command execution.
@@ -250,4 +252,74 @@ func (e *KubectlExecutor) ExecuteStreaming(ctx context.Context, args []string, n
 	}
 
 	return result
+}
+
+// ExecuteInteractive runs a kubectl command attached to a PTY, pumping stdin and
+// window-resize events in and output out, until the process exits or ctx is
+// cancelled (which kills the child). onOutput is called only from the single
+// read-loop goroutine, so it is never called concurrently.
+func (e *KubectlExecutor) ExecuteInteractive(ctx context.Context, args []string, namespace string, rows, cols uint16, stdin <-chan []byte, resize <-chan [2]uint16, onOutput func([]byte)) (int, error) {
+	cmdArgs := args
+	if namespace != "" {
+		cmdArgs = append([]string{"-n", namespace}, args...)
+	}
+	cmd := exec.CommandContext(ctx, e.kubectlPath, cmdArgs...)
+	cmd.WaitDelay = 500 * time.Millisecond
+
+	ptmx, err := pty.StartWithSize(cmd, &pty.Winsize{Rows: rows, Cols: cols})
+	if err != nil {
+		return -1, fmt.Errorf("starting pty: %w", err)
+	}
+	defer ptmx.Close()
+
+	go func() {
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case data, ok := <-stdin:
+				if !ok {
+					return
+				}
+				_, _ = ptmx.Write(data)
+			}
+		}
+	}()
+	go func() {
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case ws, ok := <-resize:
+				if !ok {
+					return
+				}
+				_ = pty.Setsize(ptmx, &pty.Winsize{Rows: ws[0], Cols: ws[1]})
+			}
+		}
+	}()
+
+	buf := make([]byte, streamChunkSize)
+	for {
+		n, rerr := ptmx.Read(buf)
+		if n > 0 {
+			chunk := make([]byte, n)
+			copy(chunk, buf[:n])
+			onOutput(chunk)
+		}
+		if rerr != nil {
+			break // EOF/EIO when the child exits or the PTY closes
+		}
+	}
+
+	if werr := cmd.Wait(); werr != nil {
+		if exitErr, ok := werr.(*exec.ExitError); ok {
+			return exitErr.ExitCode(), nil
+		}
+		if ctx.Err() != nil {
+			return -1, ctx.Err()
+		}
+		return -1, fmt.Errorf("kubectl wait: %w", werr)
+	}
+	return 0, nil
 }
