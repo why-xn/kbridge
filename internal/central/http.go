@@ -49,6 +49,7 @@ type HTTPServer struct {
 	audit         *AuditRecorder
 	sessions      *SessionManager
 	jwtManager    *auth.JWTManager
+	loginLimiter  *loginLimiter
 }
 
 // NewHTTPServer creates a new HTTP server with configured routes.
@@ -68,6 +69,7 @@ func NewHTTPServer(agentStore *AgentStore, cmdQueue *CommandQueue, ah *AuthHandl
 		audit:         audit,
 		sessions:      sessions,
 		jwtManager:    jm,
+		loginLimiter:  newLoginLimiter(5.0/60.0, 5),
 	}
 	s.setupRoutes()
 	return s
@@ -84,6 +86,7 @@ func (s *HTTPServer) setupRoutes() {
 	// Auth routes (no auth required for login/refresh)
 	if s.authHandlers != nil {
 		authGroup := s.router.Group("/auth")
+		authGroup.Use(loginRateLimitMiddleware(s.loginLimiter))
 		{
 			authGroup.POST("/login", s.authHandlers.HandleLogin)
 			authGroup.POST("/refresh", s.authHandlers.HandleRefresh)
