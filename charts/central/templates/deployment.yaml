@@ -16,11 +16,32 @@ spec:
       labels:
         {{- include "central.selectorLabels" . | nindent 8 }}
     spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.podSecurityContext }}
+      securityContext:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       containers:
         - name: central
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
           imagePullPolicy: {{ .Values.image.pullPolicy }}
+          {{- with .Values.securityContext }}
+          securityContext:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
           args: ["--config", "/etc/kbridge/central.yaml"]
+          {{- if .Values.auth.existingSecret }}
+          env:
+            - name: KBRIDGE_JWT_SECRET_FILE
+              value: /run/secrets/kbridge/jwt_secret
+            - name: KBRIDGE_TOKEN_PEPPER_FILE
+              value: /run/secrets/kbridge/token_pepper
+            - name: KBRIDGE_ADMIN_PASSWORD_FILE
+              value: /run/secrets/kbridge/admin_password
+          {{- end }}
           ports:
             - name: http
               containerPort: {{ .Values.service.httpPort }}
@@ -45,6 +66,13 @@ spec:
               mountPath: /etc/kbridge/central.yaml
               subPath: central.yaml
               readOnly: true
+            - name: tmp
+              mountPath: /tmp
+            {{- if .Values.auth.existingSecret }}
+            - name: kbridge-secrets
+              mountPath: /run/secrets/kbridge
+              readOnly: true
+            {{- end }}
             {{- if .Values.rbac.policy }}
             - name: rbac
               mountPath: /etc/kbridge/rbac
@@ -65,6 +93,13 @@ spec:
         - name: config
           secret:
             secretName: {{ include "central.fullname" . }}-config
+        - name: tmp
+          emptyDir: {}
+        {{- if .Values.auth.existingSecret }}
+        - name: kbridge-secrets
+          secret:
+            secretName: {{ .Values.auth.existingSecret }}
+        {{- end }}
         {{- if .Values.rbac.policy }}
         - name: rbac
           configMap:

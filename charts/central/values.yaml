@@ -13,11 +13,15 @@ service:
 # Authentication secrets. CHANGE THESE for any real deployment.
 auth:
   jwtSecret: "change-me-in-production-at-least-32-chars"
+  tokenPepper: ""        # HMAC key for agent tokens; empty falls back to jwtSecret
   accessTokenExpiry: 24h
   refreshTokenExpiry: 168h
   adminEmail: "admin@kbridge.local"
   adminPassword: "change-me"
   adminName: "Admin"
+  # Provide secrets from a pre-created Secret instead of the values above.
+  # When set, the listed keys are mounted as files and passed via *_FILE env.
+  existingSecret: ""     # name of an existing Secret
 
 # Optional bootstrap agent token seeded on startup (leave empty in production).
 bootstrap:
@@ -66,6 +70,22 @@ ingress:
   className: ""
   host: ""
   annotations: {}
+
+streams:
+  maxConcurrent: 50
+
+podSecurityContext:
+  runAsNonRoot: true
+  seccompProfile:
+    type: RuntimeDefault
+
+securityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop: ["ALL"]
+
+imagePullSecrets: []
 
 resources: {}
 nodeSelector: {}
