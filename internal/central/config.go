@@ -4,12 +4,15 @@ package central
 
 import (
 	"fmt"
+	"log/slog"
 	"os"
 	"strings"
 	"time"
 
 	"gopkg.in/yaml.v3"
 )
+
+const devDefaultJWTSecret = "dev-secret-change-in-production!!"
 
 // Config holds the complete configuration for the central service.
 type Config struct {
@@ -97,8 +100,8 @@ func DefaultConfig() *Config {
 			Path:   "kbridge.db",
 		},
 		Auth: AuthConfig{
-			AccessTokenExpiryStr:  "24h",
-			AccessTokenExpiry:     24 * time.Hour,
+			AccessTokenExpiryStr:  "1h",
+			AccessTokenExpiry:     time.Hour,
 			RefreshTokenExpiryStr: "168h",
 			RefreshTokenExpiry:    168 * time.Hour,
 		},
@@ -203,14 +206,29 @@ func (c *Config) validateDatabase() error {
 }
 
 func (c *Config) validateAuth() error {
-	if c.Auth.JWTSecret == "" {
-		return fmt.Errorf("jwt_secret must not be empty")
+	if err := c.validateSecrets(); err != nil {
+		return err
 	}
 	if c.Auth.AccessTokenExpiry <= 0 {
 		return fmt.Errorf("access_token_expiry must be greater than zero")
 	}
 	if c.Auth.RefreshTokenExpiry <= 0 {
 		return fmt.Errorf("refresh_token_expiry must be greater than zero")
+	}
+	return nil
+}
+
+func (c *Config) validateSecrets() error {
+	switch {
+	case c.Auth.JWTSecret == "":
+		return fmt.Errorf("jwt_secret must be set")
+	case len(c.Auth.JWTSecret) < 32:
+		return fmt.Errorf("jwt_secret must be at least 32 characters")
+	case c.Auth.JWTSecret == devDefaultJWTSecret:
+		return fmt.Errorf("jwt_secret is the shipped development default; generate one with: openssl rand -hex 32")
+	}
+	if c.Auth.AdminPassword == "admin123" || (c.Auth.AdminPassword != "" && len(c.Auth.AdminPassword) < 8) {
+		slog.Warn("admin_password is weak or a known default; change it after first login")
 	}
 	return nil
 }

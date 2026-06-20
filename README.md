@@ -121,6 +121,8 @@ This produces three binaries in `bin/`:
 
 **1. Start the central service:**
 ```bash
+# central requires a real jwt_secret (>=32 chars). Generate one:
+export KBRIDGE_JWT_SECRET="$(openssl rand -hex 32)"
 ./bin/kbridge-central --config configs/central.yaml
 ```
 
@@ -132,7 +134,7 @@ This produces three binaries in `bin/`:
 **3. Log in and use the CLI:**
 ```bash
 # Default admin is seeded from central.yaml (admin@kbridge.local / admin123 in
-# the example config — change these for any real deployment).
+# the example config — change admin_password after first login for any real deployment).
 ./bin/kb login
 ./bin/kb clusters list
 ./bin/kb clusters use dev-cluster

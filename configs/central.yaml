@@ -7,7 +7,7 @@ database:
   path: kbridge.db
 
 auth:
-  jwt_secret: "dev-secret-change-in-production!!"
+  jwt_secret: "REPLACE_ME"   # REQUIRED: generate with `openssl rand -hex 32`
   token_pepper: ""                 # HMAC key for agent tokens at rest; empty = reuse jwt_secret
   access_token_expiry: 24h
   refresh_token_expiry: 168h

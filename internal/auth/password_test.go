@@ -1,6 +1,21 @@
 package auth
 
-import "testing"
+import (
+	"testing"
+
+	"golang.org/x/crypto/bcrypt"
+)
+
+func TestHashPasswordCost(t *testing.T) {
+	h, err := HashPassword("pw")
+	if err != nil {
+		t.Fatal(err)
+	}
+	cost, err := bcrypt.Cost([]byte(h))
+	if err != nil || cost != 12 {
+		t.Fatalf("cost=%d err=%v want 12", cost, err)
+	}
+}
 
 func TestHashPassword(t *testing.T) {
 	hash, err := HashPassword("testpassword")

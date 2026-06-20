@@ -13,7 +13,7 @@ func validConfig() Config {
 		Server:   ServerConfig{HTTPPort: 8080, GRPCPort: 9090},
 		Database: DatabaseConfig{Driver: "sqlite", Path: "kbridge.db"},
 		Auth: AuthConfig{
-			JWTSecret:          "test-secret",
+			JWTSecret:          "a-valid-test-secret-32-chars-xx!",
 			AccessTokenExpiry:  24 * time.Hour,
 			RefreshTokenExpiry: 168 * time.Hour,
 		},
@@ -39,8 +39,8 @@ func TestDefaultConfig(t *testing.T) {
 	if cfg.Database.Path != "kbridge.db" {
 		t.Errorf("expected Path=kbridge.db, got %s", cfg.Database.Path)
 	}
-	if cfg.Auth.AccessTokenExpiry != 24*time.Hour {
-		t.Errorf("expected AccessTokenExpiry=24h, got %v", cfg.Auth.AccessTokenExpiry)
+	if cfg.Auth.AccessTokenExpiry != time.Hour {
+		t.Errorf("expected AccessTokenExpiry=1h, got %v", cfg.Auth.AccessTokenExpiry)
 	}
 	if cfg.Auth.RefreshTokenExpiry != 168*time.Hour {
 		t.Errorf("expected RefreshTokenExpiry=168h, got %v", cfg.Auth.RefreshTokenExpiry)
@@ -190,7 +190,7 @@ audit:
 			wantDriver:             "sqlite",
 			wantPath:               "kbridge.db",
 			wantJWTSecret:          "",
-			wantAccessTokenExpiry:  24 * time.Hour,
+			wantAccessTokenExpiry:  time.Hour,
 			wantRefreshTokenExpiry: 168 * time.Hour,
 			wantAdminEmail:         "",
 			wantAdminPassword:      "",
@@ -332,6 +332,38 @@ func TestConfig_AgentTokenPepper(t *testing.T) {
 		c.Auth.TokenPepper = "the-pepper"
 		if got := c.AgentTokenPepper(); got != "the-pepper" {
 			t.Fatalf("want dedicated pepper, got %q", got)
+		}
+	})
+}
+
+func TestValidateSecrets(t *testing.T) {
+	base := func() *Config {
+		c := DefaultConfig()
+		c.Auth.JWTSecret = "a-perfectly-fine-32char-secret!!"
+		c.Auth.AccessTokenExpiry = time.Hour
+		c.Auth.RefreshTokenExpiry = time.Hour
+		c.Database.Path = "x.db"
+		c.Server.HTTPPort = 8080
+		c.Server.GRPCPort = 9090
+		return c
+	}
+	t.Run("compliant passes", func(t *testing.T) {
+		if err := base().Validate(); err != nil {
+			t.Fatalf("unexpected: %v", err)
+		}
+	})
+	t.Run("short jwt secret fatal", func(t *testing.T) {
+		c := base()
+		c.Auth.JWTSecret = "too-short"
+		if err := c.Validate(); err == nil {
+			t.Fatal("expected error for short jwt secret")
+		}
+	})
+	t.Run("dev default jwt secret fatal", func(t *testing.T) {
+		c := base()
+		c.Auth.JWTSecret = devDefaultJWTSecret
+		if err := c.Validate(); err == nil {
+			t.Fatal("expected error for dev-default jwt secret")
 		}
 	})
 }
