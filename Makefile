@@ -2,7 +2,13 @@
 
 # Container image settings (override on the command line, e.g. IMAGE_PREFIX=ghcr.io/acme VERSION=v1.0.0)
 IMAGE_PREFIX ?= kbridge
-VERSION ?= latest
+
+# Build-time version stamping
+VERSION_PKG := github.com/why-xn/kbridge/internal/version
+GIT_VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
+GIT_COMMIT  ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo none)
+BUILD_DATE  ?= $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
+LDFLAGS := -s -w -X $(VERSION_PKG).Version=$(GIT_VERSION) -X $(VERSION_PKG).Commit=$(GIT_COMMIT) -X $(VERSION_PKG).Date=$(BUILD_DATE)
 
 build: build-cli build-central build-agent
 
@@ -10,14 +16,14 @@ proto:
 	./scripts/generate-proto.sh
 
 build-cli:
-	go build -o bin/kb ./cmd/kb
+	go build -ldflags "$(LDFLAGS)" -o bin/kb ./cmd/kb
 	ln -sf kb bin/kbridge
 
 build-central:
-	go build -o bin/kbridge-central ./cmd/central
+	go build -ldflags "$(LDFLAGS)" -o bin/kbridge-central ./cmd/central
 
 build-agent:
-	go build -o bin/kbridge-agent ./cmd/agent
+	go build -ldflags "$(LDFLAGS)" -o bin/kbridge-agent ./cmd/agent
 
 clean:
 	rm -rf bin/

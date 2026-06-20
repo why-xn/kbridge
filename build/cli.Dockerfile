@@ -5,7 +5,12 @@ WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
-RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /out/kb ./cmd/kb
+ARG VERSION=dev
+ARG COMMIT=none
+ARG DATE=unknown
+RUN CGO_ENABLED=0 GOOS=linux go build \
+  -ldflags="-s -w -X github.com/why-xn/kbridge/internal/version.Version=${VERSION} -X github.com/why-xn/kbridge/internal/version.Commit=${COMMIT} -X github.com/why-xn/kbridge/internal/version.Date=${DATE}" \
+  -o /out/kb ./cmd/kb
 
 FROM alpine:3.20
 RUN apk add --no-cache ca-certificates && adduser -D -u 10001 kbridge

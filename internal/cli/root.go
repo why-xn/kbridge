@@ -5,11 +5,7 @@ import (
 	"os"
 
 	"github.com/spf13/cobra"
-)
-
-// Version information
-var (
-	version = "0.1.0"
+	"github.com/why-xn/kbridge/internal/version"
 )
 
 // rootCmd represents the base command when called without any subcommands
@@ -29,7 +25,7 @@ status, clusters, and admin.
   kb admin users list       # management command
 
 Use 'kb kubectl ...' (or 'kb k ...') to force kubectl explicitly.`,
-	Version: version,
+	Version: version.String(),
 }
 
 // Execute adds all child commands to the root command and sets flags appropriately.

@@ -3,17 +3,24 @@ package main
 import (
 	"context"
 	"flag"
+	"fmt"
 	"log"
 	"os"
 	"os/signal"
 	"syscall"
 
 	"github.com/why-xn/kbridge/internal/agent"
+	"github.com/why-xn/kbridge/internal/version"
 )
 
 func main() {
 	configPath := flag.String("config", "", "path to config file")
+	showVersion := flag.Bool("version", false, "print version and exit")
 	flag.Parse()
+	if *showVersion {
+		fmt.Println("kbridge-agent " + version.String())
+		return
+	}
 
 	cfg, err := loadConfig(*configPath)
 	if err != nil {
