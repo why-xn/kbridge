@@ -5,6 +5,7 @@ package central
 import (
 	"fmt"
 	"os"
+	"strings"
 	"time"
 
 	"gopkg.in/yaml.v3"
@@ -64,13 +65,16 @@ type DatabaseConfig struct {
 // AuthConfig holds the authentication configuration.
 type AuthConfig struct {
 	JWTSecret             string        `yaml:"jwt_secret"`
+	JWTSecretFile         string        `yaml:"jwt_secret_file"`
 	TokenPepper           string        `yaml:"token_pepper"`
+	TokenPepperFile       string        `yaml:"token_pepper_file"`
 	AccessTokenExpiryStr  string        `yaml:"access_token_expiry"`
 	AccessTokenExpiry     time.Duration `yaml:"-"`
 	RefreshTokenExpiryStr string        `yaml:"refresh_token_expiry"`
 	RefreshTokenExpiry    time.Duration `yaml:"-"`
 	AdminEmail            string        `yaml:"admin_email"`
 	AdminPassword         string        `yaml:"admin_password"`
+	AdminPasswordFile     string        `yaml:"admin_password_file"`
 	AdminName             string        `yaml:"admin_name"`
 }
 
@@ -121,6 +125,10 @@ func LoadConfig(path string) (*Config, error) {
 
 	if err := cfg.parseDurations(); err != nil {
 		return nil, fmt.Errorf("parsing duration fields: %w", err)
+	}
+
+	if err := cfg.resolveSecrets(); err != nil {
+		return nil, fmt.Errorf("resolving secrets: %w", err)
 	}
 
 	return cfg, nil
@@ -203,6 +211,50 @@ func (c *Config) validateAuth() error {
 	}
 	if c.Auth.RefreshTokenExpiry <= 0 {
 		return fmt.Errorf("refresh_token_expiry must be greater than zero")
+	}
+	return nil
+}
+
+// resolveSecret returns a secret from (highest precedence first): the file named
+// by the <envName>_FILE env var, the <envName> env var, the fileVal YAML path,
+// then the inline literal. File contents are trimmed. A non-empty file path that
+// cannot be read is a fatal error (fail-closed).
+func resolveSecret(inlineVal, fileVal, envName string) (string, error) {
+	if p := os.Getenv(envName + "_FILE"); p != "" {
+		return readSecretFile(p)
+	}
+	if v := os.Getenv(envName); v != "" {
+		return v, nil
+	}
+	if fileVal != "" {
+		return readSecretFile(fileVal)
+	}
+	return inlineVal, nil
+}
+
+func readSecretFile(path string) (string, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return "", fmt.Errorf("reading secret file %q: %w", path, err)
+	}
+	s := strings.TrimSpace(string(data))
+	if s == "" {
+		return "", fmt.Errorf("secret file %q is empty", path)
+	}
+	return s, nil
+}
+
+// resolveSecrets resolves every sensitive field from file/env/inline sources.
+func (c *Config) resolveSecrets() error {
+	var err error
+	if c.Auth.JWTSecret, err = resolveSecret(c.Auth.JWTSecret, c.Auth.JWTSecretFile, "KBRIDGE_JWT_SECRET"); err != nil {
+		return err
+	}
+	if c.Auth.TokenPepper, err = resolveSecret(c.Auth.TokenPepper, c.Auth.TokenPepperFile, "KBRIDGE_TOKEN_PEPPER"); err != nil {
+		return err
+	}
+	if c.Auth.AdminPassword, err = resolveSecret(c.Auth.AdminPassword, c.Auth.AdminPasswordFile, "KBRIDGE_ADMIN_PASSWORD"); err != nil {
+		return err
 	}
 	return nil
 }

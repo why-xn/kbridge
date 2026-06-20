@@ -275,6 +275,48 @@ audit:
 	}
 }
 
+func TestResolveSecret(t *testing.T) {
+	dir := t.TempDir()
+	secretFile := filepath.Join(dir, "s")
+	if err := os.WriteFile(secretFile, []byte("from-file\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	t.Run("file env wins and is trimmed", func(t *testing.T) {
+		t.Setenv("X_SECRET_FILE", secretFile)
+		t.Setenv("X_SECRET", "from-env")
+		got, err := resolveSecret("from-inline", "ignored-file-yaml", "X_SECRET")
+		if err != nil || got != "from-file" {
+			t.Fatalf("got %q err %v, want from-file", got, err)
+		}
+	})
+	t.Run("literal env beats yaml", func(t *testing.T) {
+		t.Setenv("X_SECRET", "from-env")
+		got, _ := resolveSecret("from-inline", "", "X_SECRET")
+		if got != "from-env" {
+			t.Fatalf("got %q want from-env", got)
+		}
+	})
+	t.Run("yaml file beats inline", func(t *testing.T) {
+		got, _ := resolveSecret("from-inline", secretFile, "X_SECRET_UNSET")
+		if got != "from-file" {
+			t.Fatalf("got %q want from-file", got)
+		}
+	})
+	t.Run("inline fallback", func(t *testing.T) {
+		got, _ := resolveSecret("from-inline", "", "X_SECRET_UNSET")
+		if got != "from-inline" {
+			t.Fatalf("got %q want from-inline", got)
+		}
+	})
+	t.Run("missing file path is fatal", func(t *testing.T) {
+		_, err := resolveSecret("", filepath.Join(dir, "nope"), "X_SECRET_UNSET")
+		if err == nil {
+			t.Fatal("expected error for missing secret file")
+		}
+	})
+}
+
 func TestConfig_AgentTokenPepper(t *testing.T) {
 	t.Run("falls back to jwt_secret when token_pepper is unset", func(t *testing.T) {
 		c := &Config{}
