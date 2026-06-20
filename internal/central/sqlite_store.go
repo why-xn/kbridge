@@ -24,6 +24,9 @@ func NewSQLiteStore(path string) (*SQLiteStore, error) {
 	if err != nil {
 		return nil, fmt.Errorf("open sqlite: %w", err)
 	}
+	// Serialise all DB access through a single connection to prevent "database is
+	// locked" errors under concurrent HTTP+gRPC writes on WAL-mode SQLite. Do not
+	// raise this limit without migrating to PostgreSQL first.
 	db.SetMaxOpenConns(1)
 	if _, err := db.Exec("PRAGMA busy_timeout = 5000"); err != nil {
 		return nil, fmt.Errorf("set busy timeout: %w", err)

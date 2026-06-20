@@ -52,12 +52,12 @@ spec:
             {{- end }}
           livenessProbe:
             exec:
-              command: ["sh", "-c", "find /tmp/kbridge-agent-healthy -mmin -1 | grep -q ."]
+              command: ["sh", "-c", "test $(( $(date +%s) - $(stat -c %Y /tmp/kbridge-agent-healthy) )) -lt 180"]
             initialDelaySeconds: 30
             periodSeconds: 30
           readinessProbe:
             exec:
-              command: ["sh", "-c", "find /tmp/kbridge-agent-healthy -mmin -1 | grep -q ."]
+              command: ["sh", "-c", "test $(( $(date +%s) - $(stat -c %Y /tmp/kbridge-agent-healthy) )) -lt 60"]
             initialDelaySeconds: 10
             periodSeconds: 15
           resources:

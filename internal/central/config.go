@@ -114,6 +114,17 @@ func DefaultConfig() *Config {
 	}
 }
 
+// DefaultConfigWithEnv returns a Config with defaults and env-variable secret
+// overrides applied. It mirrors agent.DefaultConfigWithEnv so central can be
+// started with no config file when secrets are injected via KBRIDGE_JWT_SECRET
+// (or _FILE) and friends.
+func DefaultConfigWithEnv() *Config {
+	cfg := DefaultConfig()
+	// Ignore error: no YAML file paths set, only env/inline sources in scope.
+	_ = cfg.resolveSecrets()
+	return cfg
+}
+
 // LoadConfig reads configuration from a YAML file at the given path.
 func LoadConfig(path string) (*Config, error) {
 	data, err := os.ReadFile(path)

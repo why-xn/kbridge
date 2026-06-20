@@ -50,6 +50,10 @@ func (a *Agent) Run(ctx context.Context) error {
 		return fmt.Errorf("registering with central: %w", err)
 	}
 
+	// Touch the health file once immediately after successful registration so the
+	// liveness initialDelaySeconds window doesn't race a slow first heartbeat.
+	a.touchHealthFile()
+
 	// Start command polling loop in goroutine
 	go a.runCommandPollLoop(ctx)
 

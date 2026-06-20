@@ -30,10 +30,18 @@ func newLoginLimiter(rps float64, burst int) *loginLimiter {
 	}
 }
 
+const maxBuckets = 10_000
+
 func (l *loginLimiter) allow(key string) bool {
 	l.mu.Lock()
 	b := l.buckets[key]
 	if b == nil {
+		// Coarse size cap: if the map is already at the limit, reset it entirely.
+		// Sufficient for single-replica deployments; prevents unbounded memory growth
+		// under IP/email spray attacks.
+		if len(l.buckets) >= maxBuckets {
+			l.buckets = make(map[string]*rate.Limiter)
+		}
 		b = rate.NewLimiter(l.rps, l.burst)
 		l.buckets[key] = b
 	}
@@ -58,7 +66,7 @@ func loginRateLimitMiddleware(l *loginLimiter) gin.HandlerFunc {
 // peekEmail reads the request body to extract the email field, then restores
 // the body so the downstream handler can read it normally.
 func peekEmail(c *gin.Context) string {
-	body, err := io.ReadAll(io.LimitReader(c.Request.Body, 1<<20))
+	body, err := io.ReadAll(io.LimitReader(c.Request.Body, 4<<10))
 	if err != nil {
 		return ""
 	}

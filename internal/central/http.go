@@ -57,6 +57,9 @@ type HTTPServer struct {
 func NewHTTPServer(agentStore *AgentStore, cmdQueue *CommandQueue, ah *AuthHandlers, adminH *AdminHandlers, policy *PolicyEngine, audit *AuditRecorder, sessions *SessionManager, jm *auth.JWTManager) *HTTPServer {
 	gin.SetMode(gin.ReleaseMode)
 	router := gin.New()
+	// Disable Gin's default trusted-proxy behaviour so c.ClientIP() returns the
+	// real socket IP rather than an attacker-controlled X-Forwarded-For value.
+	router.SetTrustedProxies(nil) //nolint:errcheck
 	router.Use(gin.Recovery())
 	router.Use(accessLogMiddleware())
 
@@ -416,6 +419,11 @@ func (s *HTTPServer) streamSessionToClient(c *gin.Context, sess *Session, flushe
 // and client IP via slog.
 func accessLogMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
+		// Skip kubelet liveness/readiness probes to avoid log spam.
+		if c.Request.URL.Path == "/health" {
+			c.Next()
+			return
+		}
 		start := time.Now()
 		c.Next()
 		slog.Info("http request",

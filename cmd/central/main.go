@@ -38,8 +38,8 @@ func loadConfig(path string) (*central.Config, error) {
 	}
 
 	if path == "" {
-		log.Println("No config file specified, using defaults")
-		return central.DefaultConfig(), nil
+		log.Println("No config file specified, using defaults with environment overrides")
+		return central.DefaultConfigWithEnv(), nil
 	}
 
 	return central.LoadConfig(path)
