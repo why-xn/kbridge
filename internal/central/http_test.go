@@ -1,10 +1,14 @@
 package central
 
 import (
+	"bytes"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"testing"
+
+	"github.com/gin-gonic/gin"
 )
 
 func newTestHTTPServer() (*HTTPServer, *AgentStore, *CommandQueue) {
@@ -198,5 +202,25 @@ func TestHTTPServer_NotFound(t *testing.T) {
 
 	if rec.Code != http.StatusNotFound {
 		t.Errorf("expected status %d, got %d", http.StatusNotFound, rec.Code)
+	}
+}
+
+func TestBodyLimitMiddleware(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	r := gin.New()
+	r.Use(bodyLimitMiddleware(16))
+	r.POST("/x", func(c *gin.Context) {
+		_, err := io.ReadAll(c.Request.Body)
+		if err != nil {
+			c.Status(http.StatusRequestEntityTooLarge)
+			return
+		}
+		c.Status(http.StatusOK)
+	})
+	req := httptest.NewRequest(http.MethodPost, "/x", bytes.NewReader(make([]byte, 1024)))
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	if w.Code != http.StatusRequestEntityTooLarge {
+		t.Fatalf("code=%d want 413", w.Code)
 	}
 }

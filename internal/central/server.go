@@ -101,6 +101,7 @@ func NewServer(cfg *Config) (*Server, error) {
 		Addr:              fmt.Sprintf(":%d", cfg.Server.HTTPPort),
 		Handler:           httpHandlerFunc,
 		ReadHeaderTimeout: 10 * time.Second,
+		IdleTimeout:       120 * time.Second,
 	}
 
 	return &Server{

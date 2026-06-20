@@ -3,6 +3,7 @@ package central
 import (
 	"context"
 	"log"
+	"log/slog"
 	"net/http"
 	"strings"
 	"time"
@@ -57,7 +58,7 @@ func NewHTTPServer(agentStore *AgentStore, cmdQueue *CommandQueue, ah *AuthHandl
 	gin.SetMode(gin.ReleaseMode)
 	router := gin.New()
 	router.Use(gin.Recovery())
-	router.Use(requestLogger())
+	router.Use(accessLogMiddleware())
 
 	s := &HTTPServer{
 		router:        router,
@@ -87,6 +88,7 @@ func (s *HTTPServer) setupRoutes() {
 	if s.authHandlers != nil {
 		authGroup := s.router.Group("/auth")
 		authGroup.Use(loginRateLimitMiddleware(s.loginLimiter))
+		authGroup.Use(bodyLimitMiddleware(1 << 20))
 		{
 			authGroup.POST("/login", s.authHandlers.HandleLogin)
 			authGroup.POST("/refresh", s.authHandlers.HandleRefresh)
@@ -100,7 +102,7 @@ func (s *HTTPServer) setupRoutes() {
 	}
 	{
 		api.GET("/clusters", s.handleListClusters)
-		api.POST("/clusters/:name/exec", s.handleExecCommand)
+		api.POST("/clusters/:name/exec", bodyLimitMiddleware(1<<20), s.handleExecCommand)
 		if s.sessions != nil {
 			api.POST("/clusters/:name/stream", s.handleStreamCommand)
 			api.POST("/clusters/:name/exec/attach", s.handleExecAttach)
@@ -119,6 +121,7 @@ func (s *HTTPServer) setupRoutes() {
 			if s.jwtManager != nil {
 				admin.Use(auth.AdminRequired())
 			}
+			admin.Use(bodyLimitMiddleware(1 << 20))
 			{
 				admin.POST("/agent-tokens", s.adminHandlers.HandleCreateAgentToken)
 				admin.GET("/agent-tokens", s.adminHandlers.HandleListAgentTokens)
@@ -409,9 +412,26 @@ func (s *HTTPServer) streamSessionToClient(c *gin.Context, sess *Session, flushe
 	}
 }
 
-// requestLogger returns a middleware that logs HTTP requests.
-func requestLogger() gin.HandlerFunc {
+// accessLogMiddleware logs each HTTP request with method, path, status, latency,
+// and client IP via slog.
+func accessLogMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
+		start := time.Now()
+		c.Next()
+		slog.Info("http request",
+			"method", c.Request.Method,
+			"path", c.Request.URL.Path,
+			"status", c.Writer.Status(),
+			"latency_ms", time.Since(start).Milliseconds(),
+			"client_ip", c.ClientIP(),
+		)
+	}
+}
+
+// bodyLimitMiddleware caps the request body size for non-streaming routes.
+func bodyLimitMiddleware(max int64) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, max)
 		c.Next()
 	}
 }
