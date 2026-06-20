@@ -2,6 +2,7 @@ package central
 
 import (
 	"context"
+	"sync"
 	"testing"
 	"time"
 )
@@ -468,6 +469,45 @@ func TestSQLiteStore_RefreshTokens(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, tc.fn)
+	}
+}
+
+func TestSQLiteConcurrentWritesNoLock(t *testing.T) {
+	store := newTestStore(t)
+	ctx := context.Background()
+	var wg sync.WaitGroup
+	errs := make(chan error, 50)
+	for i := 0; i < 50; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			log := &AuditLog{
+				UserEmail: "u@x", ClusterName: "c", Command: "get pods",
+				Status: AuditStatusSuccess,
+			}
+			if err := store.CreateAuditLog(ctx, log); err != nil {
+				errs <- err
+			}
+		}(i)
+	}
+	wg.Wait()
+	close(errs)
+	for err := range errs {
+		t.Fatalf("concurrent write failed (database locked?): %v", err)
+	}
+}
+
+func TestSQLitePragmas(t *testing.T) {
+	store := newTestStore(t)
+	var busy int
+	if err := store.db.QueryRow("PRAGMA busy_timeout").Scan(&busy); err != nil {
+		t.Fatal(err)
+	}
+	if busy < 1000 {
+		t.Fatalf("busy_timeout=%d want >=1000", busy)
+	}
+	if got := store.db.Stats().MaxOpenConnections; got != 1 {
+		t.Fatalf("max open conns=%d want 1", got)
 	}
 }
 
