@@ -2,9 +2,12 @@ package central
 
 import (
 	"context"
+	"net"
 	"net/http"
 	"testing"
 	"time"
+
+	"google.golang.org/grpc"
 )
 
 func testServerConfig() *Config {
@@ -133,5 +136,17 @@ func TestServer_RunAndShutdown(t *testing.T) {
 	// Trigger shutdown by calling shutdown directly
 	if err := srv.shutdown(); err != nil {
 		t.Errorf("shutdown error: %v", err)
+	}
+}
+
+func TestGracefulStopWithTimeout(t *testing.T) {
+	srv := grpc.NewServer()
+	lis, _ := net.Listen("tcp", "127.0.0.1:0")
+	go srv.Serve(lis)
+	// No hung streams here; assert it returns well within the deadline.
+	start := time.Now()
+	gracefulStopWithTimeout(srv, 2*time.Second)
+	if time.Since(start) > 3*time.Second {
+		t.Fatal("gracefulStopWithTimeout exceeded its deadline")
 	}
 }

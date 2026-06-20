@@ -204,6 +204,9 @@ func (s *Server) Run() error {
 		go s.runAuditCleanup()
 	}
 
+	// Periodically purge expired refresh tokens
+	go s.runRefreshTokenCleanup()
+
 	// Start gRPC server in goroutine
 	go func() {
 		if err := s.startGRPC(); err != nil {
@@ -267,6 +270,19 @@ func (s *Server) runPolicyReloadOnSignal() {
 	}
 }
 
+// gracefulStopWithTimeout calls GracefulStop but falls back to a hard Stop if a
+// stuck stream prevents graceful drain within d.
+func gracefulStopWithTimeout(srv *grpc.Server, d time.Duration) {
+	done := make(chan struct{})
+	go func() { srv.GracefulStop(); close(done) }()
+	select {
+	case <-done:
+	case <-time.After(d):
+		srv.Stop()
+		<-done
+	}
+}
+
 // runAuditCleanup periodically deletes audit logs older than the configured
 // retention window.
 func (s *Server) runAuditCleanup() {
@@ -294,6 +310,22 @@ func (s *Server) cleanupAuditLogs() {
 	}
 	if n > 0 {
 		log.Printf("audit cleanup: removed %d log(s) older than %d days", n, s.config.Audit.RetentionDays)
+	}
+}
+
+// runRefreshTokenCleanup periodically removes expired refresh tokens from the store.
+func (s *Server) runRefreshTokenCleanup() {
+	ticker := time.NewTicker(1 * time.Hour)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ticker.C:
+			if err := s.store.CleanupExpiredRefreshTokens(context.Background()); err != nil {
+				log.Printf("refresh token cleanup failed: %v", err)
+			}
+		case <-s.stopCh:
+			return
+		}
 	}
 }
 
@@ -332,8 +364,8 @@ func (s *Server) shutdown() error {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	// Gracefully stop gRPC server
-	s.grpcServer.GracefulStop()
+	// Gracefully stop gRPC server (with deadline to avoid stuck streams)
+	gracefulStopWithTimeout(s.grpcServer, 15*time.Second)
 	log.Println("gRPC server stopped")
 
 	// Gracefully shutdown HTTP server
