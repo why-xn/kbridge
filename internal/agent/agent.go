@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"os"
 	"sync"
 	"time"
 
@@ -156,6 +157,7 @@ func (a *Agent) runHeartbeatLoop(ctx context.Context) {
 				}
 				continue
 			}
+			a.touchHealthFile()
 
 			// Update ticker interval if server requested different timing
 			if nextInterval > 0 && nextInterval != interval {
@@ -198,6 +200,20 @@ func (a *Agent) sendHeartbeat(ctx context.Context) (time.Duration, error) {
 	}
 
 	return time.Duration(resp.NextHeartbeatSeconds) * time.Second, nil
+}
+
+// touchHealthFile updates the mtime of the health file, creating it if absent.
+func (a *Agent) touchHealthFile() {
+	if a.config.HealthFile == "" {
+		return
+	}
+	now := time.Now()
+	if err := os.Chtimes(a.config.HealthFile, now, now); err != nil {
+		// File may not exist yet; create it.
+		if f, cerr := os.Create(a.config.HealthFile); cerr == nil {
+			f.Close()
+		}
+	}
 }
 
 func (a *Agent) reconnect(ctx context.Context) error {

@@ -3,6 +3,8 @@ package agent
 import (
 	"context"
 	"net"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -376,5 +378,16 @@ func TestAgent_Run_RegistrationError(t *testing.T) {
 	err := a.Run(ctx)
 	if err == nil {
 		t.Error("expected error for registration failure")
+	}
+}
+
+func TestTouchHealthFile(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "healthy")
+	a := &Agent{config: &Config{}}
+	a.config.HealthFile = path
+	a.touchHealthFile()
+	if _, err := os.Stat(path); err != nil {
+		t.Fatalf("health file not written: %v", err)
 	}
 }

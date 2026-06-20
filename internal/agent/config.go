@@ -11,8 +11,9 @@ import (
 
 // Config holds the complete configuration for the agent.
 type Config struct {
-	Central CentralConfig `yaml:"central"`
-	Cluster ClusterConfig `yaml:"cluster"`
+	Central    CentralConfig `yaml:"central"`
+	Cluster    ClusterConfig `yaml:"cluster"`
+	HealthFile string        `yaml:"health_file"`
 }
 
 // CentralConfig holds the central service connection configuration.
@@ -49,6 +50,7 @@ func DefaultConfig() *Config {
 		Cluster: ClusterConfig{
 			Name: "default",
 		},
+		HealthFile: "/tmp/kbridge-agent-healthy",
 	}
 }
 

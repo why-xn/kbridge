@@ -5,10 +5,15 @@ image:
   tag: latest
   pullPolicy: IfNotPresent
 
+imagePullSecrets: []
+
 central:
   # gRPC address of the central service (in-cluster Service DNS or external host).
   url: "kbridge-central:9090"
   token: "change-me"
+  # When set, mount this existing Secret and use KBRIDGE_AGENT_TOKEN_FILE instead
+  # of rendering the token inline in the config Secret.
+  existingSecret: ""
   tls:
     enabled: false
     insecure: false
@@ -21,6 +26,18 @@ cluster:
   nodeCount: 0
   region: ""
   provider: ""
+
+podSecurityContext:
+  runAsNonRoot: true
+  seccompProfile:
+    type: RuntimeDefault
+
+securityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop:
+      - ALL
 
 serviceAccount:
   create: true
