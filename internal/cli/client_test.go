@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 )
 
@@ -354,5 +355,85 @@ func TestCentralClient_RevokeAgentToken(t *testing.T) {
 
 	if err := NewCentralClient(server.URL).RevokeAgentToken("tok-1"); err != nil {
 		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestTransparentRefresh(t *testing.T) {
+	var refreshed bool
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/v1/clusters":
+			if r.Header.Get("Authorization") == "Bearer new-access" {
+				w.WriteHeader(200)
+				w.Write([]byte(`{"clusters":[]}`)) //nolint:errcheck
+				return
+			}
+			w.WriteHeader(401)
+		case "/auth/refresh":
+			refreshed = true
+			w.WriteHeader(200)
+			w.Write([]byte(`{"access_token":"new-access","refresh_token":"new-refresh","expires_in":3600}`)) //nolint:errcheck
+		}
+	}))
+	defer srv.Close()
+
+	c := NewCentralClient(srv.URL)
+	c.SetToken("old-access")
+	c.setRefreshToken("old-refresh")
+	c.persist = func(access, refresh string) error { return nil }
+
+	clusters, err := c.ListClusters()
+	if err != nil {
+		t.Fatalf("expected transparent refresh to succeed: %v", err)
+	}
+	if len(clusters) != 0 {
+		t.Fatalf("expected empty cluster list, got %d", len(clusters))
+	}
+	if !refreshed {
+		t.Fatal("expected a refresh call")
+	}
+}
+
+func TestTransparentRefresh_FailedRefresh(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/v1/clusters":
+			w.WriteHeader(401)
+		case "/auth/refresh":
+			w.WriteHeader(401)
+		}
+	}))
+	defer srv.Close()
+
+	c := NewCentralClient(srv.URL)
+	c.SetToken("old-access")
+	c.setRefreshToken("old-refresh")
+	c.persist = func(access, refresh string) error { return nil }
+
+	_, err := c.ListClusters()
+	if err == nil {
+		t.Fatal("expected error after failed refresh")
+	}
+	if !strings.Contains(err.Error(), "run 'kb login' first") {
+		t.Fatalf("expected 'run kb login' error, got: %v", err)
+	}
+}
+
+func TestTransparentRefresh_NoRefreshToken(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(401)
+	}))
+	defer srv.Close()
+
+	c := NewCentralClient(srv.URL)
+	c.SetToken("old-access")
+	// no refresh token set
+
+	_, err := c.ListClusters()
+	if err == nil {
+		t.Fatal("expected error without refresh token")
+	}
+	if !strings.Contains(err.Error(), "run 'kb login' first") {
+		t.Fatalf("expected 'run kb login' error, got: %v", err)
 	}
 }

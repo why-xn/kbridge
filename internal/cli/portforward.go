@@ -111,6 +111,32 @@ func runPortForward(centralURL, cluster, token string, tgt pfTarget, insecure bo
 	if err != nil {
 		return fmt.Errorf("connecting: %w", err)
 	}
+
+	if resp.StatusCode == http.StatusUnauthorized {
+		resp.Body.Close()
+		refreshToken := viper.GetString(ConfigKeyRefreshToken)
+		if refreshToken != "" {
+			newAccess, newRefresh, rerr := refreshTokenViaHTTP(centralURL, refreshToken, insecure)
+			if rerr == nil {
+				viper.Set(ConfigKeyToken, newAccess)
+				viper.Set(ConfigKeyRefreshToken, newRefresh)
+				_ = saveConfig()
+				token = newAccess
+
+				pr, pw = io.Pipe()
+				req2, err2 := http.NewRequest(http.MethodPost, reqURL, pr)
+				if err2 != nil {
+					return err2
+				}
+				req2.Header.Set("Authorization", "Bearer "+token)
+				resp, err = client.Do(req2)
+				if err != nil {
+					return fmt.Errorf("connecting: %w", err)
+				}
+			}
+		}
+	}
+
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
 		return httpStatusError(resp)

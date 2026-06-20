@@ -1,8 +1,10 @@
 package cli
 
 import (
+	"bytes"
 	"context"
 	"crypto/tls"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net"
@@ -95,6 +97,35 @@ func httpStatusError(resp *http.Response) error {
 	}
 }
 
+// refreshTokenViaHTTP exchanges a refresh token for a new access/refresh pair.
+// It is used by the streaming connect paths that bypass CentralClient.doRequest.
+func refreshTokenViaHTTP(centralURL, refreshToken string, insecure bool) (newAccess, newRefresh string, err error) {
+	body, _ := json.Marshal(map[string]string{"refresh_token": refreshToken})
+	req, err := http.NewRequest(http.MethodPost, centralURL+"/auth/refresh", bytes.NewReader(body))
+	if err != nil {
+		return "", "", fmt.Errorf("creating refresh request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	tr := &http.Transport{
+		TLSClientConfig: &tls.Config{InsecureSkipVerify: insecure}, //nolint:gosec
+	}
+	c := &http.Client{Transport: tr}
+	resp, err := c.Do(req)
+	if err != nil {
+		return "", "", fmt.Errorf("refresh request failed: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return "", "", fmt.Errorf("refresh failed with status %d", resp.StatusCode)
+	}
+	var lr LoginResponse
+	if err := json.NewDecoder(resp.Body).Decode(&lr); err != nil {
+		return "", "", fmt.Errorf("decoding refresh response: %w", err)
+	}
+	return lr.AccessToken, lr.RefreshToken, nil
+}
+
 // runExecInteractive opens the bidi exec stream and bridges the local terminal.
 func runExecInteractive(centralURL, cluster, token string, tgt execTarget, insecure bool) error {
 	if tgt.pod == "" {
@@ -127,6 +158,33 @@ func runExecInteractive(centralURL, cluster, token string, tgt execTarget, insec
 	if err != nil {
 		return fmt.Errorf("connecting: %w", err)
 	}
+
+	if resp.StatusCode == http.StatusUnauthorized {
+		resp.Body.Close()
+		refreshToken := viper.GetString(ConfigKeyRefreshToken)
+		if refreshToken != "" {
+			newAccess, newRefresh, rerr := refreshTokenViaHTTP(centralURL, refreshToken, insecure)
+			if rerr == nil {
+				viper.Set(ConfigKeyToken, newAccess)
+				viper.Set(ConfigKeyRefreshToken, newRefresh)
+				_ = saveConfig()
+				token = newAccess
+
+				// Rebuild the pipe and request for the retry.
+				pr, pw = io.Pipe()
+				req2, err2 := http.NewRequest(http.MethodPost, reqURL, pr)
+				if err2 != nil {
+					return err2
+				}
+				req2.Header.Set("Authorization", "Bearer "+token)
+				resp, err = client.Do(req2)
+				if err != nil {
+					return fmt.Errorf("connecting: %w", err)
+				}
+			}
+		}
+	}
+
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
 		return httpStatusError(resp)

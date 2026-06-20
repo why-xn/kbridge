@@ -16,9 +16,11 @@ import (
 
 // CentralClient is an HTTP client for the central service API.
 type CentralClient struct {
-	baseURL    string
-	httpClient *http.Client
-	token      string
+	baseURL      string
+	httpClient   *http.Client
+	token        string
+	refreshToken string
+	persist      func(access, refresh string) error
 }
 
 // LoginResponse is the response from POST /auth/login.
@@ -54,6 +56,44 @@ func (c *CentralClient) SetToken(token string) {
 	c.token = token
 }
 
+// setRefreshToken sets the refresh token used for transparent token renewal.
+func (c *CentralClient) setRefreshToken(token string) {
+	c.refreshToken = token
+}
+
+// Refresh exchanges the refresh token for a new access/refresh token pair,
+// persists the new tokens, and updates the client state.
+func (c *CentralClient) Refresh() error {
+	body, _ := json.Marshal(map[string]string{"refresh_token": c.refreshToken})
+	req, err := http.NewRequest(http.MethodPost, c.baseURL+"/auth/refresh", bytes.NewReader(body))
+	if err != nil {
+		return fmt.Errorf("creating refresh request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("refresh request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("refresh failed with status %d", resp.StatusCode)
+	}
+
+	var lr LoginResponse
+	if err := json.NewDecoder(resp.Body).Decode(&lr); err != nil {
+		return fmt.Errorf("decoding refresh response: %w", err)
+	}
+
+	c.token = lr.AccessToken
+	c.refreshToken = lr.RefreshToken
+	if c.persist != nil {
+		return c.persist(lr.AccessToken, lr.RefreshToken)
+	}
+	return nil
+}
+
 // SetInsecureSkipVerify disables TLS certificate verification for HTTPS
 // requests. Intended for development with self-signed certificates only.
 func (c *CentralClient) SetInsecureSkipVerify(skip bool) {
@@ -65,14 +105,36 @@ func (c *CentralClient) SetInsecureSkipVerify(skip bool) {
 	}
 }
 
-// doRequest executes an HTTP request with the auth token if set.
-func (c *CentralClient) doRequest(req *http.Request) (*http.Response, error) {
+// send sets the bearer token header and executes the request.
+func (c *CentralClient) send(req *http.Request) (*http.Response, error) {
 	if c.token != "" {
 		req.Header.Set("Authorization", "Bearer "+c.token)
 	}
-	resp, err := c.httpClient.Do(req)
+	return c.httpClient.Do(req)
+}
+
+// doRequest executes an HTTP request, transparently refreshing on a 401 if a
+// refresh token is available. It retries the request exactly once after refresh.
+func (c *CentralClient) doRequest(req *http.Request) (*http.Response, error) {
+	resp, err := c.send(req)
 	if err != nil {
 		return nil, err
+	}
+	if resp.StatusCode == http.StatusUnauthorized && c.refreshToken != "" {
+		resp.Body.Close()
+		if rerr := c.Refresh(); rerr != nil {
+			return nil, fmt.Errorf("authentication required: run 'kb login' first")
+		}
+		req2 := req.Clone(req.Context())
+		if req.GetBody != nil {
+			if b, berr := req.GetBody(); berr == nil {
+				req2.Body = b
+			}
+		}
+		resp, err = c.send(req2)
+		if err != nil {
+			return nil, err
+		}
 	}
 	if resp.StatusCode == http.StatusUnauthorized {
 		resp.Body.Close()
@@ -118,17 +180,30 @@ func (c *CentralClient) Login(email, password string) (*LoginResponse, error) {
 	return &loginResp, nil
 }
 
+// newJSONRequest builds a POST request with a buffered JSON body and sets
+// GetBody so doRequest can replay the body on a 401-triggered retry.
+func newJSONRequest(method, url string, bodyBytes []byte) (*http.Request, error) {
+	req, err := http.NewRequest(method, url, bytes.NewReader(bodyBytes))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.GetBody = func() (io.ReadCloser, error) {
+		return io.NopCloser(bytes.NewReader(bodyBytes)), nil
+	}
+	return req, nil
+}
+
 // Logout invalidates the refresh token on the server.
 func (c *CentralClient) Logout(refreshToken string) error {
 	body, _ := json.Marshal(map[string]string{
 		"refresh_token": refreshToken,
 	})
 
-	req, err := http.NewRequest(http.MethodPost, c.baseURL+"/api/v1/auth/logout", bytes.NewReader(body))
+	req, err := newJSONRequest(http.MethodPost, c.baseURL+"/api/v1/auth/logout", body)
 	if err != nil {
 		return fmt.Errorf("creating request: %w", err)
 	}
-	req.Header.Set("Content-Type", "application/json")
 
 	resp, err := c.doRequest(req)
 	if err != nil {
@@ -226,11 +301,10 @@ func (c *CentralClient) CreateUser(email, name, password string) (*UserInfo, err
 	body, _ := json.Marshal(map[string]string{
 		"email": email, "name": name, "password": password,
 	})
-	req, err := http.NewRequest(http.MethodPost, c.baseURL+"/api/v1/admin/users", bytes.NewReader(body))
+	req, err := newJSONRequest(http.MethodPost, c.baseURL+"/api/v1/admin/users", body)
 	if err != nil {
 		return nil, fmt.Errorf("creating request: %w", err)
 	}
-	req.Header.Set("Content-Type", "application/json")
 
 	resp, err := c.doRequest(req)
 	if err != nil {
@@ -332,11 +406,10 @@ func (c *CentralClient) CreateAgentToken(cluster, description string, expiresInD
 	}
 	body, _ := json.Marshal(payload)
 
-	req, err := http.NewRequest(http.MethodPost, c.baseURL+"/api/v1/admin/agent-tokens", bytes.NewReader(body))
+	req, err := newJSONRequest(http.MethodPost, c.baseURL+"/api/v1/admin/agent-tokens", body)
 	if err != nil {
 		return nil, fmt.Errorf("creating request: %w", err)
 	}
-	req.Header.Set("Content-Type", "application/json")
 
 	resp, err := c.doRequest(req)
 	if err != nil {
@@ -459,11 +532,10 @@ func (c *CentralClient) ExecCommand(clusterName string, command []string, namesp
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	req, err := http.NewRequest(http.MethodPost, url, bytes.NewReader(jsonBody))
+	req, err := newJSONRequest(http.MethodPost, url, jsonBody)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
-	req.Header.Set("Content-Type", "application/json")
 
 	resp, err := c.doRequest(req)
 	if err != nil {
@@ -484,12 +556,24 @@ func NewCentralClientWithTimeout(baseURL string, timeout time.Duration) *Central
 	}
 }
 
+// defaultPersist returns the standard persist function that saves tokens to viper
+// and writes the config file.
+func defaultPersist() func(access, refresh string) error {
+	return func(access, refresh string) error {
+		viper.Set(ConfigKeyToken, access)
+		viper.Set(ConfigKeyRefreshToken, refresh)
+		return saveConfig()
+	}
+}
+
 // newAuthenticatedClient creates a client with the stored auth token.
 func newAuthenticatedClient(baseURL string) *CentralClient {
 	c := NewCentralClient(baseURL)
 	if token := viper.GetString(ConfigKeyToken); token != "" {
 		c.SetToken(token)
 	}
+	c.setRefreshToken(viper.GetString(ConfigKeyRefreshToken))
+	c.persist = defaultPersist()
 	c.SetInsecureSkipVerify(viper.GetBool(ConfigKeyInsecure))
 	return c
 }
@@ -500,6 +584,8 @@ func newAuthenticatedClientWithTimeout(baseURL string, timeout time.Duration) *C
 	if token := viper.GetString(ConfigKeyToken); token != "" {
 		c.SetToken(token)
 	}
+	c.setRefreshToken(viper.GetString(ConfigKeyRefreshToken))
+	c.persist = defaultPersist()
 	c.SetInsecureSkipVerify(viper.GetBool(ConfigKeyInsecure))
 	return c
 }
@@ -528,11 +614,10 @@ func (c *CentralClient) ExecCommandWithStdin(clusterName string, command []strin
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	req, err := http.NewRequest(http.MethodPost, url, bytes.NewReader(jsonBody))
+	req, err := newJSONRequest(http.MethodPost, url, jsonBody)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
-	req.Header.Set("Content-Type", "application/json")
 
 	resp, err := c.doRequest(req)
 	if err != nil {
@@ -548,23 +633,42 @@ func (c *CentralClient) ExecCommandWithStdin(clusterName string, command []strin
 func (c *CentralClient) StreamCommand(ctx context.Context, clusterName string, command []string, namespace string, out io.Writer) error {
 	reqBody, _ := json.Marshal(ExecRequest{Command: command, Namespace: namespace})
 	reqURL := fmt.Sprintf("%s/api/v1/clusters/%s/stream", c.baseURL, clusterName)
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, reqURL, bytes.NewReader(reqBody))
-	if err != nil {
-		return fmt.Errorf("creating request: %w", err)
-	}
-	req.Header.Set("Content-Type", "application/json")
-	if c.token != "" {
-		req.Header.Set("Authorization", "Bearer "+c.token)
-	}
 
 	// No client timeout for streaming: the request lives as long as the stream.
 	streamClient := &http.Client{Transport: c.httpClient.Transport}
-	resp, err := streamClient.Do(req)
+
+	doStream := func(token string) (*http.Response, error) {
+		req, err := http.NewRequestWithContext(ctx, http.MethodPost, reqURL, bytes.NewReader(reqBody))
+		if err != nil {
+			return nil, fmt.Errorf("creating request: %w", err)
+		}
+		req.Header.Set("Content-Type", "application/json")
+		if token != "" {
+			req.Header.Set("Authorization", "Bearer "+token)
+		}
+		return streamClient.Do(req)
+	}
+
+	resp, err := doStream(c.token)
 	if err != nil {
 		if ctx.Err() != nil {
 			return nil // user cancelled
 		}
 		return fmt.Errorf("request failed: %w", err)
+	}
+
+	if resp.StatusCode == http.StatusUnauthorized && c.refreshToken != "" {
+		resp.Body.Close()
+		if rerr := c.Refresh(); rerr != nil {
+			return fmt.Errorf("authentication required: run 'kb login' first")
+		}
+		resp, err = doStream(c.token)
+		if err != nil {
+			if ctx.Err() != nil {
+				return nil
+			}
+			return fmt.Errorf("request failed: %w", err)
+		}
 	}
 	defer resp.Body.Close()
 
@@ -575,6 +679,8 @@ func (c *CentralClient) StreamCommand(ctx context.Context, clusterName string, c
 			return nil
 		}
 		return err
+	case http.StatusUnauthorized:
+		return fmt.Errorf("authentication required: run 'kb login' first")
 	case http.StatusForbidden:
 		return fmt.Errorf("permission denied")
 	case http.StatusNotFound:
