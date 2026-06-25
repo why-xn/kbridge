@@ -4,6 +4,52 @@ kbridge has three components: the **central** service, the cluster **agent**,
 and the **CLI**. The central service and agent are long-running; the CLI runs
 on user machines.
 
+## CLI installation
+
+### One-liner installer (Linux / macOS)
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/why-xn/kbridge/main/install.sh | sh
+```
+
+Or with `wget`:
+
+```bash
+wget -qO- https://raw.githubusercontent.com/why-xn/kbridge/main/install.sh | sh
+```
+
+The installer auto-detects the latest release. To pin a version:
+
+```bash
+KBRIDGE_VERSION=v1.0.0 curl -fsSL \
+  https://raw.githubusercontent.com/why-xn/kbridge/main/install.sh | sh
+```
+
+To install into a custom directory (default is `/usr/local/bin`):
+
+```bash
+KBRIDGE_INSTALL_DIR=~/.local/bin curl -fsSL \
+  https://raw.githubusercontent.com/why-xn/kbridge/main/install.sh | sh
+```
+
+The installer downloads `kb_<version>_<os>_<arch>.tar.gz` and a `checksums.txt`
+file from the GitHub release, verifies the SHA-256 checksum before extracting,
+and places the `kb` binary in the install directory.
+
+### Manual download
+
+Download the binary for your platform directly from the
+[GitHub Releases page](https://github.com/why-xn/kbridge/releases), verify the
+checksum from `checksums.txt`, and place `kb` on your `$PATH`.
+
+### Go install (fallback)
+
+```bash
+go install github.com/why-xn/kbridge/cmd/kb@latest
+```
+
+This requires Go 1.25+ and places `kb` in `$GOPATH/bin`.
+
 ## From source (binaries)
 
 Requires Go 1.25+.
@@ -75,4 +121,5 @@ kb clusters list                  # list registered clusters
 
 For production deployments, see [Production Install](production-install.md). Before
 exposing the central service to users, work through the
-[Security Hardening Guide](security.md).
+[Security Hardening Guide](security.md). For backup, upgrade, and troubleshooting
+procedures, see the [Operations Guide](operations.md).

@@ -12,7 +12,7 @@ server:
   grpc_port: 9090          # gRPC (agent) port
 
 database:
-  driver: sqlite           # sqlite (postgres planned)
+  driver: sqlite           # SQLite only (PostgreSQL is not yet supported)
   path: kbridge.db
 
 auth:

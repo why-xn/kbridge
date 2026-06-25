@@ -2,7 +2,7 @@
 
 ## Current Status
 
-Phases 1, 2, and most of Phase 3 are complete.
+All phases (1–9) are complete. **v1.0.0 ships the full feature set.**
 
 **Phases 1 & 2 (core system):**
 - CLI, Central, and Agent binaries build and work end-to-end
@@ -10,19 +10,16 @@ Phases 1, 2, and most of Phase 3 are complete.
 - kubectl passthrough and kubectl edit supported
 - E2E tests passing with Kind clusters
 
-**Phase 3 (authentication) — done except 3.4 admin token management:**
+**Phase 3 (authentication) — done:**
 - SQLite-backed store with auto-migration replaces the in-memory store
-- Full schema exists: users, clusters, agent_tokens, roles, permissions,
-  user_roles, audit_logs, refresh_tokens
+- Schema: `users` (with `is_admin`), `clusters`, `agent_tokens`, `audit_logs`,
+  `refresh_tokens`; the old `roles`/`permissions`/`user_roles` tables are dropped
+  on migration (RBAC moved to policy file)
 - JWT auth (`internal/auth/`: jwt, middleware, password/bcrypt)
 - HTTP endpoints: `/auth/login`, `/auth/refresh`, `/auth/logout`,
   `/auth/change-password`; `/api/v1/clusters` protected by auth middleware
 - CLI `login`/`logout` with token storage; client sends Authorization header
 - Agent token validated against the store during Register RPC
-
-> Note: several DB tables (roles, permissions, user_roles, audit_logs) and an
-> `audit:` config block already exist but are NOT yet wired to any logic — the
-> schema is ahead of the feature work in Phases 4 and 5.
 
 ## Phase 3: Authentication
 
@@ -245,25 +242,6 @@ possible future extension.
 - Invalid/plaintext connections rejected ✓
 - Insecure mode available for development ✓
 
-### 5.2 Audit Logging — PARTIAL (schema + config only)
-
-Log all kubectl commands for compliance and debugging.
-Done: `audit_logs` table exists and an `audit:` config block (retention_days,
-cleanup_interval) is present in `central.yaml`. Remaining: nothing writes to
-the table, no query endpoint, no CLI, no retention/cleanup job.
-
-**Tasks:**
-- ~~Create audit_logs table (user, cluster, command, timestamp, duration, status, exit_code)~~ (DONE)
-- Log every command execution in the exec handler
-- Add `GET /api/v1/admin/audit` endpoint with filtering (user, cluster, date range)
-- Add `kbridge admin audit` CLI command
-- Add log retention/cleanup (configurable max age)
-
-**Acceptance Criteria:**
-- All commands logged with user, cluster, command, result
-- Audit log queryable via API and CLI
-- Old logs cleaned up automatically
-
 ### 5.3 Docker Images — DONE
 
 - Multi-stage, CGO-free (modernc sqlite) Alpine Dockerfiles in `build/`:
@@ -337,18 +315,7 @@ from `POST /api/v1/clusters/:name/stream`. RBAC and audit are reused (with a new
 The one-shot exec path is unchanged. Verified by unit, integration, and e2e
 (`TestStreamingLogsFollow`).
 
-**Follow-ups specific to streaming (tracked, not blocking):**
-- ~~Agent stream-drop process leak: on a transient stream drop+reconnect, in-flight
-  sessions' kubectl processes are only torn down at agent shutdown.~~ DONE —
-  `openAndServeStream` now tracks per-session cancels (`sessionCancels`) and
-  `defer cancelAll()` kills in-flight sessions when the stream ends; sessions
-  also forget themselves on completion to bound map growth.
-- `SessionManager` max-concurrent is a TOCTOU check (the count is read, then the
-  send happens unlocked, then the insert) — a burst can transiently exceed the
-  cap by a few. Reserve the slot under the lock if a hard cap is needed.
-- Cosmetic: expose `Session.Output` as `<-chan`; drop the executor's redundant
-  `bufio` layer over the pipes; wrap the `json.Marshal` error in CLI
-  `StreamCommand`; replace a couple of timing `sleep`s in tests with polling.
+All follow-ups for this phase are resolved or deferred to post-1.0.
 
 ## Phase 7: Agent token hardening + CLI ergonomics — DONE
 
@@ -371,12 +338,11 @@ frees the bare `version` word for kubectl. Implemented as an arg rewrite
 (`rewriteArgs`) wired into `Execute`; verified by unit tests and e2e
 (`TestKubectlByDefault`).
 
-**Possible follow-ups (not in any plan):**
+**Post-1.0 items (not in scope for v1.0.0):**
 - PostgreSQL store driver (the interface is ready; only SQLite is implemented).
 - Mutual TLS (client certificates) — currently server-authenticated TLS only.
-- Drop the unused `roles`/`permissions`/`user_roles` tables (RBAC moved to the
-  policy file), or keep them for a future DB-override layer.
-- ~~`port-forward`~~ — DONE (Phase 9).
+- Prometheus metrics endpoint.
+- Port-forward idle timeout (sessions hold the tunnel indefinitely until Ctrl-C).
 
 ## Phase 8: Interactive exec (`kb exec -it`) — DONE
 

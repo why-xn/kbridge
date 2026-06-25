@@ -56,8 +56,8 @@ kbridge eliminates direct cluster access by placing a central gateway between us
                           v        |  +-------+---------------------+ |
                     +-----------+  |          |                       |
                     | Database  |  +----------+-----------------------+
-                    | (SQLite/  |             |
-                    |  Postgres)|<------------+
+                    | (SQLite)  |             |
+                    |           |<------------+
                     +-----------+
 ```
 
@@ -324,6 +324,7 @@ cluster, command, result, and duration. Query via `kb admin audit` or
 | [RBAC](docs/rbac.md) | Policy file format and examples |
 | [Admin guide](docs/admin.md) | Users, agent tokens, and audit logs |
 | [Security hardening](docs/security.md) | Post-install checklist, two-layer authz, least-privilege agent RBAC |
+| [Operations](docs/operations.md) | Backup/restore, upgrades, token rotation, troubleshooting |
 
 ## License
 

@@ -59,8 +59,8 @@ Requires `protoc`, `protoc-gen-go`, and `protoc-gen-go-grpc`.
 | GET | `/health` | Health check |
 | GET | `/api/v1/clusters` | List registered clusters |
 | POST | `/api/v1/clusters/{name}/exec` | Execute kubectl command |
-| POST | `/auth/login` | User login (planned) |
-| POST | `/auth/refresh` | Refresh token (planned) |
+| POST | `/auth/login` | User login |
+| POST | `/auth/refresh` | Refresh token |
 
 ### List Clusters
 
@@ -105,49 +105,72 @@ service AgentService {
 }
 ```
 
-Agents use the polling-based flow: `GetPendingCommands` + `SubmitCommandResult`. The `ExecuteCommand` streaming RPC is defined but not yet implemented.
+Agents use the polling-based flow: `GetPendingCommands` + `SubmitCommandResult`. `OpenStream` supports bidirectional streaming for `logs -f`, `get -w`, interactive `exec`, and `port-forward` sessions.
 
-## Data Models (Planned)
+## Data Models
+
+SQLite schema — managed by `internal/central/migrations.go` and auto-applied on
+startup. All IDs are random UUIDs stored as TEXT; timestamps are RFC3339 strings.
+RBAC roles are defined in the policy file, not the database.
 
 ```sql
 CREATE TABLE users (
-    id          UUID PRIMARY KEY,
-    email       VARCHAR(255) UNIQUE NOT NULL,
-    password    VARCHAR(255) NOT NULL,
-    created_at  TIMESTAMP DEFAULT NOW(),
-    updated_at  TIMESTAMP DEFAULT NOW()
+    id            TEXT PRIMARY KEY,
+    email         TEXT NOT NULL UNIQUE,
+    password_hash TEXT NOT NULL,
+    name          TEXT NOT NULL,
+    is_active     INTEGER NOT NULL DEFAULT 1,
+    is_admin      INTEGER NOT NULL DEFAULT 0,
+    created_at    TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
+    updated_at    TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
 );
 
 CREATE TABLE clusters (
-    id          UUID PRIMARY KEY,
-    name        VARCHAR(255) UNIQUE NOT NULL,
-    agent_token VARCHAR(255) NOT NULL,
-    last_seen   TIMESTAMP,
-    status      VARCHAR(50) DEFAULT 'disconnected',
-    metadata    JSONB,
-    created_at  TIMESTAMP DEFAULT NOW()
+    id           TEXT PRIMARY KEY,
+    name         TEXT NOT NULL UNIQUE,
+    status       TEXT NOT NULL DEFAULT 'disconnected',
+    agent_id     TEXT,
+    last_seen_at TEXT,
+    created_at   TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
+    updated_at   TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
 );
 
-CREATE TABLE roles (
-    id          UUID PRIMARY KEY,
-    name        VARCHAR(255) UNIQUE NOT NULL,
-    permissions JSONB NOT NULL,
-    created_at  TIMESTAMP DEFAULT NOW()
-);
-
-CREATE TABLE user_roles (
-    user_id     UUID REFERENCES users(id),
-    role_id     UUID REFERENCES roles(id),
-    PRIMARY KEY (user_id, role_id)
+CREATE TABLE agent_tokens (
+    id           TEXT PRIMARY KEY,
+    cluster_id   TEXT NOT NULL REFERENCES clusters(id) ON DELETE CASCADE,
+    token_hash   TEXT NOT NULL,
+    token_prefix TEXT NOT NULL,
+    description  TEXT,
+    is_revoked   INTEGER NOT NULL DEFAULT 0,
+    last_used_at TEXT,
+    expires_at   TEXT,
+    created_at   TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
 );
 
 CREATE TABLE audit_logs (
-    id          UUID PRIMARY KEY,
-    user_id     UUID REFERENCES users(id),
-    cluster_id  UUID REFERENCES clusters(id),
-    command     TEXT NOT NULL,
-    status      VARCHAR(50),
-    duration_ms INTEGER,
-    created_at  TIMESTAMP DEFAULT NOW()
+    id            TEXT PRIMARY KEY,
+    user_id       TEXT REFERENCES users(id) ON DELETE SET NULL,
+    user_email    TEXT NOT NULL,
+    cluster_name  TEXT NOT NULL,
+    cluster_id    TEXT REFERENCES clusters(id) ON DELETE SET NULL,
+    command       TEXT NOT NULL,
+    namespace     TEXT,
+    status        TEXT NOT NULL,
+    exit_code     INTEGER,
+    duration_ms   INTEGER,
+    error_message TEXT,
+    client_ip     TEXT,
+    created_at    TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+);
+
+CREATE TABLE refresh_tokens (
+    id         TEXT PRIMARY KEY,
+    user_id    TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    token_hash TEXT NOT NULL,
+    expires_at TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
 );
 ```
+
+Note: the old `roles`, `permissions`, and `user_roles` tables are dropped on
+migration. RBAC is enforced from the policy file (`rbac.policy_file`), not the DB.
