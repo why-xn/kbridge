@@ -11,10 +11,8 @@ import (
 	"net/http"
 	"net/url"
 	"os"
-	"os/signal"
 	"strconv"
 	"strings"
-	"syscall"
 
 	"github.com/spf13/viper"
 	"github.com/why-xn/kbridge/internal/execframe"
@@ -200,7 +198,7 @@ func runExecInteractive(centralURL, cluster, token string, tgt execTarget, insec
 		}
 	}
 	stopSig := make(chan os.Signal, 1)
-	signal.Notify(stopSig, syscall.SIGTERM, syscall.SIGHUP)
+	notifyStopSignals(stopSig)
 	go func() {
 		<-stopSig
 		if restore != nil {
@@ -229,7 +227,7 @@ func runExecInteractive(centralURL, cluster, token string, tgt execTarget, insec
 	// SIGWINCH -> RESIZE frames
 	if isTTY {
 		winch := make(chan os.Signal, 1)
-		signal.Notify(winch, syscall.SIGWINCH)
+		notifyWinchSignals(winch)
 		go func() {
 			for range winch {
 				if w, h, err := term.GetSize(stdinFd); err == nil {
