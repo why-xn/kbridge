@@ -323,6 +323,7 @@ cluster, command, result, and duration. Query via `kb admin audit` or
 | [API reference](docs/api.md) | All HTTP endpoints |
 | [RBAC](docs/rbac.md) | Policy file format and examples |
 | [Admin guide](docs/admin.md) | Users, agent tokens, and audit logs |
+| [Security hardening](docs/security.md) | Post-install checklist, two-layer authz, least-privilege agent RBAC |
 
 ## License
 

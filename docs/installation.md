@@ -73,4 +73,6 @@ kb login                          # authenticate
 kb clusters list                  # list registered clusters
 ```
 
-For production deployments, see [Production Install](production-install.md).
+For production deployments, see [Production Install](production-install.md). Before
+exposing the central service to users, work through the
+[Security Hardening Guide](security.md).
