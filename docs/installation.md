@@ -72,3 +72,5 @@ curl http://localhost:8080/health      # {"status":"healthy"}
 kb login                          # authenticate
 kb clusters list                  # list registered clusters
 ```
+
+For production deployments, see [Production Install](production-install.md).
