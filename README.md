@@ -8,7 +8,7 @@
 A lightweight, secure CLI tool for managing and accessing multiple Kubernetes clusters through a central gateway — without distributing kubeconfig files, opening inbound firewall rules, or requiring VPN access.
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/why-xn/kbridge/main/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/why-xn/kbridge/master/install.sh | sh
 ```
 
 ## Problem

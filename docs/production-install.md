@@ -41,7 +41,7 @@ kubectl create secret generic kbridge-central-secrets \
 ## 3. Install the Central Service
 
 ```bash
-helm install kbridge-central oci://ghcr.io/why-xn/charts/central \
+helm install kbridge-central oci://ghcr.io/why-xn/charts/kbridge-central \
   --version 1.0.0 \
   --set auth.existingSecret=kbridge-central-secrets \
   --set auth.adminEmail=admin@example.com \
@@ -211,7 +211,7 @@ at `/etc/kbridge-token/token`, passing it via `KBRIDGE_AGENT_TOKEN_FILE`.
 
 ```bash
 # Still in the target cluster context
-helm install kbridge-agent oci://ghcr.io/why-xn/charts/agent \
+helm install kbridge-agent oci://ghcr.io/why-xn/charts/kbridge-agent \
   --version 1.0.0 \
   --set central.url=<EXTERNAL-IP>:9090 \
   --set central.existingSecret=kbridge-agent-secrets \

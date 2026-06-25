@@ -29,7 +29,7 @@ kubectl cp "${POD}:/data/backup.db" ./kbridge-backup-$(date +%Y%m%d).db
 
 ### Restore
 
-Restoring replaces the live file, so a brief outtime is required:
+Restoring replaces the live file, so a brief downtime is required:
 
 ```bash
 # 1. Scale central to zero to close all DB connections

@@ -14,7 +14,7 @@ service:
 auth:
   jwtSecret: "change-me-in-production-at-least-32-chars"
   tokenPepper: ""        # HMAC key for agent tokens; empty falls back to jwtSecret
-  accessTokenExpiry: 24h
+  accessTokenExpiry: 1h
   refreshTokenExpiry: 168h
   adminEmail: "admin@kbridge.local"
   adminPassword: "change-me"

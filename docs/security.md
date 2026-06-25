@@ -313,8 +313,8 @@ openssl rand -hex 32
 
 ### Short-lived access tokens with transparent refresh
 
-Access tokens expire after **1 hour** (the compiled default; the Helm chart sets
-24 h by default — tighten with `auth.accessTokenExpiry` for higher-security
+Access tokens expire after **1 hour** (both the compiled default and the Helm
+chart default — tighten with `auth.accessTokenExpiry` for higher-security
 environments). The CLI refreshes tokens transparently in the background; users
 are not prompted to log in until the refresh token expires. Running `kb logout`
 invalidates the refresh token on the server immediately — subsequent refresh

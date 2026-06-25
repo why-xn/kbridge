@@ -1,6 +1,6 @@
 #!/bin/sh
 # kbridge CLI installer. Usage:
-#   curl -fsSL https://raw.githubusercontent.com/why-xn/kbridge/main/install.sh | sh
+#   curl -fsSL https://raw.githubusercontent.com/why-xn/kbridge/master/install.sh | sh
 #   KBRIDGE_VERSION=v1.0.0 KBRIDGE_INSTALL_DIR=~/.local/bin sh install.sh
 set -eu
 
@@ -27,7 +27,8 @@ fi
 
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
-archive="kb_${version}_${os}_${arch}.tar.gz"
+ver="${version#v}"
+archive="kb_${ver}_${os}_${arch}.tar.gz"
 base="https://github.com/${REPO}/releases/download/${version}"
 
 echo "Downloading ${archive} ..."

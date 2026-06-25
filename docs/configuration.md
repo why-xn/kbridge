@@ -18,7 +18,7 @@ database:
 auth:
   jwt_secret: "..."        # REQUIRED; use a long random value in production
   token_pepper: ""         # HMAC key for agent tokens at rest; empty = reuse jwt_secret
-  access_token_expiry: 24h
+  access_token_expiry: 1h
   refresh_token_expiry: 168h
   admin_email: admin@kbridge.local    # seeded on first start if set
   admin_password: changeme

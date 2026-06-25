@@ -9,27 +9,27 @@ on user machines.
 ### One-liner installer (Linux / macOS)
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/why-xn/kbridge/main/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/why-xn/kbridge/master/install.sh | sh
 ```
 
 Or with `wget`:
 
 ```bash
-wget -qO- https://raw.githubusercontent.com/why-xn/kbridge/main/install.sh | sh
+wget -qO- https://raw.githubusercontent.com/why-xn/kbridge/master/install.sh | sh
 ```
 
 The installer auto-detects the latest release. To pin a version:
 
 ```bash
 KBRIDGE_VERSION=v1.0.0 curl -fsSL \
-  https://raw.githubusercontent.com/why-xn/kbridge/main/install.sh | sh
+  https://raw.githubusercontent.com/why-xn/kbridge/master/install.sh | sh
 ```
 
 To install into a custom directory (default is `/usr/local/bin`):
 
 ```bash
 KBRIDGE_INSTALL_DIR=~/.local/bin curl -fsSL \
-  https://raw.githubusercontent.com/why-xn/kbridge/main/install.sh | sh
+  https://raw.githubusercontent.com/why-xn/kbridge/master/install.sh | sh
 ```
 
 The installer downloads `kb_<version>_<os>_<arch>.tar.gz` and a `checksums.txt`

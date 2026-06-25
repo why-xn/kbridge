@@ -40,7 +40,7 @@ a fix before public disclosure.
 
 ### Authentication and secrets
 
-- Users authenticate with JWT access tokens (HS256, 1 h TTY) plus opaque
+- Users authenticate with JWT access tokens (HS256, 1 h TTL) plus opaque
   refresh tokens. The CLI transparently rotates expired tokens.
 - `jwt_secret` and `token_pepper` must be at least 32 characters; the server
   refuses to start with a shorter value (fail-closed).

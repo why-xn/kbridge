@@ -13,7 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Multi-cluster kubectl proxy** — central service + per-cluster agents connected via outbound gRPC; no inbound firewall rules or VPN required.
 - **CLI (`kb`)** — kubectl-compatible command-line tool; anything that isn't a management command is forwarded to the selected cluster. `kbridge` remains as a back-compat symlink.
-- **JWT authentication** — HS256 access tokens (1 h TTY) with opaque refresh tokens; the CLI transparently refreshes expired tokens so interactive sessions are uninterrupted.
+- **JWT authentication** — HS256 access tokens (1 h TTL) with opaque refresh tokens; the CLI transparently refreshes expired tokens so interactive sessions are uninterrupted.
 - **Login rate limiting** — failed login attempts are rate-limited per IP to slow brute-force attacks; the server fails closed (startup aborted) if rate-limiter bounds cannot be satisfied.
 - **Declarative file-based RBAC** — hot-reloaded policy file (ArgoCD-style) with roles, wildcarded rules (cluster / namespace / resource / verb), and user bindings by JWT email.
 - **Audit logging** — every command (allowed, denied, failed, or timed out) recorded with user, cluster, command, result, and duration; queryable via `kb admin audit` and `GET /api/v1/admin/audit`.
