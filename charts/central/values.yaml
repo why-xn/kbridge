@@ -1,8 +1,8 @@
 replicaCount: 1
 
 image:
-  repository: kbridge-central
-  tag: latest
+  repository: ghcr.io/why-xn/kbridge-central
+  tag: v1.0.0
   pullPolicy: IfNotPresent
 
 service:
@@ -70,6 +70,12 @@ ingress:
   className: ""
   host: ""
   annotations: {}
+  tls: []
+  # tls:
+  #   - secretName: kbridge-central-tls
+  #     hosts: [ central.example.com ]
+  # annotations:
+  #   cert-manager.io/cluster-issuer: letsencrypt-prod
 
 streams:
   maxConcurrent: 50
