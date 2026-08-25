@@ -4,7 +4,7 @@
 
 | Version       | Supported |
 |---------------|-----------|
-| 0.1.x-alpha   | Yes       |
+| 0.2.x-alpha   | Yes       |
 
 kbridge is in alpha. Only the newest pre-release receives security fixes — there
 is no patch backporting to earlier alphas. Please upgrade to the latest

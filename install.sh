@@ -1,7 +1,7 @@
 #!/bin/sh
 # kbridge CLI installer. Usage:
 #   curl -fsSL https://raw.githubusercontent.com/why-xn/kbridge/master/install.sh | sh
-#   KBRIDGE_VERSION=v0.1.0-alpha.1 KBRIDGE_INSTALL_DIR=~/.local/bin sh install.sh
+#   KBRIDGE_VERSION=v0.2.0-alpha.1 KBRIDGE_INSTALL_DIR=~/.local/bin sh install.sh
 set -eu
 
 REPO="why-xn/kbridge"

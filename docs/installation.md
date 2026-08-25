@@ -23,7 +23,7 @@ newest pre-release (with a warning) when no stable release exists — which is t
 case while kbridge is in alpha. To pin a version:
 
 ```bash
-KBRIDGE_VERSION=v0.1.0-alpha.1 curl -fsSL \
+KBRIDGE_VERSION=v0.2.0-alpha.1 curl -fsSL \
   https://raw.githubusercontent.com/why-xn/kbridge/master/install.sh | sh
 ```
 
@@ -73,7 +73,7 @@ Multi-stage, CGO-free images (the agent image bundles `kubectl`):
 
 ```bash
 make docker                                  # builds all three images
-make docker IMAGE_PREFIX=ghcr.io/acme VERSION=v0.1.0-alpha.1
+make docker IMAGE_PREFIX=ghcr.io/acme VERSION=v0.2.0-alpha.1
 ```
 
 Images produced (with defaults): `kbridge-control-plane:latest`,

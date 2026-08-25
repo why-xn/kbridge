@@ -1,6 +1,6 @@
 .PHONY: build build-cli build-control-plane build-agent clean proto test test-e2e e2e-setup e2e-teardown kind-up kind-down certs docker docker-control-plane docker-agent docker-cli
 
-# Container image settings (override on the command line, e.g. IMAGE_PREFIX=ghcr.io/acme VERSION=v0.1.0-alpha.1)
+# Container image settings (override on the command line, e.g. IMAGE_PREFIX=ghcr.io/acme VERSION=v0.2.0-alpha.1)
 IMAGE_PREFIX ?= kbridge
 
 # Build-time version stamping

@@ -71,7 +71,7 @@ EOF
 # Back up first (see above), then:
 helm upgrade kbridge-control-plane ./charts/control-plane \
   --reuse-values \
-  --set image.tag=v0.1.0-alpha.2
+  --set image.tag=v0.2.0-alpha.2
 ```
 
 - Schema migrations run automatically on startup via `createSchema` in
