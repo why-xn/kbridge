@@ -343,6 +343,12 @@ frees the bare `version` word for kubectl. Implemented as an arg rewrite
 - Mutual TLS (client certificates) — currently server-authenticated TLS only.
 - Prometheus metrics endpoint.
 - Port-forward idle timeout (sessions hold the tunnel indefinitely until Ctrl-C).
+- MCP server — expose kbridge's cluster operations (cluster list, kubectl exec,
+  logs) as Model Context Protocol tools, so AI assistants reach clusters through
+  the same JWT auth, RBAC policy, and audit log as human users instead of being
+  handed a kubeconfig. Runs as a mode of the control plane, reusing
+  `authorizeExec` (`internal/controlplane/http.go`) and `AuditRecorder`
+  rather than adding a second authorization path.
 
 ## Phase 8: Interactive exec (`kb exec -it`) — DONE
 
