@@ -19,8 +19,8 @@ import (
 )
 
 var (
-	centralURL  = flag.String("central-url", "http://localhost:8080", "Central service URL")
-	grpcAddr    = flag.String("grpc-addr", "localhost:9090", "Central gRPC address for agents")
+	controlPlaneURL  = flag.String("control-plane-url", "http://localhost:8080", "ControlPlane service URL")
+	grpcAddr    = flag.String("grpc-addr", "localhost:9090", "ControlPlane gRPC address for agents")
 	clusterName = flag.String("cluster-name", "kbridge-e2e-test", "Kind cluster name")
 	binDir      = flag.String("bin-dir", "../../bin", "Directory containing binaries")
 )
@@ -41,7 +41,7 @@ func loginForTests() string {
 	})
 
 	client := &http.Client{Timeout: 10 * time.Second}
-	resp, err := client.Post(fmt.Sprintf("%s/auth/login", *centralURL), "application/json", bytes.NewReader(body))
+	resp, err := client.Post(fmt.Sprintf("%s/auth/login", *controlPlaneURL), "application/json", bytes.NewReader(body))
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to login for tests: %v\n", err)
 		os.Exit(1)
@@ -163,7 +163,7 @@ func httpPostAuth(t *testing.T, url, token string, payload any) ([]byte, int) {
 
 func loginAs(t *testing.T, email, password string) string {
 	t.Helper()
-	body, code := httpPostAuth(t, fmt.Sprintf("%s/auth/login", *centralURL), "",
+	body, code := httpPostAuth(t, fmt.Sprintf("%s/auth/login", *controlPlaneURL), "",
 		map[string]string{"email": email, "password": password})
 	if code != http.StatusOK {
 		t.Fatalf("login as %s failed: %d %s", email, code, string(body))
@@ -182,14 +182,14 @@ func loginAs(t *testing.T, email, password string) string {
 // read-only. So a created user can read but not write.
 func TestRBACNonAdminRoleEnforced(t *testing.T) {
 	// Admin creates a plain user (no binding -> default viewer).
-	_, code := httpPostAuth(t, fmt.Sprintf("%s/api/v1/admin/users", *centralURL), authToken,
+	_, code := httpPostAuth(t, fmt.Sprintf("%s/api/v1/admin/users", *controlPlaneURL), authToken,
 		map[string]string{"email": "viewer@e2e.test", "name": "Viewer", "password": "viewer-password"})
 	if code != http.StatusCreated && code != http.StatusConflict {
 		t.Fatalf("create viewer user: unexpected status %d", code)
 	}
 
 	viewerToken := loginAs(t, "viewer@e2e.test", "viewer-password")
-	execURL := fmt.Sprintf("%s/api/v1/clusters/%s/exec", *centralURL, *clusterName)
+	execURL := fmt.Sprintf("%s/api/v1/clusters/%s/exec", *controlPlaneURL, *clusterName)
 
 	// Read (get) is allowed for the viewer role.
 	body, code := httpPostAuth(t, execURL, viewerToken,
@@ -215,7 +215,7 @@ func TestRBACNonAdminRoleEnforced(t *testing.T) {
 
 // Test: command executions are recorded in the audit log and queryable by admin.
 func TestAuditLogRecorded(t *testing.T) {
-	execURL := fmt.Sprintf("%s/api/v1/clusters/%s/exec", *centralURL, *clusterName)
+	execURL := fmt.Sprintf("%s/api/v1/clusters/%s/exec", *controlPlaneURL, *clusterName)
 
 	// Admin runs a read; it should be audited as a success.
 	_, code := httpPostAuth(t, execURL, authToken,
@@ -224,7 +224,7 @@ func TestAuditLogRecorded(t *testing.T) {
 		t.Fatalf("admin exec: want 200, got %d", code)
 	}
 
-	body, code := httpGetAuth(t, fmt.Sprintf("%s/api/v1/admin/audit?cluster=%s", *centralURL, *clusterName), authToken)
+	body, code := httpGetAuth(t, fmt.Sprintf("%s/api/v1/admin/audit?cluster=%s", *controlPlaneURL, *clusterName), authToken)
 	if code != http.StatusOK {
 		t.Fatalf("audit query: want 200, got %d", code)
 	}
@@ -256,9 +256,9 @@ func TestAuditLogRecorded(t *testing.T) {
 	}
 }
 
-// Test: Central service health check
-func TestCentralServiceHealth(t *testing.T) {
-	url := fmt.Sprintf("%s/health", *centralURL)
+// Test: ControlPlane service health check
+func TestControlPlaneServiceHealth(t *testing.T) {
+	url := fmt.Sprintf("%s/health", *controlPlaneURL)
 	body, statusCode := httpGet(t, url)
 
 	if statusCode != http.StatusOK {
@@ -275,9 +275,9 @@ func TestCentralServiceHealth(t *testing.T) {
 	}
 }
 
-// Test: Agent registers with central
+// Test: Agent registers with control plane
 func TestAgentRegistration(t *testing.T) {
-	url := fmt.Sprintf("%s/api/v1/clusters", *centralURL)
+	url := fmt.Sprintf("%s/api/v1/clusters", *controlPlaneURL)
 	body, statusCode := httpGetAuth(t, url, authToken)
 
 	if statusCode != http.StatusOK {
@@ -317,7 +317,7 @@ func TestAgentHeartbeat(t *testing.T) {
 	// Wait a bit to allow heartbeat to occur
 	time.Sleep(5 * time.Second)
 
-	url := fmt.Sprintf("%s/api/v1/clusters", *centralURL)
+	url := fmt.Sprintf("%s/api/v1/clusters", *controlPlaneURL)
 	body, statusCode := httpGetAuth(t, url, authToken)
 
 	if statusCode != http.StatusOK {

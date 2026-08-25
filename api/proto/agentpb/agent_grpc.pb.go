@@ -30,24 +30,24 @@ const (
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 //
-// AgentService defines the gRPC service for agent-central communication.
-// Central service implements this service, agents connect as clients.
+// AgentService defines the gRPC service for agent-control-plane communication.
+// ControlPlane service implements this service, agents connect as clients.
 type AgentServiceClient interface {
-	// Register is called by the agent when it first connects to central.
+	// Register is called by the agent when it first connects to control plane.
 	// It provides cluster metadata and authenticates with an agent token.
 	Register(ctx context.Context, in *RegisterRequest, opts ...grpc.CallOption) (*RegisterResponse, error)
 	// Heartbeat is called periodically by the agent to maintain connection
 	// and report its current status.
 	Heartbeat(ctx context.Context, in *HeartbeatRequest, opts ...grpc.CallOption) (*HeartbeatResponse, error)
-	// OpenStream is opened once by the agent after Register. Central pushes
+	// OpenStream is opened once by the agent after Register. ControlPlane pushes
 	// streaming command/control messages down it; the agent streams output back
 	// up. Sessions are multiplexed by session_id.
-	OpenStream(ctx context.Context, opts ...grpc.CallOption) (grpc.BidiStreamingClient[AgentStreamMessage, CentralStreamMessage], error)
+	OpenStream(ctx context.Context, opts ...grpc.CallOption) (grpc.BidiStreamingClient[AgentStreamMessage, ControlPlaneStreamMessage], error)
 	// GetPendingCommands is called by the agent to poll for commands to execute.
 	// Returns any pending commands for this agent.
 	GetPendingCommands(ctx context.Context, in *GetPendingCommandsRequest, opts ...grpc.CallOption) (*GetPendingCommandsResponse, error)
 	// SubmitCommandResult is called by the agent after executing a command.
-	// Submits the command output and exit code back to central.
+	// Submits the command output and exit code back to control plane.
 	SubmitCommandResult(ctx context.Context, in *SubmitCommandResultRequest, opts ...grpc.CallOption) (*SubmitCommandResultResponse, error)
 }
 
@@ -79,18 +79,18 @@ func (c *agentServiceClient) Heartbeat(ctx context.Context, in *HeartbeatRequest
 	return out, nil
 }
 
-func (c *agentServiceClient) OpenStream(ctx context.Context, opts ...grpc.CallOption) (grpc.BidiStreamingClient[AgentStreamMessage, CentralStreamMessage], error) {
+func (c *agentServiceClient) OpenStream(ctx context.Context, opts ...grpc.CallOption) (grpc.BidiStreamingClient[AgentStreamMessage, ControlPlaneStreamMessage], error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	stream, err := c.cc.NewStream(ctx, &AgentService_ServiceDesc.Streams[0], AgentService_OpenStream_FullMethodName, cOpts...)
 	if err != nil {
 		return nil, err
 	}
-	x := &grpc.GenericClientStream[AgentStreamMessage, CentralStreamMessage]{ClientStream: stream}
+	x := &grpc.GenericClientStream[AgentStreamMessage, ControlPlaneStreamMessage]{ClientStream: stream}
 	return x, nil
 }
 
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
-type AgentService_OpenStreamClient = grpc.BidiStreamingClient[AgentStreamMessage, CentralStreamMessage]
+type AgentService_OpenStreamClient = grpc.BidiStreamingClient[AgentStreamMessage, ControlPlaneStreamMessage]
 
 func (c *agentServiceClient) GetPendingCommands(ctx context.Context, in *GetPendingCommandsRequest, opts ...grpc.CallOption) (*GetPendingCommandsResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
@@ -116,24 +116,24 @@ func (c *agentServiceClient) SubmitCommandResult(ctx context.Context, in *Submit
 // All implementations must embed UnimplementedAgentServiceServer
 // for forward compatibility.
 //
-// AgentService defines the gRPC service for agent-central communication.
-// Central service implements this service, agents connect as clients.
+// AgentService defines the gRPC service for agent-control-plane communication.
+// ControlPlane service implements this service, agents connect as clients.
 type AgentServiceServer interface {
-	// Register is called by the agent when it first connects to central.
+	// Register is called by the agent when it first connects to control plane.
 	// It provides cluster metadata and authenticates with an agent token.
 	Register(context.Context, *RegisterRequest) (*RegisterResponse, error)
 	// Heartbeat is called periodically by the agent to maintain connection
 	// and report its current status.
 	Heartbeat(context.Context, *HeartbeatRequest) (*HeartbeatResponse, error)
-	// OpenStream is opened once by the agent after Register. Central pushes
+	// OpenStream is opened once by the agent after Register. ControlPlane pushes
 	// streaming command/control messages down it; the agent streams output back
 	// up. Sessions are multiplexed by session_id.
-	OpenStream(grpc.BidiStreamingServer[AgentStreamMessage, CentralStreamMessage]) error
+	OpenStream(grpc.BidiStreamingServer[AgentStreamMessage, ControlPlaneStreamMessage]) error
 	// GetPendingCommands is called by the agent to poll for commands to execute.
 	// Returns any pending commands for this agent.
 	GetPendingCommands(context.Context, *GetPendingCommandsRequest) (*GetPendingCommandsResponse, error)
 	// SubmitCommandResult is called by the agent after executing a command.
-	// Submits the command output and exit code back to central.
+	// Submits the command output and exit code back to control plane.
 	SubmitCommandResult(context.Context, *SubmitCommandResultRequest) (*SubmitCommandResultResponse, error)
 	mustEmbedUnimplementedAgentServiceServer()
 }
@@ -151,7 +151,7 @@ func (UnimplementedAgentServiceServer) Register(context.Context, *RegisterReques
 func (UnimplementedAgentServiceServer) Heartbeat(context.Context, *HeartbeatRequest) (*HeartbeatResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method Heartbeat not implemented")
 }
-func (UnimplementedAgentServiceServer) OpenStream(grpc.BidiStreamingServer[AgentStreamMessage, CentralStreamMessage]) error {
+func (UnimplementedAgentServiceServer) OpenStream(grpc.BidiStreamingServer[AgentStreamMessage, ControlPlaneStreamMessage]) error {
 	return status.Error(codes.Unimplemented, "method OpenStream not implemented")
 }
 func (UnimplementedAgentServiceServer) GetPendingCommands(context.Context, *GetPendingCommandsRequest) (*GetPendingCommandsResponse, error) {
@@ -218,11 +218,11 @@ func _AgentService_Heartbeat_Handler(srv interface{}, ctx context.Context, dec f
 }
 
 func _AgentService_OpenStream_Handler(srv interface{}, stream grpc.ServerStream) error {
-	return srv.(AgentServiceServer).OpenStream(&grpc.GenericServerStream[AgentStreamMessage, CentralStreamMessage]{ServerStream: stream})
+	return srv.(AgentServiceServer).OpenStream(&grpc.GenericServerStream[AgentStreamMessage, ControlPlaneStreamMessage]{ServerStream: stream})
 }
 
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
-type AgentService_OpenStreamServer = grpc.BidiStreamingServer[AgentStreamMessage, CentralStreamMessage]
+type AgentService_OpenStreamServer = grpc.BidiStreamingServer[AgentStreamMessage, ControlPlaneStreamMessage]
 
 func _AgentService_GetPendingCommands_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(GetPendingCommandsRequest)

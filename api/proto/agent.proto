@@ -4,10 +4,10 @@ package kbridge.agent.v1;
 
 option go_package = "github.com/why-xn/kbridge/api/proto/agentpb";
 
-// AgentService defines the gRPC service for agent-central communication.
-// Central service implements this service, agents connect as clients.
+// AgentService defines the gRPC service for agent-control-plane communication.
+// ControlPlane service implements this service, agents connect as clients.
 service AgentService {
-  // Register is called by the agent when it first connects to central.
+  // Register is called by the agent when it first connects to control plane.
   // It provides cluster metadata and authenticates with an agent token.
   rpc Register(RegisterRequest) returns (RegisterResponse);
 
@@ -15,21 +15,21 @@ service AgentService {
   // and report its current status.
   rpc Heartbeat(HeartbeatRequest) returns (HeartbeatResponse);
 
-  // OpenStream is opened once by the agent after Register. Central pushes
+  // OpenStream is opened once by the agent after Register. ControlPlane pushes
   // streaming command/control messages down it; the agent streams output back
   // up. Sessions are multiplexed by session_id.
-  rpc OpenStream(stream AgentStreamMessage) returns (stream CentralStreamMessage);
+  rpc OpenStream(stream AgentStreamMessage) returns (stream ControlPlaneStreamMessage);
 
   // GetPendingCommands is called by the agent to poll for commands to execute.
   // Returns any pending commands for this agent.
   rpc GetPendingCommands(GetPendingCommandsRequest) returns (GetPendingCommandsResponse);
 
   // SubmitCommandResult is called by the agent after executing a command.
-  // Submits the command output and exit code back to central.
+  // Submits the command output and exit code back to control plane.
   rpc SubmitCommandResult(SubmitCommandResultRequest) returns (SubmitCommandResultResponse);
 }
 
-// RegisterRequest is sent by the agent to register with central service.
+// RegisterRequest is sent by the agent to register with control plane.
 message RegisterRequest {
   // agent_token is the pre-shared token used to authenticate the agent.
   string agent_token = 1;
@@ -45,7 +45,7 @@ message RegisterResponse {
   // success indicates whether registration was successful.
   bool success = 1;
 
-  // agent_id is a unique identifier assigned to this agent by central.
+  // agent_id is a unique identifier assigned to this agent by control plane.
   // Used in subsequent Heartbeat and ExecuteCommand calls.
   string agent_id = 2;
 
@@ -175,7 +175,7 @@ message SubmitCommandResultResponse {
   bool success = 1;
 }
 
-message CentralStreamMessage {
+message ControlPlaneStreamMessage {
   oneof msg {
     StartStream      start    = 1;
     CancelStream     cancel   = 2;

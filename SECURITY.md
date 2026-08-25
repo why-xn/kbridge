@@ -35,7 +35,7 @@ a fix before public disclosure.
 ### Transport security
 
 - **Server-authenticated TLS** is supported on both the HTTP REST API and the
-  agent↔central gRPC channel. Enable it in `central.yaml` under `tls:`.
+  agent↔control plane gRPC channel. Enable it in `control-plane.yaml` under `tls:`.
 - **mTLS** (mutual TLS for agents) is planned but currently deferred. The
   channel is protected by server-auth TLS only.
 

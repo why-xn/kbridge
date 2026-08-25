@@ -20,7 +20,7 @@ import (
 // tests. The harness rate limiter is configured at burst=5; we attempt up to 15
 // times to be safe against transient scheduling delays.
 func TestLoginRateLimited(t *testing.T) {
-	url := *centralURL + "/auth/login"
+	url := *controlPlaneURL + "/auth/login"
 	got429 := false
 	for i := 0; i < 15; i++ {
 		_, code := doJSON(t, http.MethodPost, url, "", map[string]string{
@@ -37,18 +37,18 @@ func TestLoginRateLimited(t *testing.T) {
 	}
 }
 
-// centralBinaryPath returns the path to the pre-built kbridge-central binary.
+// controlPlaneBinaryPath returns the path to the pre-built kbridge-control-plane binary.
 // It prefers *binDir (the flag used by the harness), falling back to the
 // project-root relative bin/ directory.
-func centralBinaryPath() string {
+func controlPlaneBinaryPath() string {
 	if *binDir != "" {
-		p := filepath.Join(*binDir, "kbridge-central")
+		p := filepath.Join(*binDir, "kbridge-control-plane")
 		if _, err := os.Stat(p); err == nil {
 			return p
 		}
 	}
 	// Walk up to the project root from tests/e2e/
-	p := filepath.Join("..", "..", "bin", "kbridge-central")
+	p := filepath.Join("..", "..", "bin", "kbridge-control-plane")
 	if abs, err := filepath.Abs(p); err == nil {
 		return abs
 	}
@@ -66,8 +66,8 @@ func freePort(t *testing.T) int {
 	return l.Addr().(*net.TCPAddr).Port
 }
 
-// writeCentralConfig writes a minimal central.yaml to dir and returns its path.
-func writeCentralConfig(t *testing.T, dir string, httpPort, grpcPort int, dbPath, jwtSecret, jwtSecretFile string) string {
+// writeControlPlaneConfig writes a minimal control-plane.yaml to dir and returns its path.
+func writeControlPlaneConfig(t *testing.T, dir string, httpPort, grpcPort int, dbPath, jwtSecret, jwtSecretFile string) string {
 	t.Helper()
 	secretLine := ""
 	switch {
@@ -95,7 +95,7 @@ audit:
   cleanup_interval: 24h
 `, httpPort, grpcPort, dbPath, secretLine)
 
-	cfgPath := filepath.Join(dir, "central.yaml")
+	cfgPath := filepath.Join(dir, "control-plane.yaml")
 	if err := os.WriteFile(cfgPath, []byte(cfg), 0o600); err != nil {
 		t.Fatalf("write config: %v", err)
 	}
@@ -119,13 +119,13 @@ func waitForHealth(url string, timeout time.Duration) error {
 	return fmt.Errorf("health endpoint %s did not become ready within %s", url, timeout)
 }
 
-// TestCentralSecretFromFile starts a real kbridge-central subprocess with
+// TestControlPlaneSecretFromFile starts a real kbridge-control-plane subprocess with
 // KBRIDGE_JWT_SECRET_FILE pointing at a temp file containing a valid secret,
 // and asserts that /health responds 200. No Kind cluster is needed.
-func TestCentralSecretFromFile(t *testing.T) {
-	binary := centralBinaryPath()
+func TestControlPlaneSecretFromFile(t *testing.T) {
+	binary := controlPlaneBinaryPath()
 	if _, err := os.Stat(binary); err != nil {
-		t.Skipf("kbridge-central binary not found at %s; run make build first", binary)
+		t.Skipf("kbridge-control-plane binary not found at %s; run make build first", binary)
 	}
 
 	dir := t.TempDir()
@@ -142,7 +142,7 @@ func TestCentralSecretFromFile(t *testing.T) {
 	dbPath := filepath.Join(dir, "test.db")
 
 	// Config has jwt_secret intentionally left empty; the secret comes from the file env var.
-	cfgPath := writeCentralConfig(t, dir, httpPort, grpcPort, dbPath, "", "")
+	cfgPath := writeControlPlaneConfig(t, dir, httpPort, grpcPort, dbPath, "", "")
 	// Overwrite: write config WITHOUT a jwt_secret so the env var is the only source.
 	cfg := fmt.Sprintf(`server:
   http_port: %d
@@ -168,7 +168,7 @@ audit:
 	cmd.Env = append(os.Environ(), "KBRIDGE_JWT_SECRET_FILE="+secretFile)
 
 	if err := cmd.Start(); err != nil {
-		t.Fatalf("start central: %v", err)
+		t.Fatalf("start control plane: %v", err)
 	}
 	t.Cleanup(func() {
 		_ = cmd.Process.Kill()
@@ -181,13 +181,13 @@ audit:
 	}
 }
 
-// TestCentralFailClosedShortSecret starts a kbridge-central subprocess with a
+// TestControlPlaneFailClosedShortSecret starts a kbridge-control-plane subprocess with a
 // too-short jwt_secret and asserts that the process exits with a non-zero code,
 // i.e. the service refuses to start with a weak secret.
-func TestCentralFailClosedShortSecret(t *testing.T) {
-	binary := centralBinaryPath()
+func TestControlPlaneFailClosedShortSecret(t *testing.T) {
+	binary := controlPlaneBinaryPath()
 	if _, err := os.Stat(binary); err != nil {
-		t.Skipf("kbridge-central binary not found at %s; run make build first", binary)
+		t.Skipf("kbridge-control-plane binary not found at %s; run make build first", binary)
 	}
 
 	dir := t.TempDir()
@@ -197,7 +197,7 @@ func TestCentralFailClosedShortSecret(t *testing.T) {
 	dbPath := filepath.Join(dir, "test.db")
 
 	// "short" is only 5 characters — well below the required 32.
-	cfgPath := writeCentralConfig(t, dir, httpPort, grpcPort, dbPath, "short", "")
+	cfgPath := writeControlPlaneConfig(t, dir, httpPort, grpcPort, dbPath, "short", "")
 
 	cmd := exec.Command(binary, "--config", cfgPath)
 	// Ensure no env var overrides sneak in from the harness environment.
@@ -215,7 +215,7 @@ func TestCentralFailClosedShortSecret(t *testing.T) {
 
 	err := cmd.Run()
 	if err == nil {
-		t.Fatal("expected kbridge-central to exit non-zero with a too-short jwt_secret, but it exited 0")
+		t.Fatal("expected kbridge-control-plane to exit non-zero with a too-short jwt_secret, but it exited 0")
 	}
 	// Any non-zero exit (exit error or killed) is the correct fail-closed behaviour.
 }

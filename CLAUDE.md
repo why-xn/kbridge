@@ -2,20 +2,20 @@
 
 ## Project Structure
 
-Three-component architecture: CLI, Central Service, and Agent.
+Three-component architecture: CLI, Control Plane, and Agent.
 
 ```
-cmd/kb/               # CLI entry point (binary `kb`, `kbridge` symlink)
-cmd/central/          # Central service entry point
-cmd/agent/            # Agent entry point
-internal/cli/         # CLI commands (Cobra)
-internal/central/     # Central service (HTTP + gRPC servers)
-internal/agent/       # Agent (gRPC client, kubectl executor)
-api/proto/            # Protobuf definitions
-api/proto/agentpb/    # Generated gRPC code — do not edit by hand
-configs/              # Example YAML configs
-scripts/              # Build and test scripts
-tests/e2e/            # End-to-end tests (require Kind + Docker)
+cmd/kb/                 # CLI entry point (binary `kb`, `kbridge` symlink)
+cmd/controlplane/       # Control plane entry point
+cmd/agent/              # Agent entry point
+internal/cli/           # CLI commands (Cobra)
+internal/controlplane/  # Control plane (HTTP + gRPC servers)
+internal/agent/         # Agent (gRPC client, kubectl executor)
+api/proto/              # Protobuf definitions
+api/proto/agentpb/      # Generated gRPC code — do not edit by hand
+configs/                # Example YAML configs
+scripts/                # Build and test scripts
+tests/e2e/              # End-to-end tests (require Kind + Docker)
 ```
 
 ## Build & Test Commands
@@ -39,8 +39,8 @@ tests/e2e/            # End-to-end tests (require Kind + Docker)
 ## Tech Stack & Patterns
 
 - **CLI**: Cobra + Viper (`internal/cli/`)
-- **HTTP server**: Gin (`internal/central/http.go`)
-- **RPC**: gRPC + Protocol Buffers (`internal/central/grpc.go`, `internal/agent/agent.go`)
+- **HTTP server**: Gin (`internal/controlplane/http.go`)
+- **RPC**: gRPC + Protocol Buffers (`internal/controlplane/grpc.go`, `internal/agent/agent.go`)
 - **Config**: YAML files with environment variable overrides
 
 ### Config pattern

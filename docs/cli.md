@@ -1,6 +1,6 @@
 # CLI Reference
 
-The `kb` CLI talks to the central service over REST. Configuration lives in
+The `kb` CLI talks to the control plane over REST. Configuration lives in
 `~/.kbridge/config.yaml` (see [configuration](configuration.md)). The binary is
 also installed as `kbridge` (a symlink) for back-compat.
 
@@ -14,7 +14,7 @@ collide.
 ## Authentication
 
 ### `kb login`
-Prompts for the central URL (if unset), email, and password; stores the access
+Prompts for the control plane URL (if unset), email, and password; stores the access
 and refresh tokens.
 
 ```bash
@@ -27,7 +27,7 @@ Invalidates the refresh token on the server and clears the local token.
 ## Clusters
 
 ### `kb clusters list` (alias `ls`)
-Lists clusters registered with central and their status.
+Lists clusters registered with the control plane and their status.
 
 ```bash
 kb clusters list
@@ -43,7 +43,7 @@ kb clusters use dev-cluster
 ## Running commands
 
 ### `kb <args...>` (explicit: `kb kubectl …` / `kb k …`)
-Runs a kubectl command on the active cluster via central. Standard kubectl
+Runs a kubectl command on the active cluster via the control plane. Standard kubectl
 syntax and flags work; access is checked against the RBAC policy. No `kubectl`
 keyword is needed — it's the default for any non-management command.
 
@@ -79,7 +79,7 @@ kb exec -i <pod> -- sh -c "cat /etc/hosts"       # stdin, no TTY
 ```
 
 ### `kb port-forward <pod> [LOCAL:REMOTE ...]`
-Opens local TCP listeners that tunnel to the pod's ports through central. Each
+Opens local TCP listeners that tunnel to the pod's ports through the control plane. Each
 port spec can be `LOCAL:REMOTE` (fixed local port), bare `REMOTE` (local equals
 remote), or `:REMOTE` (OS-assigned random local port). Multiple ports can be
 forwarded in a single command. Any TCP-based protocol works (Postgres, Redis,
@@ -95,7 +95,7 @@ kb port-forward deploy/db 5432:5432 6379:6379    # multiple ports at once
 ```
 
 ### `kb status`
-Shows the current central URL, authenticated user, and active cluster.
+Shows the current control plane URL, authenticated user, and active cluster.
 
 ## Admin (requires the admin role)
 
@@ -120,7 +120,7 @@ kb admin users create --email ci@corp.com --name CI --password "$TOKEN"
 Manage the tokens agents use to register. Subcommands: `create`, `list`, `revoke`.
 
 ```bash
-# Generate a token for a cluster (printed once — set it as the agent's central.token)
+# Generate a token for a cluster (printed once — set it as the agent's control_plane.token)
 kb admin agent-tokens create --cluster prod-us-east --description "prod agent"
 kb admin agent-tokens create --cluster dev --expires-in-days 90
 

@@ -2,7 +2,7 @@
 
 kbridge authorization is **declarative**: a single YAML policy file defines roles
 and who they apply to. The file is pointed to by `rbac.policy_file` in
-`central.yaml` and is **hot-reloaded** (no restart needed) — see
+`control-plane.yaml` and is **hot-reloaded** (no restart needed) — see
 [Reloading](#reloading) below. When `rbac.policy_file` is empty, enforcement is
 disabled and every authenticated user is allowed.
 
@@ -89,16 +89,16 @@ gets developer access on dev/staging; everyone else falls back to read-only
 
 The policy is reloaded by two mechanisms, whichever fires first:
 
-- **File watch** — central watches the policy file's directory and reloads
+- **File watch** — control plane watches the policy file's directory and reloads
   automatically on change. Note this relies on filesystem change events
   (inotify), which some filesystems (e.g. 9p/NFS or WSL `/mnt/*` mounts) do not
   deliver reliably.
-- **SIGHUP** — sending `SIGHUP` to the central process reloads the policy on
+- **SIGHUP** — sending `SIGHUP` to the control plane process reloads the policy on
   demand. This always works, and is the recommended trigger in environments
   where the file watch may not fire:
 
   ```bash
-  kill -HUP "$(pidof kbridge-central)"
+  kill -HUP "$(pidof kbridge-control-plane)"
   ```
 
 A reload that fails to parse or validate is logged and the previous policy

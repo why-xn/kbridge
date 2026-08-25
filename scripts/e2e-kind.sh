@@ -5,7 +5,7 @@
 set -e
 
 CLUSTER_NAME="kbridge-e2e-test"
-CENTRAL_PORT="${CENTRAL_PORT:-8080}"
+CONTROL_PLANE_PORT="${CONTROL_PLANE_PORT:-8080}"
 GRPC_PORT="${GRPC_PORT:-9090}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
@@ -96,16 +96,16 @@ build_binaries() {
     log_info "Binaries built successfully."
 }
 
-start_central() {
-    log_info "Starting central service..."
+start_control_plane() {
+    log_info "Starting control plane..."
 
     mkdir -p "${LOG_DIR}"
     mkdir -p "${CONFIG_DIR}"
 
-    # Create central config
-    cat > "${CONFIG_DIR}/central.yaml" <<EOF
+    # Create control plane config
+    cat > "${CONFIG_DIR}/control-plane.yaml" <<EOF
 server:
-  http_port: ${CENTRAL_PORT}
+  http_port: ${CONTROL_PLANE_PORT}
   grpc_port: ${GRPC_PORT}
 database:
   driver: sqlite
@@ -150,41 +150,41 @@ EOF
 
     # Fail fast (with a clear message) if the port is already taken by something
     # else — otherwise the readiness probe below would latch onto the imposter.
-    if curl -fsS "http://localhost:${CENTRAL_PORT}/health" >/dev/null 2>&1; then
-        log_error "Port ${CENTRAL_PORT} is already serving HTTP — another process is using it."
-        log_error "Free it or re-run with: CENTRAL_PORT=<free-port> GRPC_PORT=<free-port> make test-e2e"
+    if curl -fsS "http://localhost:${CONTROL_PLANE_PORT}/health" >/dev/null 2>&1; then
+        log_error "Port ${CONTROL_PLANE_PORT} is already serving HTTP — another process is using it."
+        log_error "Free it or re-run with: CONTROL_PLANE_PORT=<free-port> GRPC_PORT=<free-port> make test-e2e"
         exit 1
     fi
 
-    # Start central service in background
-    "${BIN_DIR}/kbridge-central" --config "${CONFIG_DIR}/central.yaml" > "${LOG_DIR}/central.log" 2>&1 &
-    CENTRAL_PID=$!
-    echo "${CENTRAL_PID}" > "${LOG_DIR}/central.pid"
+    # Start control plane in background
+    "${BIN_DIR}/kbridge-control-plane" --config "${CONFIG_DIR}/control-plane.yaml" > "${LOG_DIR}/control-plane.log" 2>&1 &
+    CONTROL_PLANE_PID=$!
+    echo "${CONTROL_PLANE_PID}" > "${LOG_DIR}/control-plane.pid"
 
-    # Wait for central to be ready. Probe with --fail and confirm the body is our
+    # Wait for control plane to be ready. Probe with --fail and confirm the body is our
     # health payload, so a foreign service on the port can't masquerade as ready.
-    log_info "Waiting for central service to be ready..."
+    log_info "Waiting for control plane to be ready..."
     for i in {1..30}; do
-        if ! kill -0 "${CENTRAL_PID}" 2>/dev/null; then
-            log_error "Central process exited during startup. Log:"
-            cat "${LOG_DIR}/central.log"
+        if ! kill -0 "${CONTROL_PLANE_PID}" 2>/dev/null; then
+            log_error "Control plane process exited during startup. Log:"
+            cat "${LOG_DIR}/control-plane.log"
             exit 1
         fi
-        if curl -fsS "http://localhost:${CENTRAL_PORT}/health" 2>/dev/null | grep -q '"status":"healthy"'; then
-            log_info "Central service is ready (PID: ${CENTRAL_PID})."
+        if curl -fsS "http://localhost:${CONTROL_PLANE_PORT}/health" 2>/dev/null | grep -q '"status":"healthy"'; then
+            log_info "Control plane is ready (PID: ${CONTROL_PLANE_PID})."
             return 0
         fi
         sleep 1
     done
 
-    log_error "Central service failed to start. Check ${LOG_DIR}/central.log"
-    cat "${LOG_DIR}/central.log"
+    log_error "Control plane failed to start. Check ${LOG_DIR}/control-plane.log"
+    cat "${LOG_DIR}/control-plane.log"
     exit 1
 }
 
-login_central() {
-    log_info "Logging in to central service..."
-    RESPONSE=$(curl -s -X POST "http://localhost:${CENTRAL_PORT}/auth/login" \
+login_control_plane() {
+    log_info "Logging in to control plane..."
+    RESPONSE=$(curl -s -X POST "http://localhost:${CONTROL_PLANE_PORT}/auth/login" \
         -H "Content-Type: application/json" \
         -d '{"email":"admin@e2e.test","password":"e2e-password"}')
     AUTH_TOKEN=$(echo "${RESPONSE}" | grep -o '"access_token":"[^"]*"' | cut -d'"' -f4)
@@ -195,18 +195,18 @@ login_central() {
     log_info "Login successful."
 }
 
-stop_central() {
-    log_info "Stopping central service..."
+stop_control_plane() {
+    log_info "Stopping control plane..."
 
-    if [ -f "${LOG_DIR}/central.pid" ]; then
-        PID=$(cat "${LOG_DIR}/central.pid")
+    if [ -f "${LOG_DIR}/control-plane.pid" ]; then
+        PID=$(cat "${LOG_DIR}/control-plane.pid")
         if kill -0 "${PID}" 2>/dev/null; then
             kill "${PID}" 2>/dev/null || true
             sleep 1
             kill -9 "${PID}" 2>/dev/null || true
-            log_info "Central service stopped."
+            log_info "Control plane stopped."
         fi
-        rm -f "${LOG_DIR}/central.pid"
+        rm -f "${LOG_DIR}/control-plane.pid"
     fi
 }
 
@@ -215,9 +215,9 @@ start_agent() {
 
     mkdir -p "${LOG_DIR}"
 
-    # Create agent config pointing to local central
+    # Create agent config pointing to local control plane
     cat > "${CONFIG_DIR}/agent.yaml" <<EOF
-central:
+control_plane:
   url: "localhost:${GRPC_PORT}"
   token: "dev-token"
 cluster:
@@ -233,7 +233,7 @@ EOF
     log_info "Waiting for agent to register..."
     for i in {1..30}; do
         # Check if agent appears in clusters list
-        CLUSTERS=$(curl -s -H "Authorization: Bearer ${AUTH_TOKEN}" "http://localhost:${CENTRAL_PORT}/api/v1/clusters" 2>/dev/null || echo "{}")
+        CLUSTERS=$(curl -s -H "Authorization: Bearer ${AUTH_TOKEN}" "http://localhost:${CONTROL_PLANE_PORT}/api/v1/clusters" 2>/dev/null || echo "{}")
         if echo "${CLUSTERS}" | grep -q "${CLUSTER_NAME}"; then
             log_info "Agent registered successfully (PID: ${AGENT_PID})."
             return 0
@@ -274,7 +274,7 @@ setup_cli_config() {
 
     # Create CLI config for e2e tests
     cat > "${HOME}/.kbridge/config.yaml" <<EOF
-central_url: "http://localhost:${CENTRAL_PORT}"
+control_plane_url: "http://localhost:${CONTROL_PLANE_PORT}"
 current_cluster: ""
 token: "${AUTH_TOKEN}"
 refresh_token: ""
@@ -298,7 +298,7 @@ restore_cli_config() {
 cleanup() {
     log_info "Cleaning up..."
     stop_agent
-    stop_central
+    stop_control_plane
     restore_cli_config
     delete_cluster
     rm -f /tmp/kbridge-e2e.db
@@ -312,7 +312,7 @@ run_tests() {
     cd "${PROJECT_ROOT}"
 
     # Run Go e2e tests
-    go test -v -tags=e2e ./tests/e2e/... -central-url="http://localhost:${CENTRAL_PORT}" -grpc-addr="localhost:${GRPC_PORT}" -cluster-name="${CLUSTER_NAME}" -bin-dir="${BIN_DIR}"
+    go test -v -tags=e2e ./tests/e2e/... -control-plane-url="http://localhost:${CONTROL_PLANE_PORT}" -grpc-addr="localhost:${GRPC_PORT}" -cluster-name="${CLUSTER_NAME}" -bin-dir="${BIN_DIR}"
 
     log_info "All e2e tests passed!"
 }
@@ -324,12 +324,12 @@ main() {
             check_dependencies
             create_cluster
             build_binaries
-            start_central
-            login_central
+            start_control_plane
+            login_control_plane
             start_agent
             setup_cli_config
             log_info "E2E environment is ready!"
-            log_info "Central: http://localhost:${CENTRAL_PORT}"
+            log_info "Control plane: http://localhost:${CONTROL_PLANE_PORT}"
             log_info "Cluster: ${CLUSTER_NAME}"
             # Remove trap so cleanup doesn't run
             trap - EXIT
@@ -355,8 +355,8 @@ main() {
             check_dependencies
             create_cluster
             build_binaries
-            start_central
-            login_central
+            start_control_plane
+            login_control_plane
             start_agent
             setup_cli_config
             run_tests

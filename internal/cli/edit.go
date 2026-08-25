@@ -14,7 +14,7 @@ import (
 // EditHandler handles the kubectl edit command locally.
 // It fetches the resource YAML, opens it in an editor, and applies changes.
 type EditHandler struct {
-	client         *CentralClient
+	client         *ControlPlaneClient
 	clusterName    string
 	timeout        time.Duration
 	originalArgs   []string
@@ -27,9 +27,9 @@ type EditHandler struct {
 
 // NewEditHandler creates a new edit handler from kubectl edit arguments.
 func NewEditHandler(args []string) (*EditHandler, error) {
-	centralURL := viper.GetString(ConfigKeyCentralURL)
-	if centralURL == "" {
-		return nil, fmt.Errorf("central URL not configured. Run 'kb login' first")
+	controlPlaneURL := viper.GetString(ConfigKeyControlPlaneURL)
+	if controlPlaneURL == "" {
+		return nil, fmt.Errorf("control plane URL not configured. Run 'kb login' first")
 	}
 
 	clusterName := viper.GetString(ConfigKeyCurrentCluster)
@@ -38,7 +38,7 @@ func NewEditHandler(args []string) (*EditHandler, error) {
 	}
 
 	h := &EditHandler{
-		client:       newAuthenticatedClientWithTimeout(centralURL, defaultKubectlTimeout+10*time.Second),
+		client:       newAuthenticatedClientWithTimeout(controlPlaneURL, defaultKubectlTimeout+10*time.Second),
 		clusterName:  clusterName,
 		timeout:      defaultKubectlTimeout,
 		originalArgs: args,
@@ -253,7 +253,7 @@ func (h *EditHandler) applyChanges(content []byte) error {
 	}
 	tmpFile.Close()
 
-	// Read the file content for sending to central
+	// Read the file content for sending to control plane
 	fileContent, err := os.ReadFile(tmpFile.Name())
 	if err != nil {
 		return fmt.Errorf("failed to read temp file: %w", err)

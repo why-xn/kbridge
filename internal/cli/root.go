@@ -11,9 +11,9 @@ import (
 // rootCmd represents the base command when called without any subcommands
 var rootCmd = &cobra.Command{
 	Use:   "kb",
-	Short: "Run kubectl on remote clusters through the kbridge central service",
+	Short: "Run kubectl on remote clusters through the kbridge control plane",
 	Long: `kb is the kbridge command-line interface for managing and accessing
-multiple Kubernetes clusters through a central service.
+multiple Kubernetes clusters through a control plane.
 
 kubectl by default: any command that is not a kbridge management command is run
 as kubectl on the selected cluster. Management commands are login, logout,

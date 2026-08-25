@@ -1,6 +1,6 @@
 # Production Install
 
-This guide covers a hardened, multi-cluster kbridge deployment: central service
+This guide covers a hardened, multi-cluster kbridge deployment: the control plane
 on a management cluster, one or more agents in target clusters, and the `kb` CLI
 on operator workstations.
 
@@ -9,8 +9,8 @@ on operator workstations.
 | Requirement | Notes |
 |---|---|
 | Helm 3.8+ | OCI registry support (`helm pull oci://…`) |
-| Two or more Kubernetes clusters | one for central, one per managed cluster |
-| A public DNS name for central | e.g. `central.example.com` |
+| Two or more Kubernetes clusters | one for control plane, one per managed cluster |
+| A public DNS name for control plane | e.g. `control-plane.example.com` |
 | cert-manager (recommended) | or a pre-existing `kubernetes.io/tls` Secret |
 | `kubectl` configured for each cluster | context switching between clusters |
 | `kb` CLI | `make build` or download from releases |
@@ -32,32 +32,32 @@ variables:
 | `admin_password` | `KBRIDGE_ADMIN_PASSWORD_FILE` |
 
 ```bash
-kubectl create secret generic kbridge-central-secrets \
+kubectl create secret generic kbridge-control-plane-secrets \
   --from-literal=jwt_secret="$(openssl rand -hex 32)" \
   --from-literal=token_pepper="$(openssl rand -hex 32)" \
   --from-literal=admin_password="$(openssl rand -hex 16)"
 ```
 
-## 3. Install the Central Service
+## 3. Install the Control Plane
 
 ```bash
-helm install kbridge-central oci://ghcr.io/why-xn/charts/kbridge-central \
+helm install kbridge-control-plane oci://ghcr.io/why-xn/charts/kbridge-control-plane \
   --version 0.1.0-alpha.1 \
-  --set auth.existingSecret=kbridge-central-secrets \
+  --set auth.existingSecret=kbridge-control-plane-secrets \
   --set auth.adminEmail=admin@example.com \
   --set persistence.enabled=true \
   --set ingress.enabled=true \
   --set ingress.className=nginx \
-  --set ingress.host=central.example.com \
+  --set ingress.host=control-plane.example.com \
   --set 'ingress.annotations.cert-manager\.io/cluster-issuer=letsencrypt-prod' \
-  --set 'ingress.tls[0].secretName=kbridge-central-tls' \
-  --set 'ingress.tls[0].hosts[0]=central.example.com'
+  --set 'ingress.tls[0].secretName=kbridge-control-plane-tls' \
+  --set 'ingress.tls[0].hosts[0]=control-plane.example.com'
 ```
 
-Verify central is up:
+Verify control plane is up:
 
 ```bash
-curl https://central.example.com/health
+curl https://control-plane.example.com/health
 # {"status":"healthy"}
 ```
 
@@ -69,20 +69,20 @@ which requires HTTP/2 end-to-end (no TLS termination at an L7 proxy).
 ### Option A — LoadBalancer Service (recommended)
 
 Create a dedicated LoadBalancer Service in the management cluster. The selector
-matches the central pod using the labels set by the Helm chart (`app.kubernetes.io/instance`
+matches the control plane pod using the labels set by the Helm chart (`app.kubernetes.io/instance`
 equals the Helm release name):
 
 ```yaml
 apiVersion: v1
 kind: Service
 metadata:
-  name: kbridge-central-grpc
+  name: kbridge-control-plane-grpc
   namespace: default
 spec:
   type: LoadBalancer
   selector:
-    app.kubernetes.io/name: kbridge-central
-    app.kubernetes.io/instance: kbridge-central
+    app.kubernetes.io/name: kbridge-control-plane
+    app.kubernetes.io/instance: kbridge-control-plane
   ports:
     - name: grpc
       port: 9090
@@ -91,12 +91,12 @@ spec:
 ```
 
 ```bash
-kubectl apply -f kbridge-central-grpc-svc.yaml
+kubectl apply -f kbridge-control-plane-grpc-svc.yaml
 # Wait for an external IP
-kubectl get svc kbridge-central-grpc -w
+kubectl get svc kbridge-control-plane-grpc -w
 ```
 
-Agents will point `central.url` at `<EXTERNAL-IP>:9090`.
+Agents will point `control_plane.url` at `<EXTERNAL-IP>:9090`.
 
 ### Option B — nginx TCP passthrough
 
@@ -110,18 +110,18 @@ metadata:
   name: tcp-services
   namespace: ingress-nginx
 data:
-  "9090": "default/kbridge-central:9090"
+  "9090": "default/kbridge-control-plane:9090"
 ```
 
 Also patch the nginx-ingress controller Service to expose port 9090, then update
 its Deployment args with `--tcp-services-configmap=ingress-nginx/tcp-services`.
-Agents point `central.url` at the nginx LB host on port 9090.
+Agents point `control_plane.url` at the nginx LB host on port 9090.
 
 ## 5. TLS End-to-End
 
-### 5a. cert-manager Certificate for central's gRPC listener
+### 5a. cert-manager Certificate for control plane's gRPC listener
 
-If you want the central pod itself to terminate TLS on :9090 (needed when using
+If you want the control plane pod itself to terminate TLS on :9090 (needed when using
 option B above, or for mTLS), create a cert-manager Certificate and enable the
 chart's `tls` stanza:
 
@@ -129,22 +129,22 @@ chart's `tls` stanza:
 apiVersion: cert-manager.io/v1
 kind: Certificate
 metadata:
-  name: kbridge-central-tls
+  name: kbridge-control-plane-tls
   namespace: default
 spec:
-  secretName: kbridge-central-tls
+  secretName: kbridge-control-plane-tls
   issuerRef:
     name: letsencrypt-prod
     kind: ClusterIssuer
   dnsNames:
-    - central.example.com
+    - control-plane.example.com
 ```
 
 Then add to your Helm install (or `helm upgrade`):
 
 ```bash
 --set tls.enabled=true \
---set tls.secretName=kbridge-central-tls
+--set tls.secretName=kbridge-control-plane-tls
 ```
 
 The chart mounts the Secret at `/etc/kbridge/tls/` and passes the paths as
@@ -152,29 +152,29 @@ The chart mounts the Secret at `/etc/kbridge/tls/` and passes the paths as
 
 ### 5b. Configure the agent chart for TLS
 
-The agent chart exposes these TLS value keys under `central.tls`:
+The agent chart exposes these TLS value keys under `control_plane.tls`:
 
 | Key | Default | Purpose |
 |---|---|---|
-| `central.tls.enabled` | `false` | Enable TLS for the gRPC connection |
-| `central.tls.insecure` | `false` | Skip server cert verification — never set `true` in prod |
-| `central.tls.caCert` | `""` | PEM-encoded CA cert; mounted as `/etc/kbridge/ca.crt` and passed as `ca_file` |
+| `control_plane.tls.enabled` | `false` | Enable TLS for the gRPC connection |
+| `control_plane.tls.insecure` | `false` | Skip server cert verification — never set `true` in prod |
+| `control_plane.tls.caCert` | `""` | PEM-encoded CA cert; mounted as `/etc/kbridge/ca.crt` and passed as `ca_file` |
 
 For a public cert (Let's Encrypt / DigiCert) the system CA bundle is sufficient;
-set `central.tls.enabled=true` and leave `caCert` empty:
+set `control_plane.tls.enabled=true` and leave `caCert` empty:
 
 ```bash
---set central.tls.enabled=true
+--set control_plane.tls.enabled=true
 ```
 
 For a private CA, embed the PEM in the value:
 
 ```bash
---set central.tls.enabled=true \
---set central.tls.caCert="$(cat /path/to/ca.crt)"
+--set control_plane.tls.enabled=true \
+--set control_plane.tls.caCert="$(cat /path/to/ca.crt)"
 ```
 
-Never set `central.tls.insecure=true` in production — it disables certificate
+Never set `control_plane.tls.insecure=true` in production — it disables certificate
 verification and exposes agent tokens to interception.
 
 ## 6. Bootstrap: Create an Agent Token
@@ -182,9 +182,9 @@ verification and exposes agent tokens to interception.
 Log in as the admin user that was seeded from the `admin_password` secret:
 
 ```bash
-kb login --server https://central.example.com
+kb login --server https://control-plane.example.com
 # Username: admin@example.com
-# Password: <value of admin_password key from kbridge-central-secrets>
+# Password: <value of admin_password key from kbridge-control-plane-secrets>
 ```
 
 Create a token for the first target cluster:
@@ -213,13 +213,13 @@ at `/etc/kbridge-token/token`, passing it via `KBRIDGE_AGENT_TOKEN_FILE`.
 # Still in the target cluster context
 helm install kbridge-agent oci://ghcr.io/why-xn/charts/kbridge-agent \
   --version 0.1.0-alpha.1 \
-  --set central.url=<EXTERNAL-IP>:9090 \
-  --set central.existingSecret=kbridge-agent-secrets \
-  --set central.tls.enabled=true \
+  --set control_plane.url=<EXTERNAL-IP>:9090 \
+  --set control_plane.existingSecret=kbridge-agent-secrets \
+  --set control_plane.tls.enabled=true \
   --set cluster.name=prod-us-east
 ```
 
-For a private CA add `--set central.tls.caCert="$(cat ca.crt)"`.
+For a private CA add `--set control_plane.tls.caCert="$(cat ca.crt)"`.
 
 To scope the agent's ClusterRole down (the kbridge RBAC policy is the per-user
 gate, but defense-in-depth recommends limiting the SA's Kubernetes permissions):
@@ -236,8 +236,8 @@ gate, but defense-in-depth recommends limiting the SA's Kubernetes permissions):
 # Switch back to the management cluster context
 kubectl config use-context management
 
-# Check central pod logs
-kubectl logs deployment/kbridge-central-central
+# Check control plane pod logs
+kubectl logs deployment/kbridge-control-plane
 
 # From the CLI
 kb clusters list
@@ -251,7 +251,7 @@ The `connected` status confirms the agent has registered and its heartbeat is
 current. If the status is `disconnected`, check:
 
 1. Agent pod logs: `kubectl logs deployment/kbridge-agent-agent` (in target cluster).
-2. `central.url` — must be reachable from inside the target cluster on port 9090.
-3. TLS — if `central.tls.insecure` was not set and the cert is self-signed,
-   provide the CA via `central.tls.caCert`.
+2. `control_plane.url` — must be reachable from inside the target cluster on port 9090.
+3. TLS — if `control_plane.tls.insecure` was not set and the cert is self-signed,
+   provide the CA via `control_plane.tls.caCert`.
 4. Token — `KBRIDGE_AGENT_TOKEN_FILE` must resolve to a valid, non-revoked token.

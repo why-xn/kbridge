@@ -122,12 +122,12 @@ func init() {
 	adminAuditCmd.Flags().IntVar(&auditLimit, "limit", 50, "maximum number of entries to show")
 }
 
-func adminClient() (*CentralClient, error) {
-	centralURL := viper.GetString(ConfigKeyCentralURL)
-	if centralURL == "" {
-		return nil, fmt.Errorf("central URL not configured. Run 'kb login' first or set %s", ConfigKeyCentralURL)
+func adminClient() (*ControlPlaneClient, error) {
+	controlPlaneURL := viper.GetString(ConfigKeyControlPlaneURL)
+	if controlPlaneURL == "" {
+		return nil, fmt.Errorf("control plane URL not configured. Run 'kb login' first or set %s", ConfigKeyControlPlaneURL)
 	}
-	return newAuthenticatedClient(centralURL), nil
+	return newAuthenticatedClient(controlPlaneURL), nil
 }
 
 func runAdminUsersList(cmd *cobra.Command, args []string) error {
@@ -224,7 +224,7 @@ func runAdminTokensCreate(cmd *cobra.Command, args []string) error {
 	}
 	fmt.Printf("Agent token for cluster %q created.\n\n", tok.ClusterName)
 	fmt.Printf("  %s\n\n", tok.Token)
-	fmt.Println("Store it now — it cannot be retrieved again. Set it as the agent's central.token.")
+	fmt.Println("Store it now — it cannot be retrieved again. Set it as the agent's control_plane.token.")
 	return nil
 }
 

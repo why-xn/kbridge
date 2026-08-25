@@ -1,4 +1,4 @@
-.PHONY: build build-cli build-central build-agent clean proto test test-e2e e2e-setup e2e-teardown kind-up kind-down certs docker docker-central docker-agent docker-cli
+.PHONY: build build-cli build-control-plane build-agent clean proto test test-e2e e2e-setup e2e-teardown kind-up kind-down certs docker docker-control-plane docker-agent docker-cli
 
 # Container image settings (override on the command line, e.g. IMAGE_PREFIX=ghcr.io/acme VERSION=v0.1.0-alpha.1)
 IMAGE_PREFIX ?= kbridge
@@ -10,7 +10,7 @@ GIT_COMMIT  ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo none)
 BUILD_DATE  ?= $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
 LDFLAGS := -s -w -X $(VERSION_PKG).Version=$(GIT_VERSION) -X $(VERSION_PKG).Commit=$(GIT_COMMIT) -X $(VERSION_PKG).Date=$(BUILD_DATE)
 
-build: build-cli build-central build-agent
+build: build-cli build-control-plane build-agent
 
 proto:
 	./scripts/generate-proto.sh
@@ -19,8 +19,8 @@ build-cli:
 	go build -ldflags "$(LDFLAGS)" -o bin/kb ./cmd/kb
 	ln -sf kb bin/kbridge
 
-build-central:
-	go build -ldflags "$(LDFLAGS)" -o bin/kbridge-central ./cmd/central
+build-control-plane:
+	go build -ldflags "$(LDFLAGS)" -o bin/kbridge-control-plane ./cmd/controlplane
 
 build-agent:
 	go build -ldflags "$(LDFLAGS)" -o bin/kbridge-agent ./cmd/agent
@@ -57,10 +57,10 @@ certs:
 	./scripts/gen-certs.sh certs
 
 # Build all container images
-docker: docker-central docker-agent docker-cli
+docker: docker-control-plane docker-agent docker-cli
 
-docker-central:
-	docker build -f build/central.Dockerfile -t $(IMAGE_PREFIX)-central:$(VERSION) .
+docker-control-plane:
+	docker build -f build/control-plane.Dockerfile -t $(IMAGE_PREFIX)-control-plane:$(VERSION) .
 
 docker-agent:
 	docker build -f build/agent.Dockerfile -t $(IMAGE_PREFIX)-agent:$(VERSION) .

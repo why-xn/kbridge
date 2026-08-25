@@ -61,7 +61,7 @@ func startPortForward(t *testing.T, args ...string) func() {
 // TestPortForwardHTTP creates an nginx pod, forwards local port 18081 to
 // pod port 80, and verifies that an HTTP GET returns a 200 with nginx body.
 // NOTE: local port 18081 is used (not 18080) to avoid conflict with the
-// central service which binds 18080 during the e2e harness run.
+// control plane which binds 18080 during the e2e harness run.
 func TestPortForwardHTTP(t *testing.T) {
 	if _, _, code := runCLI(t, "clusters", "use", *clusterName); code != 0 {
 		t.Fatal("select cluster")
@@ -76,7 +76,7 @@ func TestPortForwardHTTP(t *testing.T) {
 		t.Fatalf("nginx not ready: %s", e)
 	}
 
-	// 18081 instead of 18080 — central service occupies 18080 in the e2e harness.
+	// 18081 instead of 18080 — control plane occupies 18080 in the e2e harness.
 	stop := startPortForward(t, "pf-nginx", "18081:80")
 	defer stop()
 

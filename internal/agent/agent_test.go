@@ -78,7 +78,7 @@ func startMockServer(t *testing.T, svc *mockAgentService) (string, func()) {
 
 func TestNew(t *testing.T) {
 	cfg := &Config{
-		Central: CentralConfig{URL: "localhost:9090", Token: "token"},
+		ControlPlane: ControlPlaneConfig{URL: "localhost:9090", Token: "token"},
 		Cluster: ClusterConfig{Name: "test"},
 	}
 
@@ -112,7 +112,7 @@ func TestAgent_Register(t *testing.T) {
 	defer cleanup()
 
 	cfg := &Config{
-		Central: CentralConfig{URL: addr, Token: "test-token"},
+		ControlPlane: ControlPlaneConfig{URL: addr, Token: "test-token"},
 		Cluster: ClusterConfig{Name: "test-cluster"},
 	}
 
@@ -155,7 +155,7 @@ func TestAgent_Register_Rejected(t *testing.T) {
 	defer cleanup()
 
 	cfg := &Config{
-		Central: CentralConfig{URL: addr, Token: "bad-token"},
+		ControlPlane: ControlPlaneConfig{URL: addr, Token: "bad-token"},
 		Cluster: ClusterConfig{Name: "test"},
 	}
 
@@ -180,7 +180,7 @@ func TestAgent_Heartbeat(t *testing.T) {
 	defer cleanup()
 
 	cfg := &Config{
-		Central: CentralConfig{URL: addr, Token: "token"},
+		ControlPlane: ControlPlaneConfig{URL: addr, Token: "token"},
 		Cluster: ClusterConfig{Name: "test"},
 	}
 
@@ -214,7 +214,7 @@ func TestAgent_Heartbeat(t *testing.T) {
 
 func TestAgent_ConnectTimeout(t *testing.T) {
 	cfg := &Config{
-		Central: CentralConfig{URL: "localhost:59999", Token: "token"}, // Non-existent server
+		ControlPlane: ControlPlaneConfig{URL: "localhost:59999", Token: "token"}, // Non-existent server
 		Cluster: ClusterConfig{Name: "test"},
 	}
 
@@ -235,7 +235,7 @@ func TestAgent_Run_StopSignal(t *testing.T) {
 	defer cleanup()
 
 	cfg := &Config{
-		Central: CentralConfig{URL: addr, Token: "token"},
+		ControlPlane: ControlPlaneConfig{URL: addr, Token: "token"},
 		Cluster: ClusterConfig{Name: "test"},
 	}
 
@@ -271,7 +271,7 @@ func TestAgent_Run_ContextCancel(t *testing.T) {
 	defer cleanup()
 
 	cfg := &Config{
-		Central: CentralConfig{URL: addr, Token: "token"},
+		ControlPlane: ControlPlaneConfig{URL: addr, Token: "token"},
 		Cluster: ClusterConfig{Name: "test"},
 	}
 
@@ -321,7 +321,7 @@ func TestAgent_HeartbeatNotAcknowledged(t *testing.T) {
 	mock.rejectHeartbeat = true
 
 	cfg := &Config{
-		Central: CentralConfig{URL: addr, Token: "token"},
+		ControlPlane: ControlPlaneConfig{URL: addr, Token: "token"},
 		Cluster: ClusterConfig{Name: "test"},
 	}
 
@@ -347,7 +347,7 @@ func TestAgent_HeartbeatNotAcknowledged(t *testing.T) {
 
 func TestAgent_Run_ConnectionError(t *testing.T) {
 	cfg := &Config{
-		Central: CentralConfig{URL: "localhost:59999", Token: "token"},
+		ControlPlane: ControlPlaneConfig{URL: "localhost:59999", Token: "token"},
 		Cluster: ClusterConfig{Name: "test"},
 	}
 
@@ -367,7 +367,7 @@ func TestAgent_Run_RegistrationError(t *testing.T) {
 	defer cleanup()
 
 	cfg := &Config{
-		Central: CentralConfig{URL: addr, Token: "bad-token"},
+		ControlPlane: ControlPlaneConfig{URL: addr, Token: "bad-token"},
 		Cluster: ClusterConfig{Name: "test"},
 	}
 

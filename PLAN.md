@@ -5,7 +5,7 @@
 All phases (1–9) are complete. **v0.1.0-alpha.1 ships the full feature set.**
 
 **Phases 1 & 2 (core system):**
-- CLI, Central, and Agent binaries build and work end-to-end
+- CLI, control plane, and Agent binaries build and work end-to-end
 - Agent registration, heartbeat, and command polling implemented
 - kubectl passthrough and kubectl edit supported
 - E2E tests passing with Kind clusters
@@ -28,14 +28,14 @@ but no admin endpoints to generate/list/revoke tokens, no rotation).
 
 ### 3.1 Database Setup — DONE (PostgreSQL alt driver not added)
 
-Add persistent storage to the central service.
+Add persistent storage to the control plane.
 
 **Tasks:**
 - Add SQLite driver (github.com/mattn/go-sqlite3 or modernc.org/sqlite)
-- Create `internal/central/db.go` with database interface
+- Create `internal/controlplane/db.go` with database interface
 - Define schema migrations for users, clusters, roles tables
 - Auto-migrate on startup
-- Add database config to `central.yaml`:
+- Add database config to `control-plane.yaml`:
   ```yaml
   database:
     driver: sqlite
@@ -45,7 +45,7 @@ Add persistent storage to the central service.
 - Add PostgreSQL support as alternative driver
 
 **Acceptance Criteria:**
-- Central persists cluster registrations across restarts
+- control plane persists cluster registrations across restarts
 - Database driver is configurable (sqlite/postgres)
 - Tables created automatically on first run
 
@@ -65,7 +65,7 @@ Implement JWT-based user authentication.
 - Implement `POST /auth/refresh` endpoint
 - Protect `/api/v1/clusters` and `/api/v1/clusters/{name}/exec` with auth middleware
 - Create initial admin user on first startup (configurable)
-- Add auth config to `central.yaml`:
+- Add auth config to `control-plane.yaml`:
   ```yaml
   auth:
     jwt_secret: "your-secret-key"
@@ -86,13 +86,13 @@ Connect the CLI to the authentication system.
 
 **Tasks:**
 - Implement `kbridge login` command:
-  - Prompt for central URL (if not configured)
+  - Prompt for control plane URL (if not configured)
   - Prompt for email and password
   - Call `POST /auth/login`
   - Store token in `~/.kbridge/config.yaml`
 - Implement `kbridge logout` command:
   - Remove token from config
-- Add Authorization header to all API requests in CentralClient
+- Add Authorization header to all API requests in ControlPlaneClient
 - Auto-detect 401 responses and prompt for re-login
 - Update `kbridge status` to show authenticated user
 
@@ -108,11 +108,11 @@ Secure agent registration with database-backed tokens.
 
 Implemented:
 - Admin endpoints `POST/GET/DELETE /api/v1/admin/agent-tokens`, gated by
-  `auth.AdminRequired()` (`internal/central/admin_handlers.go`), and the
+  `auth.AdminRequired()` (`internal/controlplane/admin_handlers.go`), and the
   `kbridge admin agent-tokens create/list/revoke` CLI. Create returns the
   plaintext token once; only the SHA-256 hash + prefix are stored.
 - gRPC `Register` now validates the agent token against the DB via the
-  `AgentAuthenticator` domain service (`internal/central/agent_auth.go`):
+  `AgentAuthenticator` domain service (`internal/controlplane/agent_auth.go`):
   hash lookup, revoked + expiry checks, and cluster-binding enforcement
   (a token authorizes exactly one cluster). On success the cluster row is
   persisted as connected; the in-memory store still drives live command routing.
@@ -148,7 +148,7 @@ users only, for authentication. Modeled on ArgoCD's `argocd-rbac-cm`.
 
 ### 4.1 Role Definitions — DONE (config-based)
 
-Implemented in `internal/central/policy.go` + `rbac.go`:
+Implemented in `internal/controlplane/policy.go` + `rbac.go`:
 - Policy YAML: `default` role, `roles` (each with `rules` of
   clusters/namespaces/resources/verbs), and `bindings` (subject→roles, subject
   matched against the JWT email, wildcards supported). Example: `configs/rbac.yaml`.
@@ -226,9 +226,9 @@ file `bindings` (matched on email), per the config-based RBAC design.
 Server-authenticated TLS across all hops; mutual TLS (client certs) is a
 possible future extension.
 
-- Central `tls: {enabled, cert_file, key_file}` secures both HTTP and gRPC with
+- control plane `tls: {enabled, cert_file, key_file}` secures both HTTP and gRPC with
   the same cert (`config.go` + `tls.go`); validated when enabled.
-- Agent `central.tls: {enabled, ca_file, insecure}` builds gRPC client creds
+- Agent `control_plane.tls: {enabled, ca_file, insecure}` builds gRPC client creds
   (`agent/tls.go`): CA-verified, system-roots (empty CA), or skip-verify.
 - CLI honours `insecure_skip_verify` for HTTPS with self-signed certs.
 - `make certs` / `scripts/gen-certs.sh` generate a dev cert (localhost +
@@ -245,20 +245,20 @@ possible future extension.
 ### 5.3 Docker Images — DONE
 
 - Multi-stage, CGO-free (modernc sqlite) Alpine Dockerfiles in `build/`:
-  `central.Dockerfile`, `agent.Dockerfile` (bundles kubectl), `cli.Dockerfile`.
+  `control-plane.Dockerfile`, `agent.Dockerfile` (bundles kubectl), `cli.Dockerfile`.
   All run as a non-root user.
-- `make docker` (+ `docker-central`/`-agent`/`-cli`), parameterised by
+- `make docker` (+ `docker-control-plane`/`-agent`/`-cli`), parameterised by
   `IMAGE_PREFIX` / `VERSION`.
 
 **Acceptance Criteria:**
 - `make docker` builds all images ✓ (verified building each)
-- Images minimal ✓ — CLI 18MB, central 36MB; agent 76MB (includes kubectl,
+- Images minimal ✓ — CLI 18MB, control plane 36MB; agent 76MB (includes kubectl,
   which the agent requires, so >50MB is expected)
-- Images work ✓ — central serves, CLI runs, agent has kubectl on PATH
+- Images work ✓ — control plane serves, CLI runs, agent has kubectl on PATH
 
 ### 5.4 Helm Charts — DONE
 
-- `charts/central`: Deployment, Service, Secret (renders central.yaml with
+- `charts/control-plane`: Deployment, Service, Secret (renders control-plane.yaml with
   secrets inline), ConfigMap (RBAC policy), PVC for SQLite, optional Ingress,
   TLS-aware probes/mounts. Config swap triggers a rollout via checksum annotation.
 - `charts/agent`: Deployment, ServiceAccount, ClusterRole + Binding (rules
@@ -267,7 +267,7 @@ possible future extension.
 - Both have a configurable `values.yaml`.
 
 **Acceptance Criteria:**
-- `helm install ./charts/central` renders ✓ (lint + template, incl. TLS+ingress)
+- `helm install ./charts/control-plane` renders ✓ (lint + template, incl. TLS+ingress)
 - `helm install ./charts/agent` renders ✓ (lint + template, incl. TLS+CA)
 - All config values customizable ✓
 
@@ -276,7 +276,7 @@ possible future extension.
 - README updated for final features (RBAC/auth/audit/TLS/Docker/Helm); stale
   "planned" markers removed; architecture diagram retained; Documentation index added.
 - `docs/installation.md` — binary, Docker, Helm.
-- `docs/configuration.md` — every central/agent/CLI option, env vars, TLS setup.
+- `docs/configuration.md` — every control plane/agent/CLI option, env vars, TLS setup.
 - `docs/cli.md` — every command with examples.
 - `docs/api.md` — all HTTP endpoints with status codes.
 - `docs/rbac.md` — policy file format, matching semantics, examples.
@@ -307,7 +307,7 @@ feature-complete per the original plan.
 ## Phase 6: Streaming commands (`logs -f` / `get -w`) — DONE
 
 Shipped after the original plan. Follow/watch kubectl commands stream end-to-end
-via a persistent bidirectional gRPC stream the agent opens to central
+via a persistent bidirectional gRPC stream the agent opens to the control plane
 (`OpenStream`), multiplexed per session by a `SessionManager`; the CLI
 auto-detects `-f`/`--follow`/`-w`/`--watch` and reads a chunked HTTP response
 from `POST /api/v1/clusters/:name/stream`. RBAC and audit are reused (with a new
@@ -361,7 +361,7 @@ e2e (`TestExecStdin`, `TestExecInteractiveTTY`, negative cases).
 ## Phase 9: Port-forward (`kb port-forward`) — DONE
 
 Shipped after Phase 8. `kb port-forward <pod> [LOCAL:REMOTE ...]` opens local
-TCP listeners that tunnel through central to the pod. Port specs support
+TCP listeners that tunnel through the control plane to the pod. Port specs support
 `LOCAL:REMOTE`, bare `REMOTE` (local = remote), and `:REMOTE` (OS-assigned
 random local port); multiple ports in one command. Protocol-agnostic (any TCP —
 Postgres, Redis, HTTP, etc.). Binds localhost only (v1); no session timeout.

@@ -96,10 +96,10 @@ func httpStatusError(resp *http.Response) error {
 }
 
 // refreshTokenViaHTTP exchanges a refresh token for a new access/refresh pair.
-// It is used by the streaming connect paths that bypass CentralClient.doRequest.
-func refreshTokenViaHTTP(centralURL, refreshToken string, insecure bool) (newAccess, newRefresh string, err error) {
+// It is used by the streaming connect paths that bypass ControlPlaneClient.doRequest.
+func refreshTokenViaHTTP(controlPlaneURL, refreshToken string, insecure bool) (newAccess, newRefresh string, err error) {
 	body, _ := json.Marshal(map[string]string{"refresh_token": refreshToken})
-	req, err := http.NewRequest(http.MethodPost, centralURL+"/auth/refresh", bytes.NewReader(body))
+	req, err := http.NewRequest(http.MethodPost, controlPlaneURL+"/auth/refresh", bytes.NewReader(body))
 	if err != nil {
 		return "", "", fmt.Errorf("creating refresh request: %w", err)
 	}
@@ -125,7 +125,7 @@ func refreshTokenViaHTTP(centralURL, refreshToken string, insecure bool) (newAcc
 }
 
 // runExecInteractive opens the bidi exec stream and bridges the local terminal.
-func runExecInteractive(centralURL, cluster, token string, tgt execTarget, insecure bool) error {
+func runExecInteractive(controlPlaneURL, cluster, token string, tgt execTarget, insecure bool) error {
 	if tgt.pod == "" {
 		return fmt.Errorf("exec requires a pod name")
 	}
@@ -139,8 +139,8 @@ func runExecInteractive(centralURL, cluster, token string, tgt execTarget, insec
 		}
 	}
 
-	reqURL := execURL(centralURL, cluster, tgt, rows, cols)
-	client, err := http2Client(centralURL, insecure)
+	reqURL := execURL(controlPlaneURL, cluster, tgt, rows, cols)
+	client, err := http2Client(controlPlaneURL, insecure)
 	if err != nil {
 		return err
 	}
@@ -161,7 +161,7 @@ func runExecInteractive(centralURL, cluster, token string, tgt execTarget, insec
 		resp.Body.Close()
 		refreshToken := viper.GetString(ConfigKeyRefreshToken)
 		if refreshToken != "" {
-			newAccess, newRefresh, rerr := refreshTokenViaHTTP(centralURL, refreshToken, insecure)
+			newAccess, newRefresh, rerr := refreshTokenViaHTTP(controlPlaneURL, refreshToken, insecure)
 			if rerr == nil {
 				viper.Set(ConfigKeyToken, newAccess)
 				viper.Set(ConfigKeyRefreshToken, newRefresh)
@@ -264,7 +264,7 @@ func runExecInteractive(centralURL, cluster, token string, tgt execTarget, insec
 	}
 }
 
-func execURL(centralURL, cluster string, tgt execTarget, rows, cols uint16) string {
+func execURL(controlPlaneURL, cluster string, tgt execTarget, rows, cols uint16) string {
 	q := url.Values{}
 	q.Set("pod", tgt.pod)
 	if tgt.container != "" {
@@ -281,14 +281,14 @@ func execURL(centralURL, cluster string, tgt execTarget, rows, cols uint16) stri
 	}
 	q.Set("rows", strconv.Itoa(int(rows)))
 	q.Set("cols", strconv.Itoa(int(cols)))
-	return fmt.Sprintf("%s/api/v1/clusters/%s/exec/attach?%s", centralURL, url.PathEscape(cluster), q.Encode())
+	return fmt.Sprintf("%s/api/v1/clusters/%s/exec/attach?%s", controlPlaneURL, url.PathEscape(cluster), q.Encode())
 }
 
-// http2Client returns a client that forces HTTP/2 over the central URL scheme.
-func http2Client(centralURL string, insecure bool) (*http.Client, error) {
-	u, err := url.Parse(centralURL)
+// http2Client returns a client that forces HTTP/2 over the control plane URL scheme.
+func http2Client(controlPlaneURL string, insecure bool) (*http.Client, error) {
+	u, err := url.Parse(controlPlaneURL)
 	if err != nil {
-		return nil, fmt.Errorf("parsing central url: %w", err)
+		return nil, fmt.Errorf("parsing control plane url: %w", err)
 	}
 	if u.Scheme == "https" {
 		return &http.Client{Transport: &http2.Transport{
@@ -306,9 +306,9 @@ func http2Client(centralURL string, insecure bool) (*http.Client, error) {
 
 // execInteractiveFromConfig reads viper config and delegates to runExecInteractive.
 func execInteractiveFromConfig(tgt execTarget) error {
-	centralURL := viper.GetString(ConfigKeyCentralURL)
-	if centralURL == "" {
-		return fmt.Errorf("central URL not configured. Run 'kb login' first")
+	controlPlaneURL := viper.GetString(ConfigKeyControlPlaneURL)
+	if controlPlaneURL == "" {
+		return fmt.Errorf("control plane URL not configured. Run 'kb login' first")
 	}
 	currentCluster := viper.GetString(ConfigKeyCurrentCluster)
 	if currentCluster == "" {
@@ -316,5 +316,5 @@ func execInteractiveFromConfig(tgt execTarget) error {
 	}
 	token := viper.GetString(ConfigKeyToken)
 	insecure := viper.GetBool(ConfigKeyInsecure)
-	return runExecInteractive(centralURL, currentCluster, token, tgt, insecure)
+	return runExecInteractive(controlPlaneURL, currentCluster, token, tgt, insecure)
 }

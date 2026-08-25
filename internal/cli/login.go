@@ -14,8 +14,8 @@ import (
 // loginCmd represents the login command
 var loginCmd = &cobra.Command{
 	Use:   "login",
-	Short: "Authenticate with the central service",
-	Long: `Authenticate with the kbridge central service.
+	Short: "Authenticate with the control plane",
+	Long: `Authenticate with the kbridge control plane.
 
 This command will prompt for email and password to authenticate
 and obtain an access token.`,
@@ -27,9 +27,9 @@ func init() {
 }
 
 func runLogin(cmd *cobra.Command, args []string) error {
-	centralURL := viper.GetString(ConfigKeyCentralURL)
-	if centralURL == "" {
-		return fmt.Errorf("central_url not configured: run 'kb config set central_url <url>'")
+	controlPlaneURL := viper.GetString(ConfigKeyControlPlaneURL)
+	if controlPlaneURL == "" {
+		return fmt.Errorf("control_plane_url not configured: run 'kb config set control_plane_url <url>'")
 	}
 
 	reader := bufio.NewReader(os.Stdin)
@@ -49,7 +49,7 @@ func runLogin(cmd *cobra.Command, args []string) error {
 	}
 	password := string(passwordBytes)
 
-	client := NewCentralClient(centralURL)
+	client := NewControlPlaneClient(controlPlaneURL)
 	resp, err := client.Login(email, password)
 	if err != nil {
 		return err

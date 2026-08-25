@@ -1,5 +1,5 @@
 // Package execframe is the length-prefixed wire format for interactive exec.
-// Both the CLI and central import it so the framing has one definition.
+// Both the CLI and control plane import it so the framing has one definition.
 package execframe
 
 import (
@@ -12,11 +12,11 @@ import (
 type Type byte
 
 const (
-	Stdin  Type = 0x00 // CLI -> central: raw stdin bytes
-	Resize Type = 0x01 // CLI -> central: rows uint16, cols uint16 (BE)
-	Stdout Type = 0x10 // central -> CLI: raw output bytes
-	Stderr Type = 0x11 // central -> CLI: raw stderr bytes
-	Exit   Type = 0x12 // central -> CLI: exit_code int32 (BE) + optional UTF-8 error
+	Stdin  Type = 0x00 // CLI -> control plane: raw stdin bytes
+	Resize Type = 0x01 // CLI -> control plane: rows uint16, cols uint16 (BE)
+	Stdout Type = 0x10 // control plane -> CLI: raw output bytes
+	Stderr Type = 0x11 // control plane -> CLI: raw stderr bytes
+	Exit   Type = 0x12 // control plane -> CLI: exit_code int32 (BE) + optional UTF-8 error
 )
 
 // MaxPayload bounds a single frame's payload to limit memory use.

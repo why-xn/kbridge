@@ -15,7 +15,7 @@ import (
 // DefaultPollInterval is how often the agent polls for pending commands.
 const DefaultPollInterval = 2 * time.Second
 
-// Agent represents the kbridge agent that connects to central service.
+// Agent represents the kbridge agent that connects to control plane.
 type Agent struct {
 	config    *Config
 	conn      *grpc.ClientConn
@@ -37,17 +37,17 @@ func New(cfg *Config) *Agent {
 	}
 }
 
-// Run starts the agent, connecting to central and maintaining the connection.
+// Run starts the agent, connecting to control plane and maintaining the connection.
 func (a *Agent) Run(ctx context.Context) error {
 	log.Printf("Agent starting for cluster: %s", a.config.Cluster.Name)
 
 	if err := a.connect(ctx); err != nil {
-		return fmt.Errorf("connecting to central: %w", err)
+		return fmt.Errorf("connecting to control plane: %w", err)
 	}
 	defer a.disconnect()
 
 	if err := a.register(ctx); err != nil {
-		return fmt.Errorf("registering with central: %w", err)
+		return fmt.Errorf("registering with control plane: %w", err)
 	}
 
 	// Touch the health file once immediately after successful registration so the
@@ -73,7 +73,7 @@ func (a *Agent) Stop() {
 	<-a.stoppedCh
 }
 
-// AgentID returns the agent's assigned ID from central.
+// AgentID returns the agent's assigned ID from control plane.
 func (a *Agent) AgentID() string {
 	a.mu.RLock()
 	defer a.mu.RUnlock()
@@ -81,27 +81,27 @@ func (a *Agent) AgentID() string {
 }
 
 func (a *Agent) connect(ctx context.Context) error {
-	log.Printf("Connecting to central service at %s", a.config.Central.URL)
+	log.Printf("Connecting to control plane at %s", a.config.ControlPlane.URL)
 
 	// Create connection with timeout
 	dialCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 
-	creds, err := clientTransportCredentials(a.config.Central.TLS)
+	creds, err := clientTransportCredentials(a.config.ControlPlane.TLS)
 	if err != nil {
 		return fmt.Errorf("configuring transport security: %w", err)
 	}
-	conn, err := grpc.DialContext(dialCtx, a.config.Central.URL,
+	conn, err := grpc.DialContext(dialCtx, a.config.ControlPlane.URL,
 		grpc.WithTransportCredentials(creds),
 		grpc.WithBlock(),
 	)
 	if err != nil {
-		return fmt.Errorf("dialing central: %w", err)
+		return fmt.Errorf("dialing control plane: %w", err)
 	}
 
 	a.conn = conn
 	a.client = agentpb.NewAgentServiceClient(conn)
-	log.Printf("Connected to central service")
+	log.Printf("Connected to control plane")
 	return nil
 }
 
@@ -110,15 +110,15 @@ func (a *Agent) disconnect() {
 		if err := a.conn.Close(); err != nil {
 			log.Printf("Error closing connection: %v", err)
 		}
-		log.Printf("Disconnected from central service")
+		log.Printf("Disconnected from control plane")
 	}
 }
 
 func (a *Agent) register(ctx context.Context) error {
-	log.Printf("Registering with central service")
+	log.Printf("Registering with control plane")
 
 	req := &agentpb.RegisterRequest{
-		AgentToken:  a.config.Central.Token,
+		AgentToken:  a.config.ControlPlane.Token,
 		ClusterName: a.config.Cluster.Name,
 	}
 
@@ -221,7 +221,7 @@ func (a *Agent) touchHealthFile() {
 }
 
 func (a *Agent) reconnect(ctx context.Context) error {
-	log.Printf("Attempting to reconnect to central service")
+	log.Printf("Attempting to reconnect to control plane")
 
 	// Close existing connection
 	a.disconnect()
@@ -265,7 +265,7 @@ func (a *Agent) reconnect(ctx context.Context) error {
 	return fmt.Errorf("failed to reconnect after %d attempts", maxRetries)
 }
 
-// runCommandPollLoop polls central for pending commands and executes them.
+// runCommandPollLoop polls control plane for pending commands and executes them.
 func (a *Agent) runCommandPollLoop(ctx context.Context) {
 	ticker := time.NewTicker(DefaultPollInterval)
 	defer ticker.Stop()
@@ -316,7 +316,7 @@ func (a *Agent) pollAndExecuteCommands(ctx context.Context) {
 	}
 }
 
-// executeAndSubmit executes a command and submits the result to central.
+// executeAndSubmit executes a command and submits the result to control plane.
 func (a *Agent) executeAndSubmit(ctx context.Context, cmd *agentpb.CommandRequest) {
 	// Determine timeout
 	timeout := time.Duration(cmd.TimeoutSeconds) * time.Second
@@ -338,7 +338,7 @@ func (a *Agent) executeAndSubmit(ctx context.Context, cmd *agentpb.CommandReques
 		submitReq.ErrorMessage = result.Error.Error()
 	}
 
-	// Submit result to central
+	// Submit result to control plane
 	a.mu.RLock()
 	client := a.client
 	a.mu.RUnlock()

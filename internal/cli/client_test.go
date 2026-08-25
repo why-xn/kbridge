@@ -8,7 +8,7 @@ import (
 	"testing"
 )
 
-func TestCentralClient_ListClusters(t *testing.T) {
+func TestControlPlaneClient_ListClusters(t *testing.T) {
 	// Create test server
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/api/v1/clusters" {
@@ -33,7 +33,7 @@ func TestCentralClient_ListClusters(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := NewCentralClient(server.URL)
+	client := NewControlPlaneClient(server.URL)
 	clusters, err := client.ListClusters()
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -49,7 +49,7 @@ func TestCentralClient_ListClusters(t *testing.T) {
 
 }
 
-func TestCentralClient_ListClusters_Empty(t *testing.T) {
+func TestControlPlaneClient_ListClusters_Empty(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		resp := ClustersResponse{Clusters: []ClusterInfo{}}
 		w.Header().Set("Content-Type", "application/json")
@@ -57,7 +57,7 @@ func TestCentralClient_ListClusters_Empty(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := NewCentralClient(server.URL)
+	client := NewControlPlaneClient(server.URL)
 	clusters, err := client.ListClusters()
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -68,21 +68,21 @@ func TestCentralClient_ListClusters_Empty(t *testing.T) {
 	}
 }
 
-func TestCentralClient_ListClusters_ServerError(t *testing.T) {
+func TestControlPlaneClient_ListClusters_ServerError(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
 		w.Write([]byte("internal error"))
 	}))
 	defer server.Close()
 
-	client := NewCentralClient(server.URL)
+	client := NewControlPlaneClient(server.URL)
 	_, err := client.ListClusters()
 	if err == nil {
 		t.Fatal("expected error for server error")
 	}
 }
 
-func TestCentralClient_GetCluster(t *testing.T) {
+func TestControlPlaneClient_GetCluster(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		resp := ClustersResponse{
 			Clusters: []ClusterInfo{
@@ -95,7 +95,7 @@ func TestCentralClient_GetCluster(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := NewCentralClient(server.URL)
+	client := NewControlPlaneClient(server.URL)
 
 	// Get existing cluster
 	cluster, err := client.GetCluster("prod")
@@ -118,7 +118,7 @@ func TestCentralClient_GetCluster(t *testing.T) {
 	}
 }
 
-func TestCentralClient_CheckHealth(t *testing.T) {
+func TestControlPlaneClient_CheckHealth(t *testing.T) {
 	// Healthy server
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/health" {
@@ -129,29 +129,29 @@ func TestCentralClient_CheckHealth(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := NewCentralClient(server.URL)
+	client := NewControlPlaneClient(server.URL)
 	err := client.CheckHealth()
 	if err != nil {
 		t.Errorf("unexpected error: %v", err)
 	}
 }
 
-func TestCentralClient_CheckHealth_Unhealthy(t *testing.T) {
+func TestControlPlaneClient_CheckHealth_Unhealthy(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusServiceUnavailable)
 	}))
 	defer server.Close()
 
-	client := NewCentralClient(server.URL)
+	client := NewControlPlaneClient(server.URL)
 	err := client.CheckHealth()
 	if err == nil {
 		t.Error("expected error for unhealthy server")
 	}
 }
 
-func TestCentralClient_ConnectionError(t *testing.T) {
+func TestControlPlaneClient_ConnectionError(t *testing.T) {
 	// Use a non-existent server
-	client := NewCentralClient("http://localhost:59999")
+	client := NewControlPlaneClient("http://localhost:59999")
 
 	_, err := client.ListClusters()
 	if err == nil {
@@ -159,8 +159,8 @@ func TestCentralClient_ConnectionError(t *testing.T) {
 	}
 }
 
-func TestNewCentralClient(t *testing.T) {
-	client := NewCentralClient("http://example.com")
+func TestNewControlPlaneClient(t *testing.T) {
+	client := NewControlPlaneClient("http://example.com")
 
 	if client.baseURL != "http://example.com" {
 		t.Errorf("expected baseURL 'http://example.com', got %q", client.baseURL)
@@ -171,7 +171,7 @@ func TestNewCentralClient(t *testing.T) {
 	}
 }
 
-func TestCentralClient_ExecCommand_Success(t *testing.T) {
+func TestControlPlaneClient_ExecCommand_Success(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/api/v1/clusters/prod/exec" {
 			t.Errorf("unexpected path: %s", r.URL.Path)
@@ -201,7 +201,7 @@ func TestCentralClient_ExecCommand_Success(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := NewCentralClient(server.URL)
+	client := NewControlPlaneClient(server.URL)
 	resp, err := client.ExecCommand("prod", []string{"get", "pods"}, "", 30)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -216,7 +216,7 @@ func TestCentralClient_ExecCommand_Success(t *testing.T) {
 	}
 }
 
-func TestCentralClient_ExecCommand_NonZeroExit(t *testing.T) {
+func TestControlPlaneClient_ExecCommand_NonZeroExit(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		resp := ExecResponse{
 			Output:   "Error: pods not found\n",
@@ -227,7 +227,7 @@ func TestCentralClient_ExecCommand_NonZeroExit(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := NewCentralClient(server.URL)
+	client := NewControlPlaneClient(server.URL)
 	resp, err := client.ExecCommand("prod", []string{"get", "pods"}, "", 30)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -238,49 +238,49 @@ func TestCentralClient_ExecCommand_NonZeroExit(t *testing.T) {
 	}
 }
 
-func TestCentralClient_ExecCommand_ClusterNotFound(t *testing.T) {
+func TestControlPlaneClient_ExecCommand_ClusterNotFound(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusNotFound)
 		w.Write([]byte(`{"error":"cluster not found"}`))
 	}))
 	defer server.Close()
 
-	client := NewCentralClient(server.URL)
+	client := NewControlPlaneClient(server.URL)
 	_, err := client.ExecCommand("nonexistent", []string{"get", "pods"}, "", 30)
 	if err == nil {
 		t.Fatal("expected error for cluster not found")
 	}
 }
 
-func TestCentralClient_ExecCommand_Disconnected(t *testing.T) {
+func TestControlPlaneClient_ExecCommand_Disconnected(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusServiceUnavailable)
 		w.Write([]byte(`{"error":"cluster agent is disconnected"}`))
 	}))
 	defer server.Close()
 
-	client := NewCentralClient(server.URL)
+	client := NewControlPlaneClient(server.URL)
 	_, err := client.ExecCommand("prod", []string{"get", "pods"}, "", 30)
 	if err == nil {
 		t.Fatal("expected error for disconnected agent")
 	}
 }
 
-func TestCentralClient_ExecCommand_Timeout(t *testing.T) {
+func TestControlPlaneClient_ExecCommand_Timeout(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusGatewayTimeout)
 		w.Write([]byte(`{"error":"command execution timed out"}`))
 	}))
 	defer server.Close()
 
-	client := NewCentralClient(server.URL)
+	client := NewControlPlaneClient(server.URL)
 	_, err := client.ExecCommand("prod", []string{"get", "pods"}, "", 30)
 	if err == nil {
 		t.Fatal("expected error for timeout")
 	}
 }
 
-func TestCentralClient_ExecCommand_WithNamespace(t *testing.T) {
+func TestControlPlaneClient_ExecCommand_WithNamespace(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var req ExecRequest
 		json.NewDecoder(r.Body).Decode(&req)
@@ -295,14 +295,14 @@ func TestCentralClient_ExecCommand_WithNamespace(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := NewCentralClient(server.URL)
+	client := NewControlPlaneClient(server.URL)
 	_, err := client.ExecCommand("prod", []string{"get", "pods"}, "kube-system", 30)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }
 
-func TestCentralClient_CreateAgentToken(t *testing.T) {
+func TestControlPlaneClient_CreateAgentToken(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost || r.URL.Path != "/api/v1/admin/agent-tokens" {
 			t.Errorf("unexpected %s %s", r.Method, r.URL.Path)
@@ -315,7 +315,7 @@ func TestCentralClient_CreateAgentToken(t *testing.T) {
 	}))
 	defer server.Close()
 
-	tok, err := NewCentralClient(server.URL).CreateAgentToken("prod", "ci token", 90)
+	tok, err := NewControlPlaneClient(server.URL).CreateAgentToken("prod", "ci token", 90)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -324,7 +324,7 @@ func TestCentralClient_CreateAgentToken(t *testing.T) {
 	}
 }
 
-func TestCentralClient_ListAgentTokens(t *testing.T) {
+func TestControlPlaneClient_ListAgentTokens(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Query().Get("cluster") != "prod" {
 			t.Errorf("expected cluster filter, got %q", r.URL.RawQuery)
@@ -335,7 +335,7 @@ func TestCentralClient_ListAgentTokens(t *testing.T) {
 	}))
 	defer server.Close()
 
-	tokens, err := NewCentralClient(server.URL).ListAgentTokens("prod")
+	tokens, err := NewControlPlaneClient(server.URL).ListAgentTokens("prod")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -344,7 +344,7 @@ func TestCentralClient_ListAgentTokens(t *testing.T) {
 	}
 }
 
-func TestCentralClient_RevokeAgentToken(t *testing.T) {
+func TestControlPlaneClient_RevokeAgentToken(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodDelete || r.URL.Path != "/api/v1/admin/agent-tokens/tok-1" {
 			t.Errorf("unexpected %s %s", r.Method, r.URL.Path)
@@ -353,7 +353,7 @@ func TestCentralClient_RevokeAgentToken(t *testing.T) {
 	}))
 	defer server.Close()
 
-	if err := NewCentralClient(server.URL).RevokeAgentToken("tok-1"); err != nil {
+	if err := NewControlPlaneClient(server.URL).RevokeAgentToken("tok-1"); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }
@@ -377,7 +377,7 @@ func TestTransparentRefresh(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	c := NewCentralClient(srv.URL)
+	c := NewControlPlaneClient(srv.URL)
 	c.SetToken("old-access")
 	c.setRefreshToken("old-refresh")
 	c.persist = func(access, refresh string) error { return nil }
@@ -405,7 +405,7 @@ func TestTransparentRefresh_FailedRefresh(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	c := NewCentralClient(srv.URL)
+	c := NewControlPlaneClient(srv.URL)
 	c.SetToken("old-access")
 	c.setRefreshToken("old-refresh")
 	c.persist = func(access, refresh string) error { return nil }
@@ -425,7 +425,7 @@ func TestTransparentRefresh_NoRefreshToken(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	c := NewCentralClient(srv.URL)
+	c := NewControlPlaneClient(srv.URL)
 	c.SetToken("old-access")
 	// no refresh token set
 

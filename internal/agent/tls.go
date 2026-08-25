@@ -9,7 +9,7 @@ import (
 )
 
 // clientTransportCredentials builds the gRPC transport credentials for the
-// agent's connection to central, based on the TLS config.
+// agent's connection to control plane, based on the TLS config.
 func clientTransportCredentials(cfg AgentTLSConfig) (credentials.TransportCredentials, error) {
 	if !cfg.Enabled {
 		return insecure.NewCredentials(), nil

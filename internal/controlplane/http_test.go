@@ -1,0 +1,226 @@
+package controlplane
+
+import (
+	"bytes"
+	"encoding/json"
+	"io"
+	"net/http"
+	"net/http/httptest"
+	"testing"
+
+	"github.com/gin-gonic/gin"
+)
+
+func newTestHTTPServer() (*HTTPServer, *AgentStore, *CommandQueue) {
+	store := NewAgentStore()
+	cmdQueue := NewCommandQueue()
+	return NewHTTPServer(store, cmdQueue, nil, nil, nil, nil, nil, nil), store, cmdQueue
+}
+
+func TestHTTPServer_Health(t *testing.T) {
+	srv, _, _ := newTestHTTPServer()
+	req := httptest.NewRequest(http.MethodGet, "/health", nil)
+	rec := httptest.NewRecorder()
+
+	srv.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Errorf("expected status %d, got %d", http.StatusOK, rec.Code)
+	}
+
+	var resp map[string]string
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("failed to unmarshal response: %v", err)
+	}
+
+	if resp["status"] != "healthy" {
+		t.Errorf("expected status='healthy', got %q", resp["status"])
+	}
+}
+
+func TestHTTPServer_ListClusters_Empty(t *testing.T) {
+	srv, _, _ := newTestHTTPServer()
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/clusters", nil)
+	rec := httptest.NewRecorder()
+
+	srv.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Errorf("expected status %d, got %d", http.StatusOK, rec.Code)
+	}
+
+	var resp map[string][]interface{}
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("failed to unmarshal response: %v", err)
+	}
+
+	clusters, ok := resp["clusters"]
+	if !ok {
+		t.Error("expected 'clusters' key in response")
+	}
+	if len(clusters) != 0 {
+		t.Errorf("expected empty clusters list, got %d items", len(clusters))
+	}
+}
+
+func TestHTTPServer_ListClusters_WithAgents(t *testing.T) {
+	srv, store, _ := newTestHTTPServer()
+
+	// Register some agents
+	store.Register(&AgentInfo{
+		ID:          "agent-1",
+		ClusterName: "production",
+	})
+	store.Register(&AgentInfo{
+		ID:          "agent-2",
+		ClusterName: "staging",
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/clusters", nil)
+	rec := httptest.NewRecorder()
+
+	srv.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Errorf("expected status %d, got %d", http.StatusOK, rec.Code)
+	}
+
+	var resp struct {
+		Clusters []ClusterResponse `json:"clusters"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("failed to unmarshal response: %v", err)
+	}
+
+	if len(resp.Clusters) != 2 {
+		t.Fatalf("expected 2 clusters, got %d", len(resp.Clusters))
+	}
+
+	// Check that cluster data is returned
+	foundProduction := false
+	foundStaging := false
+	for _, c := range resp.Clusters {
+		if c.Name == "production" {
+			foundProduction = true
+			if c.Status != AgentStatusConnected {
+				t.Errorf("expected status %q, got %q", AgentStatusConnected, c.Status)
+			}
+		}
+		if c.Name == "staging" {
+			foundStaging = true
+		}
+	}
+
+	if !foundProduction {
+		t.Error("expected to find 'production' cluster")
+	}
+	if !foundStaging {
+		t.Error("expected to find 'staging' cluster")
+	}
+}
+
+func TestHTTPServer_ExecCommand_ClusterNotFound(t *testing.T) {
+	srv, _, _ := newTestHTTPServer()
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/clusters/nonexistent/exec", nil)
+	rec := httptest.NewRecorder()
+
+	srv.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNotFound {
+		t.Errorf("expected status %d, got %d", http.StatusNotFound, rec.Code)
+	}
+
+	var resp map[string]string
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("failed to unmarshal response: %v", err)
+	}
+
+	if resp["error"] != "cluster not found" {
+		t.Errorf("expected error='cluster not found', got %q", resp["error"])
+	}
+}
+
+func TestHTTPServer_ExecCommand_AgentDisconnected(t *testing.T) {
+	srv, store, _ := newTestHTTPServer()
+
+	// Register a disconnected agent
+	store.Register(&AgentInfo{
+		ID:          "agent-1",
+		ClusterName: "test-cluster",
+	})
+	// Manually set status to disconnected
+	store.mu.Lock()
+	store.agents["agent-1"].Status = AgentStatusDisconnected
+	store.mu.Unlock()
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/clusters/test-cluster/exec", nil)
+	rec := httptest.NewRecorder()
+
+	srv.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Errorf("expected status %d, got %d", http.StatusServiceUnavailable, rec.Code)
+	}
+
+	var resp map[string]string
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("failed to unmarshal response: %v", err)
+	}
+
+	if resp["error"] != "cluster agent is disconnected" {
+		t.Errorf("expected error='cluster agent is disconnected', got %q", resp["error"])
+	}
+}
+
+func TestHTTPServer_ExecCommand_InvalidRequest(t *testing.T) {
+	srv, store, _ := newTestHTTPServer()
+
+	// Register a connected agent
+	store.Register(&AgentInfo{
+		ID:          "agent-1",
+		ClusterName: "test-cluster",
+	})
+
+	// Send request without body
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/clusters/test-cluster/exec", nil)
+	rec := httptest.NewRecorder()
+
+	srv.Handler().ServeHTTP(rec, req)
+
+	// Should return 400 Bad Request for missing body
+	if rec.Code != http.StatusBadRequest {
+		t.Errorf("expected status %d, got %d", http.StatusBadRequest, rec.Code)
+	}
+}
+
+func TestHTTPServer_NotFound(t *testing.T) {
+	srv, _, _ := newTestHTTPServer()
+	req := httptest.NewRequest(http.MethodGet, "/nonexistent", nil)
+	rec := httptest.NewRecorder()
+
+	srv.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNotFound {
+		t.Errorf("expected status %d, got %d", http.StatusNotFound, rec.Code)
+	}
+}
+
+func TestBodyLimitMiddleware(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	r := gin.New()
+	r.Use(bodyLimitMiddleware(16))
+	r.POST("/x", func(c *gin.Context) {
+		_, err := io.ReadAll(c.Request.Body)
+		if err != nil {
+			c.Status(http.StatusRequestEntityTooLarge)
+			return
+		}
+		c.Status(http.StatusOK)
+	})
+	req := httptest.NewRequest(http.MethodPost, "/x", bytes.NewReader(make([]byte, 1024)))
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	if w.Code != http.StatusRequestEntityTooLarge {
+		t.Fatalf("code=%d want 413", w.Code)
+	}
+}

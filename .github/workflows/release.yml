@@ -33,7 +33,7 @@ jobs:
           VER="${GITHUB_REF_NAME}"
           COMMIT="$(git rev-parse --short HEAD)"
           BUILD_DATE="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-          for c in central agent cli; do
+          for c in control-plane agent cli; do
             docker buildx build --push --platform linux/amd64,linux/arm64 \
               -f "build/${c}.Dockerfile" \
               --build-arg "VERSION=${VER}" \
@@ -49,7 +49,7 @@ jobs:
           helm registry login ghcr.io \
             -u "${{ github.actor }}" \
             -p "${{ secrets.GITHUB_TOKEN }}"
-          for chart in central agent; do
+          for chart in control-plane agent; do
             helm package "charts/${chart}" --version "${VER}" --app-version "${GITHUB_REF_NAME}"
             helm push "kbridge-${chart}-${VER}.tgz" oci://ghcr.io/why-xn/charts
           done

@@ -6,11 +6,11 @@
 kbridge/
 ├── cmd/
 │   ├── kbridge/           # CLI entrypoint
-│   ├── central/           # Central service entrypoint
+│   ├── controlplane/      # Control plane entrypoint
 │   └── agent/             # Agent entrypoint
 ├── internal/
 │   ├── cli/               # CLI commands and HTTP client
-│   ├── central/           # Central service (HTTP, gRPC, store, commands)
+│   ├── controlplane/      # Control plane (HTTP, gRPC, store, commands)
 │   └── agent/             # Agent (connection, heartbeat, executor)
 ├── api/
 │   └── proto/             # gRPC protobuf definitions
@@ -30,7 +30,7 @@ kbridge/
 ```bash
 make build          # Build all binaries
 make build-cli      # Build CLI only
-make build-central  # Build central only
+make build-control-plane  # Build control plane only
 make build-agent    # Build agent only
 make clean          # Remove bin/ directory
 ```
@@ -93,7 +93,7 @@ curl -X POST http://localhost:8080/api/v1/clusters/production-us-east/exec \
 
 ## gRPC Service
 
-Defined in `api/proto/agent.proto`. Used for agent-central communication.
+Defined in `api/proto/agent.proto`. Used for agent-control-plane communication.
 
 ```protobuf
 service AgentService {
@@ -109,7 +109,7 @@ Agents use the polling-based flow: `GetPendingCommands` + `SubmitCommandResult`.
 
 ## Data Models
 
-SQLite schema — managed by `internal/central/migrations.go` and auto-applied on
+SQLite schema — managed by `internal/controlplane/migrations.go` and auto-applied on
 startup. All IDs are random UUIDs stored as TEXT; timestamps are RFC3339 strings.
 RBAC roles are defined in the policy file, not the database.
 

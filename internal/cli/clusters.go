@@ -24,7 +24,7 @@ var clustersListCmd = &cobra.Command{
 	Use:     "list",
 	Aliases: []string{"ls"},
 	Short:   "List available clusters",
-	Long:    `List available clusters from the central service.`,
+	Long:    `List available clusters from the control plane.`,
 	RunE:    runClustersList,
 }
 
@@ -44,12 +44,12 @@ func init() {
 }
 
 func runClustersList(cmd *cobra.Command, args []string) error {
-	centralURL := viper.GetString(ConfigKeyCentralURL)
-	if centralURL == "" {
-		return fmt.Errorf("central URL not configured. Run 'kb login' first or set %s", ConfigKeyCentralURL)
+	controlPlaneURL := viper.GetString(ConfigKeyControlPlaneURL)
+	if controlPlaneURL == "" {
+		return fmt.Errorf("control plane URL not configured. Run 'kb login' first or set %s", ConfigKeyControlPlaneURL)
 	}
 
-	client := newAuthenticatedClient(centralURL)
+	client := newAuthenticatedClient(controlPlaneURL)
 	clusters, err := client.ListClusters()
 	if err != nil {
 		return fmt.Errorf("failed to list clusters: %w", err)
@@ -82,13 +82,13 @@ func runClustersList(cmd *cobra.Command, args []string) error {
 func runClustersUse(cmd *cobra.Command, args []string) error {
 	clusterName := args[0]
 
-	centralURL := viper.GetString(ConfigKeyCentralURL)
-	if centralURL == "" {
-		return fmt.Errorf("central URL not configured. Run 'kb login' first or set %s", ConfigKeyCentralURL)
+	controlPlaneURL := viper.GetString(ConfigKeyControlPlaneURL)
+	if controlPlaneURL == "" {
+		return fmt.Errorf("control plane URL not configured. Run 'kb login' first or set %s", ConfigKeyControlPlaneURL)
 	}
 
 	// Verify cluster exists and is connected
-	client := newAuthenticatedClient(centralURL)
+	client := newAuthenticatedClient(controlPlaneURL)
 	cluster, err := client.GetCluster(clusterName)
 	if err != nil {
 		return fmt.Errorf("failed to verify cluster: %w", err)

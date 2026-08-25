@@ -18,19 +18,19 @@ import (
 	"time"
 )
 
-// rbacPolicyPath points at the RBAC policy file the running central watches.
+// rbacPolicyPath points at the RBAC policy file the running control plane watches.
 // The e2e harness writes it to tests/e2e/config/rbac.yaml; tests run from
 // tests/e2e, so the default is relative to that.
-var rbacPolicyPath = flag.String("rbac-policy", "config/rbac.yaml", "path to the central RBAC policy file")
+var rbacPolicyPath = flag.String("rbac-policy", "config/rbac.yaml", "path to the control plane RBAC policy file")
 
-// centralPidfile is where the harness records central's PID, used to trigger a
+// controlPlanePidfile is where the harness records control plane's PID, used to trigger a
 // SIGHUP policy reload (works regardless of whether the filesystem delivers
 // inotify events).
-var centralPidfile = flag.String("central-pidfile", "logs/central.pid", "path to central's pid file")
+var controlPlanePidfile = flag.String("control-plane-pidfile", "logs/control-plane.pid", "path to control plane's pid file")
 
-// signalCentralReload sends SIGHUP to the running central to reload its policy.
-func signalCentralReload() error {
-	data, err := os.ReadFile(*centralPidfile)
+// signalControlPlaneReload sends SIGHUP to the running control plane to reload its policy.
+func signalControlPlaneReload() error {
+	data, err := os.ReadFile(*controlPlanePidfile)
 	if err != nil {
 		return err
 	}
@@ -44,7 +44,7 @@ func signalCentralReload() error {
 const edgePassword = "edge-password-123"
 
 func execURL() string {
-	return fmt.Sprintf("%s/api/v1/clusters/%s/exec", *centralURL, *clusterName)
+	return fmt.Sprintf("%s/api/v1/clusters/%s/exec", *controlPlaneURL, *clusterName)
 }
 
 // doJSON issues a JSON request with an optional bearer token and returns the
@@ -85,7 +85,7 @@ func httpPostAuthMethod(t *testing.T, method, url, token string, payload any) ([
 // ensureUser creates a user via the admin API, tolerating "already exists".
 func ensureUser(t *testing.T, email string) {
 	t.Helper()
-	_, code := httpPostAuth(t, fmt.Sprintf("%s/api/v1/admin/users", *centralURL), authToken,
+	_, code := httpPostAuth(t, fmt.Sprintf("%s/api/v1/admin/users", *controlPlaneURL), authToken,
 		map[string]any{"email": email, "name": email, "password": edgePassword})
 	if code != http.StatusCreated && code != http.StatusConflict {
 		t.Fatalf("ensure user %s: unexpected status %d", email, code)
@@ -95,7 +95,7 @@ func ensureUser(t *testing.T, email string) {
 // loginTokens logs in and returns both the access and refresh tokens.
 func loginTokens(t *testing.T, email, password string) (access, refresh string) {
 	t.Helper()
-	body, code := httpPostAuth(t, fmt.Sprintf("%s/auth/login", *centralURL), "",
+	body, code := httpPostAuth(t, fmt.Sprintf("%s/auth/login", *controlPlaneURL), "",
 		map[string]string{"email": email, "password": password})
 	if code != http.StatusOK {
 		t.Fatalf("login %s: %d %s", email, code, body)
@@ -140,7 +140,7 @@ func TestAuthRejectsBadCredentials(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			_, code := httpPostAuth(t, fmt.Sprintf("%s/auth/login", *centralURL), "",
+			_, code := httpPostAuth(t, fmt.Sprintf("%s/auth/login", *controlPlaneURL), "",
 				map[string]string{"email": tc.email, "password": tc.password})
 			if code != http.StatusUnauthorized {
 				t.Errorf("want 401, got %d", code)
@@ -150,7 +150,7 @@ func TestAuthRejectsBadCredentials(t *testing.T) {
 }
 
 func TestAuthRejectsMissingOrBadToken(t *testing.T) {
-	url := fmt.Sprintf("%s/api/v1/clusters", *centralURL)
+	url := fmt.Sprintf("%s/api/v1/clusters", *controlPlaneURL)
 	t.Run("no token", func(t *testing.T) {
 		_, code := httpGet(t, url)
 		if code != http.StatusUnauthorized {
@@ -180,7 +180,7 @@ func TestAuthRejectsMissingOrBadToken(t *testing.T) {
 
 func TestDisabledUserCannotLogin(t *testing.T) {
 	email := "edge-disabled@e2e.test"
-	body, code := httpPostAuth(t, fmt.Sprintf("%s/api/v1/admin/users", *centralURL), authToken,
+	body, code := httpPostAuth(t, fmt.Sprintf("%s/api/v1/admin/users", *controlPlaneURL), authToken,
 		map[string]any{"email": email, "name": "Disabled", "password": edgePassword})
 	if code != http.StatusCreated && code != http.StatusConflict {
 		t.Fatalf("create user: %d", code)
@@ -194,17 +194,17 @@ func TestDisabledUserCannotLogin(t *testing.T) {
 	json.Unmarshal(body, &u)
 
 	// Logging in works while active.
-	if _, c := httpPostAuth(t, fmt.Sprintf("%s/auth/login", *centralURL), "",
+	if _, c := httpPostAuth(t, fmt.Sprintf("%s/auth/login", *controlPlaneURL), "",
 		map[string]string{"email": email, "password": edgePassword}); c != http.StatusOK {
 		t.Fatalf("active login: want 200, got %d", c)
 	}
 
 	// Disable, then login must be forbidden.
-	if _, c := doJSON(t, http.MethodPut, fmt.Sprintf("%s/api/v1/admin/users/%s", *centralURL, u.ID), authToken,
+	if _, c := doJSON(t, http.MethodPut, fmt.Sprintf("%s/api/v1/admin/users/%s", *controlPlaneURL, u.ID), authToken,
 		map[string]any{"is_active": false}); c != http.StatusOK {
 		t.Fatalf("disable user: want 200, got %d", c)
 	}
-	if _, c := httpPostAuth(t, fmt.Sprintf("%s/auth/login", *centralURL), "",
+	if _, c := httpPostAuth(t, fmt.Sprintf("%s/auth/login", *controlPlaneURL), "",
 		map[string]string{"email": email, "password": edgePassword}); c != http.StatusForbidden {
 		t.Errorf("disabled login: want 403, got %d", c)
 	}
@@ -216,14 +216,14 @@ func TestRefreshTokenRotation(t *testing.T) {
 	_, refresh := loginTokens(t, email, edgePassword)
 
 	// First refresh succeeds.
-	body, code := httpPostAuth(t, fmt.Sprintf("%s/auth/refresh", *centralURL), "",
+	body, code := httpPostAuth(t, fmt.Sprintf("%s/auth/refresh", *controlPlaneURL), "",
 		map[string]string{"refresh_token": refresh})
 	if code != http.StatusOK {
 		t.Fatalf("first refresh: want 200, got %d %s", code, body)
 	}
 
 	// Reusing the now-rotated refresh token must fail.
-	_, code = httpPostAuth(t, fmt.Sprintf("%s/auth/refresh", *centralURL), "",
+	_, code = httpPostAuth(t, fmt.Sprintf("%s/auth/refresh", *controlPlaneURL), "",
 		map[string]string{"refresh_token": refresh})
 	if code != http.StatusUnauthorized {
 		t.Errorf("reused refresh token: want 401, got %d", code)
@@ -236,13 +236,13 @@ func TestLogoutInvalidatesRefreshToken(t *testing.T) {
 	access, refresh := loginTokens(t, email, edgePassword)
 
 	// Logout (requires a valid access token; refresh token in the body).
-	if _, code := httpPostAuth(t, fmt.Sprintf("%s/api/v1/auth/logout", *centralURL), access,
+	if _, code := httpPostAuth(t, fmt.Sprintf("%s/api/v1/auth/logout", *controlPlaneURL), access,
 		map[string]string{"refresh_token": refresh}); code != http.StatusOK {
 		t.Fatalf("logout: want 200, got %d", code)
 	}
 
 	// The refresh token must no longer be usable after logout.
-	_, code := httpPostAuth(t, fmt.Sprintf("%s/auth/refresh", *centralURL), "",
+	_, code := httpPostAuth(t, fmt.Sprintf("%s/auth/refresh", *controlPlaneURL), "",
 		map[string]string{"refresh_token": refresh})
 	if code != http.StatusUnauthorized {
 		t.Errorf("refresh after logout: want 401, got %d", code)
@@ -255,17 +255,17 @@ func TestChangePasswordFlow(t *testing.T) {
 	access, _ := loginTokens(t, email, edgePassword)
 
 	newPassword := "edge-new-password-456"
-	if _, code := httpPostAuth(t, fmt.Sprintf("%s/api/v1/auth/change-password", *centralURL), access,
+	if _, code := httpPostAuth(t, fmt.Sprintf("%s/api/v1/auth/change-password", *controlPlaneURL), access,
 		map[string]string{"current_password": edgePassword, "new_password": newPassword}); code != http.StatusOK {
 		t.Fatalf("change password: want 200, got %d", code)
 	}
 
 	// Old password rejected, new password accepted.
-	if _, code := httpPostAuth(t, fmt.Sprintf("%s/auth/login", *centralURL), "",
+	if _, code := httpPostAuth(t, fmt.Sprintf("%s/auth/login", *controlPlaneURL), "",
 		map[string]string{"email": email, "password": edgePassword}); code != http.StatusUnauthorized {
 		t.Errorf("login with old password: want 401, got %d", code)
 	}
-	if _, code := httpPostAuth(t, fmt.Sprintf("%s/auth/login", *centralURL), "",
+	if _, code := httpPostAuth(t, fmt.Sprintf("%s/auth/login", *controlPlaneURL), "",
 		map[string]string{"email": email, "password": newPassword}); code != http.StatusOK {
 		t.Errorf("login with new password: want 200, got %d", code)
 	}
@@ -313,7 +313,7 @@ func TestRBACPolicyHotReload(t *testing.T) {
 	// Restore the original policy and wait for the agent to lose write access.
 	defer func() {
 		os.WriteFile(*rbacPolicyPath, original, 0o644)
-		signalCentralReload()
+		signalControlPlaneReload()
 		pollExec(t, viewer, writeCmd, func(c int) bool { return c == http.StatusForbidden }, 8*time.Second)
 	}()
 
@@ -348,7 +348,7 @@ bindings:
 	}
 	// Trigger a reload via SIGHUP (the file watcher also fires on filesystems
 	// that deliver inotify events; SIGHUP makes this deterministic everywhere).
-	if err := signalCentralReload(); err != nil {
+	if err := signalControlPlaneReload(); err != nil {
 		t.Fatalf("signal reload: %v", err)
 	}
 
@@ -375,7 +375,7 @@ func TestAdminEndpointsForbiddenForNonAdmin(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			_, code := doJSON(t, tc.method, *centralURL+tc.path, viewer, tc.payload)
+			_, code := doJSON(t, tc.method, *controlPlaneURL+tc.path, viewer, tc.payload)
 			if code != http.StatusForbidden {
 				t.Errorf("non-admin %s: want 403, got %d", tc.path, code)
 			}
@@ -384,7 +384,7 @@ func TestAdminEndpointsForbiddenForNonAdmin(t *testing.T) {
 }
 
 func TestUserManagementEdgeCases(t *testing.T) {
-	usersURL := fmt.Sprintf("%s/api/v1/admin/users", *centralURL)
+	usersURL := fmt.Sprintf("%s/api/v1/admin/users", *controlPlaneURL)
 
 	t.Run("duplicate email rejected", func(t *testing.T) {
 		email := "edge-dup@e2e.test"
@@ -429,7 +429,7 @@ func TestUserManagementEdgeCases(t *testing.T) {
 		if _, c := doJSON(t, http.MethodDelete, usersURL+"/"+u.ID, authToken, nil); c != http.StatusOK {
 			t.Fatalf("delete: want 200, got %d", c)
 		}
-		if _, c := httpPostAuth(t, fmt.Sprintf("%s/auth/login", *centralURL), "",
+		if _, c := httpPostAuth(t, fmt.Sprintf("%s/auth/login", *controlPlaneURL), "",
 			map[string]string{"email": email, "password": edgePassword}); c != http.StatusUnauthorized {
 			t.Errorf("login after delete: want 401, got %d", c)
 		}
@@ -439,7 +439,7 @@ func TestUserManagementEdgeCases(t *testing.T) {
 // --- Agent token edge cases ---
 
 func TestAgentTokenLifecycle(t *testing.T) {
-	tokensURL := fmt.Sprintf("%s/api/v1/admin/agent-tokens", *centralURL)
+	tokensURL := fmt.Sprintf("%s/api/v1/admin/agent-tokens", *controlPlaneURL)
 	cluster := "edge-token-cluster"
 
 	body, code := httpPostAuth(t, tokensURL, authToken, map[string]any{
@@ -549,7 +549,7 @@ func TestCLIAdminAgentTokens(t *testing.T) {
 
 func TestExecEdgeCases(t *testing.T) {
 	t.Run("nonexistent cluster", func(t *testing.T) {
-		url := fmt.Sprintf("%s/api/v1/clusters/no-such-cluster/exec", *centralURL)
+		url := fmt.Sprintf("%s/api/v1/clusters/no-such-cluster/exec", *controlPlaneURL)
 		_, code := httpPostAuth(t, url, authToken, map[string]any{"command": []string{"get", "pods"}})
 		if code != http.StatusNotFound {
 			t.Errorf("want 404, got %d", code)
@@ -576,7 +576,7 @@ func TestAuditFilterByStatus(t *testing.T) {
 		t.Fatalf("seed denied entry: want 403, got %d", code)
 	}
 
-	body, code := httpGetAuth(t, fmt.Sprintf("%s/api/v1/admin/audit?status=denied", *centralURL), authToken)
+	body, code := httpGetAuth(t, fmt.Sprintf("%s/api/v1/admin/audit?status=denied", *controlPlaneURL), authToken)
 	if code != http.StatusOK {
 		t.Fatalf("audit query: want 200, got %d", code)
 	}

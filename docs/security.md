@@ -10,17 +10,17 @@ disclosure policy.
 
 ## Post-install security checklist
 
-Work through these items after every new deployment before exposing the central
+Work through these items after every new deployment before exposing the control plane
 service to users.
 
 ### 1. Change the admin password
 
 The admin account is seeded from `auth.admin_email` / `auth.admin_password` in
-`central.yaml` (or the Helm chart's `auth.adminPassword`) on first startup.
+`control-plane.yaml` (or the Helm chart's `auth.adminPassword`) on first startup.
 Change it immediately via the API:
 
 ```bash
-curl -s -X POST https://central:8080/api/v1/auth/change-password \
+curl -s -X POST https://control-plane:8080/api/v1/auth/change-password \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"current_password":"<seed-password>","new_password":"<strong-password>"}'
@@ -39,7 +39,7 @@ back to `jwt_secret`; set a separate key so a leak of one secret does not
 compromise the other:
 
 ```yaml
-# central.yaml
+# control-plane.yaml
 auth:
   jwt_secret: "<generated>"
   token_pepper: "<separate-generated>"   # e.g. openssl rand -hex 32
@@ -56,41 +56,41 @@ auth:
 > Changing `token_pepper` invalidates all existing agent tokens. Re-issue them
 > with `kb admin agent-tokens create` after rotating.
 
-### 3. Enable TLS on central and the agent
+### 3. Enable TLS on the control plane and the agent
 
-**Central** (binary / Docker):
+**control plane** (binary / Docker):
 
 ```yaml
-# central.yaml
+# control-plane.yaml
 tls:
   enabled: true
   cert_file: /etc/kbridge/tls.crt
   key_file:  /etc/kbridge/tls.key
 ```
 
-**Central** (Helm):
+**control plane** (Helm):
 
 ```yaml
 tls:
   enabled: true
-  secretName: kbridge-central-tls   # kubernetes.io/tls secret
+  secretName: kbridge-control-plane-tls   # kubernetes.io/tls secret
 ```
 
 **Agent** — set the matching CA and enable TLS:
 
 ```yaml
 # agent.yaml
-central:
+control_plane:
   tls:
     enabled: true
-    ca_file: /etc/kbridge/tls.crt   # PEM CA to verify central
+    ca_file: /etc/kbridge/tls.crt   # PEM CA to verify control plane
     insecure: false                  # never set to true in production
 ```
 
 **Agent** (Helm):
 
 ```yaml
-central:
+control_plane:
   tls:
     enabled: true
     caCert: |
@@ -116,7 +116,7 @@ The `bootstrap` block is a dev convenience that seeds one agent token at startup
 Remove it (or leave it blank) in production:
 
 ```yaml
-# central.yaml
+# control-plane.yaml
 bootstrap:          # omit entirely, or:
   agent_token: ""
   agent_cluster: ""
@@ -138,22 +138,22 @@ the admin API instead.
 For Helm deployments, store `jwtSecret`, `tokenPepper`, and `adminPassword` in a
 Kubernetes Secret and reference it rather than embedding values in `values.yaml`:
 
-**Central chart:**
+**control plane chart:**
 
 ```yaml
 auth:
-  existingSecret: kbridge-central-secrets  # pre-created Secret name
+  existingSecret: kbridge-control-plane-secrets  # pre-created Secret name
   # jwtSecret, tokenPepper, adminPassword must NOT be set when existingSecret is used
 ```
 
 The chart expects the Secret to contain the keys `jwt_secret`, `token_pepper`,
-and `admin_password`. Central reads them from the mounted files via
+and `admin_password`. The control plane reads them from the mounted files via
 `*_FILE` environment variables.
 
 **Agent chart:**
 
 ```yaml
-central:
+control_plane:
   existingSecret: kbridge-agent-token   # pre-created Secret with key `token`
   token: ""                             # leave empty when existingSecret is set
 ```
@@ -167,8 +167,8 @@ configured for meaningful defense in depth.
 
 ### Layer 1 — kbridge RBAC policy (what users may request)
 
-The kbridge policy file (`rbac.policy_file` in `central.yaml`) is enforced by
-central **before** any command reaches a cluster. It controls which authenticated
+The kbridge policy file (`rbac.policy_file` in `control-plane.yaml`) is enforced by
+The control plane **before** any command reaches a cluster. It controls which authenticated
 users may run which verbs on which resources in which clusters and namespaces:
 
 ```yaml
@@ -185,7 +185,7 @@ bindings:
     roles: ["developer"]
 ```
 
-A request denied by this layer is rejected at central with `403` and recorded in
+A request denied by this layer is rejected at the control plane with `403` and recorded in
 the audit log with status `denied` — the agent never sees it.
 
 See [rbac.md](rbac.md) for the full policy reference including wildcards,
@@ -212,8 +212,8 @@ The agent chart default `rbac.rules` grants `*/*` on all verbs — equivalent to
 | kbridge policy | Agent ClusterRole | Outcome |
 |----------------|-------------------|---------|
 | allows `get pods` | grants `get pods` | Request succeeds |
-| denies `delete pods` | grants `delete pods` | Rejected at central; agent never called |
-| allows `delete pods` | denies `delete pods` | Central forwards; Kubernetes rejects it |
+| denies `delete pods` | grants `delete pods` | Rejected at the control plane; agent never called |
+| allows `delete pods` | denies `delete pods` | control plane forwards; Kubernetes rejects it |
 | **allows `delete nodes`** | **grants `*`** | **Full cluster access if agent is compromised** |
 
 The agent ClusterRole is the floor: it determines the blast radius of an agent
@@ -282,13 +282,13 @@ Apply either ruleset at install or upgrade time:
 
 ```bash
 helm install kbridge-agent ./charts/agent \
-  --set central.url=kbridge-central:9090 \
-  --set central.token=<token> \
+  --set control_plane.url=kbridge-control-plane:9090 \
+  --set control_plane.token=<token> \
   --set cluster.name=prod-us-east \
   -f values-agent.yaml
 ```
 
-> The kbridge RBAC policy on central is still the per-user gate. A developer
+> The kbridge RBAC policy on the control plane is still the per-user gate. A developer
 > whose kbridge policy only allows `get`/`list` cannot run `delete` even if the
 > ClusterRole permits it. The ClusterRole sets the ceiling; the policy sets the
 > per-user floor.
@@ -302,7 +302,7 @@ provide a hardened baseline regardless of how the deployment is configured.
 
 ### Strong-secret enforcement (fail-closed)
 
-Central refuses to start if `jwt_secret` is not set, is shorter than 32
+The control plane refuses to start if `jwt_secret` is not set, is shorter than 32
 characters, or matches the shipped development default
 (`"change-me"` variants). The startup check is fail-closed: a misconfigured
 secret is a fatal error, not a warning. Generate a secret with:

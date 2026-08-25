@@ -7,9 +7,9 @@ image:
 
 imagePullSecrets: []
 
-central:
-  # gRPC address of the central service (in-cluster Service DNS or external host).
-  url: "kbridge-central:9090"
+controlPlane:
+  # gRPC address of the control plane (in-cluster Service DNS or external host).
+  url: "kbridge-control-plane:9090"
   token: "change-me"
   # When set, mount this existing Secret and use KBRIDGE_AGENT_TOKEN_FILE instead
   # of rendering the token inline in the config Secret.
@@ -17,7 +17,7 @@ central:
   tls:
     enabled: false
     insecure: false
-    # PEM-encoded CA certificate to verify the central server. Mounted when set.
+    # PEM-encoded CA certificate to verify the control plane server. Mounted when set.
     caCert: ""
 
 cluster:
@@ -47,7 +47,7 @@ serviceAccount:
 rbac:
   create: true
   # The agent executes kubectl using this ServiceAccount. The kbridge policy
-  # file on central is the real per-user authorization gate; scope these cluster
+  # file on control plane is the real per-user authorization gate; scope these cluster
   # permissions down to the minimum your users actually need.
   rules:
     - apiGroups: ["*"]

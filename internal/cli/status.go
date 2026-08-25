@@ -12,7 +12,7 @@ var statusCmd = &cobra.Command{
 	Use:   "status",
 	Short: "Show current connection status",
 	Long: `Show current connection status including:
-  - Central service URL
+  - ControlPlane service URL
   - Selected cluster
   - Connection state`,
 	RunE: runStatus,
@@ -23,20 +23,20 @@ func init() {
 }
 
 func runStatus(cmd *cobra.Command, args []string) error {
-	centralURL := viper.GetString(ConfigKeyCentralURL)
+	controlPlaneURL := viper.GetString(ConfigKeyControlPlaneURL)
 	currentCluster := viper.GetString(ConfigKeyCurrentCluster)
 
 	fmt.Println("kbridge Status")
 	fmt.Println("-----------")
 
-	// Central service status
-	if centralURL == "" {
-		fmt.Println("Central:  (not configured)")
+	// ControlPlane service status
+	if controlPlaneURL == "" {
+		fmt.Println("ControlPlane:  (not configured)")
 	} else {
-		fmt.Printf("Central:  %s\n", centralURL)
+		fmt.Printf("ControlPlane:  %s\n", controlPlaneURL)
 
 		// Check connection
-		client := newAuthenticatedClient(centralURL)
+		client := newAuthenticatedClient(controlPlaneURL)
 		if err := client.CheckHealth(); err != nil {
 			fmt.Println("Status:   Disconnected")
 		} else {
@@ -50,9 +50,9 @@ func runStatus(cmd *cobra.Command, args []string) error {
 	} else {
 		fmt.Printf("Cluster:  %s\n", currentCluster)
 
-		// If we have central URL, fetch cluster status
-		if centralURL != "" {
-			client := newAuthenticatedClient(centralURL)
+		// If we have control plane URL, fetch cluster status
+		if controlPlaneURL != "" {
+			client := newAuthenticatedClient(controlPlaneURL)
 			cluster, err := client.GetCluster(currentCluster)
 			if err != nil {
 				fmt.Printf("          (cluster not found: %v)\n", err)

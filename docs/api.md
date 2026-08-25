@@ -1,6 +1,6 @@
 # HTTP API Reference
 
-Base URL: the central service (`http(s)://host:8080`). All `/api/v1/*` routes
+Base URL: the control plane (`http(s)://host:8080`). All `/api/v1/*` routes
 require a `Authorization: Bearer <access_token>` header; `/api/v1/admin/*` also
 requires the `admin` role. Tokens come from `POST /auth/login`.
 
@@ -99,7 +99,7 @@ Every session is recorded in the audit log with outcome `success`, `failed`,
 ### `POST /api/v1/clusters/{name}/port-forward`
 Opens a port-forward session over an HTTP/2 bidirectional stream. Local TCP
 connections made by the CLI are multiplexed over this single stream and tunneled
-through central to the agent, which forwards them to the pod via kubectl.
+through the control plane to the agent, which forwards them to the pod via kubectl.
 
 **Query parameters:**
 

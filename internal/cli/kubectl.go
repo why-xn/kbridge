@@ -74,10 +74,10 @@ func runKubectl(cmd *cobra.Command, args []string) error {
 		return portForwardFromConfig(tgt)
 	}
 
-	// Check central URL
-	centralURL := viper.GetString(ConfigKeyCentralURL)
-	if centralURL == "" {
-		return fmt.Errorf("central URL not configured. Run 'kb login' first")
+	// Check control plane URL
+	controlPlaneURL := viper.GetString(ConfigKeyControlPlaneURL)
+	if controlPlaneURL == "" {
+		return fmt.Errorf("control plane URL not configured. Run 'kb login' first")
 	}
 
 	// Check current cluster
@@ -99,7 +99,7 @@ func runKubectl(cmd *cobra.Command, args []string) error {
 	if isStreamingCommand(args) {
 		ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
 		defer cancel()
-		streamClient := newAuthenticatedClient(centralURL)
+		streamClient := newAuthenticatedClient(controlPlaneURL)
 		if err := streamClient.StreamCommand(ctx, currentCluster, args, namespace, os.Stdout); err != nil {
 			return err
 		}
@@ -107,7 +107,7 @@ func runKubectl(cmd *cobra.Command, args []string) error {
 	}
 
 	// Create client with longer timeout for command execution
-	client := newAuthenticatedClientWithTimeout(centralURL, defaultKubectlTimeout+10*time.Second)
+	client := newAuthenticatedClientWithTimeout(controlPlaneURL, defaultKubectlTimeout+10*time.Second)
 
 	// Execute the command
 	resp, err := client.ExecCommand(currentCluster, args, namespace, int(defaultKubectlTimeout.Seconds()))

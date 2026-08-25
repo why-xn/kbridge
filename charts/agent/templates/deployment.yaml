@@ -35,7 +35,7 @@ spec:
             {{- toYaml . | nindent 12 }}
           {{- end }}
           env:
-            {{- if .Values.central.existingSecret }}
+            {{- if .Values.controlPlane.existingSecret }}
             - name: KBRIDGE_AGENT_TOKEN_FILE
               value: /etc/kbridge-token/token
             {{- end }}
@@ -45,7 +45,7 @@ spec:
               readOnly: true
             - name: tmp
               mountPath: /tmp
-            {{- if .Values.central.existingSecret }}
+            {{- if .Values.controlPlane.existingSecret }}
             - name: agent-token
               mountPath: /etc/kbridge-token
               readOnly: true
@@ -68,10 +68,10 @@ spec:
             secretName: {{ include "agent.fullname" . }}-config
         - name: tmp
           emptyDir: {}
-        {{- if .Values.central.existingSecret }}
+        {{- if .Values.controlPlane.existingSecret }}
         - name: agent-token
           secret:
-            secretName: {{ .Values.central.existingSecret }}
+            secretName: {{ .Values.controlPlane.existingSecret }}
         {{- end }}
       {{- with .Values.nodeSelector }}
       nodeSelector:

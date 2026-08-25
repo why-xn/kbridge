@@ -10,7 +10,7 @@ import (
 
 // Config keys
 const (
-	ConfigKeyCentralURL     = "central_url"
+	ConfigKeyControlPlaneURL     = "control_plane_url"
 	ConfigKeyCurrentCluster = "current_cluster"
 	ConfigKeyToken          = "token"
 	ConfigKeyRefreshToken   = "refresh_token"
@@ -45,7 +45,7 @@ func initConfig() {
 	}
 
 	// Set defaults
-	viper.SetDefault(ConfigKeyCentralURL, "")
+	viper.SetDefault(ConfigKeyControlPlaneURL, "")
 	viper.SetDefault(ConfigKeyCurrentCluster, "")
 	viper.SetDefault(ConfigKeyToken, "")
 	viper.SetDefault(ConfigKeyRefreshToken, "")

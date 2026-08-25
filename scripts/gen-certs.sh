@@ -2,7 +2,7 @@
 # Generate a self-signed TLS certificate for local kbridge development.
 #
 # Produces a cert/key valid for localhost and 127.0.0.1. The same cert acts as
-# its own CA: point central at tls.crt/tls.key and the agent at tls.crt as its
+# its own CA: point control plane at tls.crt/tls.key and the agent at tls.crt as its
 # ca_file. NOT for production use.
 set -euo pipefail
 
@@ -26,5 +26,5 @@ openssl req -x509 -newkey rsa:2048 -nodes \
 chmod 600 "${OUT_DIR}/tls.key"
 
 echo "Wrote ${OUT_DIR}/tls.crt and ${OUT_DIR}/tls.key (valid ${DAYS} days)."
-echo "Central:  tls.cert_file=${OUT_DIR}/tls.crt  tls.key_file=${OUT_DIR}/tls.key"
-echo "Agent:    central.tls.enabled=true  central.tls.ca_file=${OUT_DIR}/tls.crt"
+echo "Control plane: tls.cert_file=${OUT_DIR}/tls.crt  tls.key_file=${OUT_DIR}/tls.key"
+echo "Agent:    control_plane.tls.enabled=true  control_plane.tls.ca_file=${OUT_DIR}/tls.crt"

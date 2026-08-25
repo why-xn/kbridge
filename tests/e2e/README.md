@@ -22,7 +22,7 @@ make test-e2e
 This will:
 1. Create a Kind cluster
 2. Build all binaries
-3. Start the central service
+3. Start the control plane
 4. Start an agent connected to Kind
 5. Run all e2e tests
 6. Clean up everything
@@ -32,7 +32,7 @@ This will:
 For manual testing or debugging, you can set up the environment without running tests:
 
 ```bash
-# Setup the environment (Kind cluster, central, agent)
+# Setup the environment (Kind cluster, control plane, agent)
 make e2e-setup
 
 # Now you can manually run CLI commands
@@ -56,12 +56,12 @@ go test -v -tags=e2e ./tests/e2e/... -run TestCLIClustersList
 
 The e2e tests cover:
 
-### Central Service
+### Control Plane
 - Health check endpoint
 - Cluster listing API
 
 ### Agent
-- Registration with central
+- Registration with the control plane
 - Heartbeat keeping connection alive
 
 ### CLI Commands
@@ -94,13 +94,13 @@ The edit tests use mock editor scripts via the `KUBE_EDITOR` environment variabl
 ## Logs
 
 When running tests, logs are stored in `tests/e2e/logs/`:
-- `central.log` - Central service logs
+- `control-plane.log` - control plane logs
 - `agent.log` - Agent logs
 
 ## Configuration
 
 Test configuration files are stored in `tests/e2e/config/`:
-- `central.yaml` - Central service config
+- `control-plane.yaml` - control plane config
 - `agent.yaml` - Agent config
 
 These directories are cleaned up automatically after tests.
@@ -126,8 +126,8 @@ kind delete cluster --name kbridge-e2e-test
 ### View test logs
 
 ```bash
-# View central logs
-cat tests/e2e/logs/central.log
+# View control plane logs
+cat tests/e2e/logs/control-plane.log
 
 # View agent logs
 cat tests/e2e/logs/agent.log

@@ -14,8 +14,8 @@ import (
 	"github.com/spf13/viper"
 )
 
-// CentralClient is an HTTP client for the central service API.
-type CentralClient struct {
+// ControlPlaneClient is an HTTP client for the control plane API.
+type ControlPlaneClient struct {
 	baseURL      string
 	httpClient   *http.Client
 	token        string
@@ -41,9 +41,9 @@ type ClustersResponse struct {
 	Clusters []ClusterInfo `json:"clusters"`
 }
 
-// NewCentralClient creates a new client for the central service.
-func NewCentralClient(baseURL string) *CentralClient {
-	return &CentralClient{
+// NewControlPlaneClient creates a new client for the control plane.
+func NewControlPlaneClient(baseURL string) *ControlPlaneClient {
+	return &ControlPlaneClient{
 		baseURL: baseURL,
 		httpClient: &http.Client{
 			Timeout: 10 * time.Second,
@@ -52,18 +52,18 @@ func NewCentralClient(baseURL string) *CentralClient {
 }
 
 // SetToken sets the auth token for authenticated requests.
-func (c *CentralClient) SetToken(token string) {
+func (c *ControlPlaneClient) SetToken(token string) {
 	c.token = token
 }
 
 // setRefreshToken sets the refresh token used for transparent token renewal.
-func (c *CentralClient) setRefreshToken(token string) {
+func (c *ControlPlaneClient) setRefreshToken(token string) {
 	c.refreshToken = token
 }
 
 // Refresh exchanges the refresh token for a new access/refresh token pair,
 // persists the new tokens, and updates the client state.
-func (c *CentralClient) Refresh() error {
+func (c *ControlPlaneClient) Refresh() error {
 	body, _ := json.Marshal(map[string]string{"refresh_token": c.refreshToken})
 	req, err := http.NewRequest(http.MethodPost, c.baseURL+"/auth/refresh", bytes.NewReader(body))
 	if err != nil {
@@ -96,7 +96,7 @@ func (c *CentralClient) Refresh() error {
 
 // SetInsecureSkipVerify disables TLS certificate verification for HTTPS
 // requests. Intended for development with self-signed certificates only.
-func (c *CentralClient) SetInsecureSkipVerify(skip bool) {
+func (c *ControlPlaneClient) SetInsecureSkipVerify(skip bool) {
 	if !skip {
 		return
 	}
@@ -106,7 +106,7 @@ func (c *CentralClient) SetInsecureSkipVerify(skip bool) {
 }
 
 // send sets the bearer token header and executes the request.
-func (c *CentralClient) send(req *http.Request) (*http.Response, error) {
+func (c *ControlPlaneClient) send(req *http.Request) (*http.Response, error) {
 	if c.token != "" {
 		req.Header.Set("Authorization", "Bearer "+c.token)
 	}
@@ -115,7 +115,7 @@ func (c *CentralClient) send(req *http.Request) (*http.Response, error) {
 
 // doRequest executes an HTTP request, transparently refreshing on a 401 if a
 // refresh token is available. It retries the request exactly once after refresh.
-func (c *CentralClient) doRequest(req *http.Request) (*http.Response, error) {
+func (c *ControlPlaneClient) doRequest(req *http.Request) (*http.Response, error) {
 	resp, err := c.send(req)
 	if err != nil {
 		return nil, err
@@ -143,8 +143,8 @@ func (c *CentralClient) doRequest(req *http.Request) (*http.Response, error) {
 	return resp, nil
 }
 
-// Login authenticates with the central service and returns tokens.
-func (c *CentralClient) Login(email, password string) (*LoginResponse, error) {
+// Login authenticates with the control plane and returns tokens.
+func (c *ControlPlaneClient) Login(email, password string) (*LoginResponse, error) {
 	body, _ := json.Marshal(map[string]string{
 		"email":    email,
 		"password": password,
@@ -195,7 +195,7 @@ func newJSONRequest(method, url string, bodyBytes []byte) (*http.Request, error)
 }
 
 // Logout invalidates the refresh token on the server.
-func (c *CentralClient) Logout(refreshToken string) error {
+func (c *ControlPlaneClient) Logout(refreshToken string) error {
 	body, _ := json.Marshal(map[string]string{
 		"refresh_token": refreshToken,
 	})
@@ -213,8 +213,8 @@ func (c *CentralClient) Logout(refreshToken string) error {
 	return nil
 }
 
-// ListClusters fetches the list of clusters from the central service.
-func (c *CentralClient) ListClusters() ([]ClusterInfo, error) {
+// ListClusters fetches the list of clusters from the control plane.
+func (c *ControlPlaneClient) ListClusters() ([]ClusterInfo, error) {
 	url := fmt.Sprintf("%s/api/v1/clusters", c.baseURL)
 
 	req, err := http.NewRequest(http.MethodGet, url, nil)
@@ -242,7 +242,7 @@ func (c *CentralClient) ListClusters() ([]ClusterInfo, error) {
 }
 
 // GetCluster fetches a specific cluster by name.
-func (c *CentralClient) GetCluster(name string) (*ClusterInfo, error) {
+func (c *ControlPlaneClient) GetCluster(name string) (*ClusterInfo, error) {
 	clusters, err := c.ListClusters()
 	if err != nil {
 		return nil, err
@@ -268,7 +268,7 @@ type UserInfo struct {
 }
 
 // ListUsers fetches all users via the admin API.
-func (c *CentralClient) ListUsers() ([]UserInfo, error) {
+func (c *ControlPlaneClient) ListUsers() ([]UserInfo, error) {
 	req, err := http.NewRequest(http.MethodGet, c.baseURL+"/api/v1/admin/users", nil)
 	if err != nil {
 		return nil, fmt.Errorf("creating request: %w", err)
@@ -297,7 +297,7 @@ func (c *CentralClient) ListUsers() ([]UserInfo, error) {
 }
 
 // CreateUser creates a new user via the admin API.
-func (c *CentralClient) CreateUser(email, name, password string) (*UserInfo, error) {
+func (c *ControlPlaneClient) CreateUser(email, name, password string) (*UserInfo, error) {
 	body, _ := json.Marshal(map[string]string{
 		"email": email, "name": name, "password": password,
 	})
@@ -342,7 +342,7 @@ type AuditLogInfo struct {
 
 // ListAuditLogs fetches audit logs, applying the given query filters
 // (user, cluster, status, per_page, ...).
-func (c *CentralClient) ListAuditLogs(filters map[string]string) ([]AuditLogInfo, int, error) {
+func (c *ControlPlaneClient) ListAuditLogs(filters map[string]string) ([]AuditLogInfo, int, error) {
 	q := url.Values{}
 	for k, v := range filters {
 		if v != "" {
@@ -396,7 +396,7 @@ type AgentTokenInfo struct {
 
 // CreateAgentToken generates a new agent token for a cluster. The returned
 // Token is the plaintext secret, shown only once.
-func (c *CentralClient) CreateAgentToken(cluster, description string, expiresInDays int) (*AgentTokenInfo, error) {
+func (c *ControlPlaneClient) CreateAgentToken(cluster, description string, expiresInDays int) (*AgentTokenInfo, error) {
 	payload := map[string]any{"cluster_name": cluster}
 	if description != "" {
 		payload["description"] = description
@@ -433,7 +433,7 @@ func (c *CentralClient) CreateAgentToken(cluster, description string, expiresInD
 }
 
 // ListAgentTokens lists agent tokens, optionally filtered by cluster.
-func (c *CentralClient) ListAgentTokens(cluster string) ([]AgentTokenInfo, error) {
+func (c *ControlPlaneClient) ListAgentTokens(cluster string) ([]AgentTokenInfo, error) {
 	reqURL := c.baseURL + "/api/v1/admin/agent-tokens"
 	if cluster != "" {
 		reqURL += "?cluster=" + url.QueryEscape(cluster)
@@ -465,7 +465,7 @@ func (c *CentralClient) ListAgentTokens(cluster string) ([]AgentTokenInfo, error
 }
 
 // RevokeAgentToken revokes an agent token by ID.
-func (c *CentralClient) RevokeAgentToken(id string) error {
+func (c *ControlPlaneClient) RevokeAgentToken(id string) error {
 	req, err := http.NewRequest(http.MethodDelete, c.baseURL+"/api/v1/admin/agent-tokens/"+url.PathEscape(id), nil)
 	if err != nil {
 		return fmt.Errorf("creating request: %w", err)
@@ -486,8 +486,8 @@ func (c *CentralClient) RevokeAgentToken(id string) error {
 	return nil
 }
 
-// CheckHealth checks if the central service is healthy.
-func (c *CentralClient) CheckHealth() error {
+// CheckHealth checks if the control plane is healthy.
+func (c *ControlPlaneClient) CheckHealth() error {
 	url := fmt.Sprintf("%s/health", c.baseURL)
 
 	resp, err := c.httpClient.Get(url)
@@ -518,7 +518,7 @@ type ExecResponse struct {
 }
 
 // ExecCommand executes a kubectl command on the specified cluster.
-func (c *CentralClient) ExecCommand(clusterName string, command []string, namespace string, timeout int) (*ExecResponse, error) {
+func (c *ControlPlaneClient) ExecCommand(clusterName string, command []string, namespace string, timeout int) (*ExecResponse, error) {
 	url := fmt.Sprintf("%s/api/v1/clusters/%s/exec", c.baseURL, clusterName)
 
 	reqBody := ExecRequest{
@@ -546,9 +546,9 @@ func (c *CentralClient) ExecCommand(clusterName string, command []string, namesp
 	return c.parseExecResponse(resp, clusterName)
 }
 
-// NewCentralClientWithTimeout creates a client with a custom timeout.
-func NewCentralClientWithTimeout(baseURL string, timeout time.Duration) *CentralClient {
-	return &CentralClient{
+// NewControlPlaneClientWithTimeout creates a client with a custom timeout.
+func NewControlPlaneClientWithTimeout(baseURL string, timeout time.Duration) *ControlPlaneClient {
+	return &ControlPlaneClient{
 		baseURL: baseURL,
 		httpClient: &http.Client{
 			Timeout: timeout,
@@ -567,8 +567,8 @@ func defaultPersist() func(access, refresh string) error {
 }
 
 // newAuthenticatedClient creates a client with the stored auth token.
-func newAuthenticatedClient(baseURL string) *CentralClient {
-	c := NewCentralClient(baseURL)
+func newAuthenticatedClient(baseURL string) *ControlPlaneClient {
+	c := NewControlPlaneClient(baseURL)
 	if token := viper.GetString(ConfigKeyToken); token != "" {
 		c.SetToken(token)
 	}
@@ -579,8 +579,8 @@ func newAuthenticatedClient(baseURL string) *CentralClient {
 }
 
 // newAuthenticatedClientWithTimeout creates a client with auth token and custom timeout.
-func newAuthenticatedClientWithTimeout(baseURL string, timeout time.Duration) *CentralClient {
-	c := NewCentralClientWithTimeout(baseURL, timeout)
+func newAuthenticatedClientWithTimeout(baseURL string, timeout time.Duration) *ControlPlaneClient {
+	c := NewControlPlaneClientWithTimeout(baseURL, timeout)
 	if token := viper.GetString(ConfigKeyToken); token != "" {
 		c.SetToken(token)
 	}
@@ -599,7 +599,7 @@ type ExecRequestWithStdin struct {
 }
 
 // ExecCommandWithStdin executes a kubectl command with stdin input.
-func (c *CentralClient) ExecCommandWithStdin(clusterName string, command []string, namespace string, timeout int, stdin string) (*ExecResponse, error) {
+func (c *ControlPlaneClient) ExecCommandWithStdin(clusterName string, command []string, namespace string, timeout int, stdin string) (*ExecResponse, error) {
 	url := fmt.Sprintf("%s/api/v1/clusters/%s/exec", c.baseURL, clusterName)
 
 	reqBody := ExecRequestWithStdin{
@@ -630,7 +630,7 @@ func (c *CentralClient) ExecCommandWithStdin(clusterName string, command []strin
 
 // StreamCommand runs a streaming kubectl command, copying the chunked response
 // body to out until the stream ends or ctx is cancelled.
-func (c *CentralClient) StreamCommand(ctx context.Context, clusterName string, command []string, namespace string, out io.Writer) error {
+func (c *ControlPlaneClient) StreamCommand(ctx context.Context, clusterName string, command []string, namespace string, out io.Writer) error {
 	reqBody, _ := json.Marshal(ExecRequest{Command: command, Namespace: namespace})
 	reqURL := fmt.Sprintf("%s/api/v1/clusters/%s/stream", c.baseURL, clusterName)
 
@@ -695,7 +695,7 @@ func (c *CentralClient) StreamCommand(ctx context.Context, clusterName string, c
 	}
 }
 
-func (c *CentralClient) parseExecResponse(resp *http.Response, clusterName string) (*ExecResponse, error) {
+func (c *ControlPlaneClient) parseExecResponse(resp *http.Response, clusterName string) (*ExecResponse, error) {
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read response: %w", err)

@@ -22,13 +22,13 @@ func init() {
 }
 
 func runLogout(cmd *cobra.Command, args []string) error {
-	centralURL := viper.GetString(ConfigKeyCentralURL)
+	controlPlaneURL := viper.GetString(ConfigKeyControlPlaneURL)
 	token := viper.GetString(ConfigKeyToken)
 	refreshToken := viper.GetString(ConfigKeyRefreshToken)
 
 	// Try to invalidate the refresh token on the server
-	if centralURL != "" && token != "" && refreshToken != "" {
-		client := NewCentralClient(centralURL)
+	if controlPlaneURL != "" && token != "" && refreshToken != "" {
+		client := NewControlPlaneClient(controlPlaneURL)
 		client.SetToken(token)
 		// Best-effort: don't fail if server is unreachable
 		_ = client.Logout(refreshToken)

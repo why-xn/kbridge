@@ -1,4 +1,4 @@
-// Package agent provides the kbridge agent implementation that connects to the central service.
+// Package agent provides the kbridge agent implementation that connects to the control plane.
 package agent
 
 import (
@@ -11,13 +11,13 @@ import (
 
 // Config holds the complete configuration for the agent.
 type Config struct {
-	Central    CentralConfig `yaml:"central"`
+	ControlPlane ControlPlaneConfig `yaml:"control_plane"`
 	Cluster    ClusterConfig `yaml:"cluster"`
 	HealthFile string        `yaml:"health_file"`
 }
 
-// CentralConfig holds the central service connection configuration.
-type CentralConfig struct {
+// ControlPlaneConfig holds the control plane connection configuration.
+type ControlPlaneConfig struct {
 	URL       string         `yaml:"url"`
 	Token     string         `yaml:"token"`
 	TokenFile string         `yaml:"token_file"`
@@ -43,7 +43,7 @@ type ClusterConfig struct {
 // DefaultConfig returns a Config with sensible default values.
 func DefaultConfig() *Config {
 	return &Config{
-		Central: CentralConfig{
+		ControlPlane: ControlPlaneConfig{
 			URL:   "localhost:9090",
 			Token: "",
 		},
@@ -101,20 +101,20 @@ func (c *Config) resolveSecrets() error {
 		if err != nil {
 			return err
 		}
-		c.Central.Token = v
+		c.ControlPlane.Token = v
 		return nil
 	}
-	token, err := resolveSecret(c.Central.Token, c.Central.TokenFile, "KBRIDGE_AGENT_TOKEN")
+	token, err := resolveSecret(c.ControlPlane.Token, c.ControlPlane.TokenFile, "KBRIDGE_AGENT_TOKEN")
 	if err != nil {
 		return err
 	}
 	if token != "" {
-		c.Central.Token = token
+		c.ControlPlane.Token = token
 		return nil
 	}
 	// Backwards-compatible AGENT_TOKEN fallback.
 	if v := os.Getenv("AGENT_TOKEN"); v != "" {
-		c.Central.Token = v
+		c.ControlPlane.Token = v
 	}
 	return nil
 }
@@ -143,8 +143,8 @@ func LoadConfig(path string) (*Config, error) {
 
 // applyEnvOverrides applies non-secret environment variable overrides to the config.
 func applyEnvOverrides(cfg *Config) {
-	if url := os.Getenv("KBRIDGE_CENTRAL_URL"); url != "" {
-		cfg.Central.URL = url
+	if url := os.Getenv("KBRIDGE_CONTROL_PLANE_URL"); url != "" {
+		cfg.ControlPlane.URL = url
 	}
 	if name := os.Getenv("KBRIDGE_CLUSTER_NAME"); name != "" {
 		cfg.Cluster.Name = name
@@ -153,11 +153,11 @@ func applyEnvOverrides(cfg *Config) {
 
 // Validate checks if the configuration is valid.
 func (c *Config) Validate() error {
-	if c.Central.URL == "" {
-		return fmt.Errorf("central.url is required")
+	if c.ControlPlane.URL == "" {
+		return fmt.Errorf("control_plane.url is required")
 	}
-	if c.Central.Token == "" {
-		return fmt.Errorf("central.token is required (set via config or AGENT_TOKEN env var)")
+	if c.ControlPlane.Token == "" {
+		return fmt.Errorf("control_plane.token is required (set via config or AGENT_TOKEN env var)")
 	}
 	if c.Cluster.Name == "" {
 		return fmt.Errorf("cluster.name is required")

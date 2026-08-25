@@ -4,7 +4,7 @@ All components follow the same pattern: `DefaultConfig() → LoadConfig(path) �
 Validate()`. Configs are YAML; the agent and CLI also honour environment
 variables.
 
-## Central (`central.yaml`)
+## Control Plane (`control-plane.yaml`)
 
 ```yaml
 server:
@@ -57,12 +57,12 @@ streams:
 ## Agent (`agent.yaml`)
 
 ```yaml
-central:
-  url: localhost:9090      # central gRPC address
+control_plane:
+  url: localhost:9090      # control plane gRPC address
   token: dev-token         # agent token (bound to one cluster)
   tls:
     enabled: false
-    ca_file: "certs/tls.crt"   # CA to verify central; empty = system roots
+    ca_file: "certs/tls.crt"   # CA to verify control plane; empty = system roots
     insecure: false            # skip verification (dev only)
 
 cluster:
@@ -74,14 +74,14 @@ cluster:
 | Variable | Overrides | Default |
 |----------|-----------|---------|
 | `KBRIDGE_CONFIG` | config file path | `configs/agent.yaml` |
-| `KBRIDGE_CENTRAL_URL` | `central.url` | `localhost:9090` |
-| `KBRIDGE_AGENT_TOKEN` / `AGENT_TOKEN` | `central.token` | — |
+| `KBRIDGE_CONTROL_PLANE_URL` | `control_plane.url` | `localhost:9090` |
+| `KBRIDGE_AGENT_TOKEN` / `AGENT_TOKEN` | `control_plane.token` | — |
 | `KBRIDGE_CLUSTER_NAME` | `cluster.name` | `default` |
 
 ## CLI (`~/.kbridge/config.yaml`)
 
 ```yaml
-central_url: https://central.example.com:8080
+control_plane_url: https://control-plane.example.com:8080
 current_cluster: production-us-east
 token: ""                  # set by `kb login`
 refresh_token: ""
@@ -90,7 +90,7 @@ insecure_skip_verify: false   # skip TLS verification for self-signed dev certs
 
 ## TLS
 
-Server-authenticated TLS protects the HTTP API, the agent↔central gRPC channel,
+Server-authenticated TLS protects the HTTP API, the agent↔control plane gRPC channel,
 and the CLI.
 
 1. Generate a dev certificate (localhost + 127.0.0.1):
@@ -99,10 +99,10 @@ and the CLI.
    make certs           # writes certs/tls.crt and certs/tls.key
    ```
 
-2. Enable on central (`tls.enabled: true`, point at the cert/key).
-3. On the agent, set `central.tls.enabled: true` and either `ca_file: certs/tls.crt`
+2. Enable on the control plane (`tls.enabled: true`, point at the cert/key).
+3. On the agent, set `control_plane.tls.enabled: true` and either `ca_file: certs/tls.crt`
    (verify) or `insecure: true` (skip — dev only).
-4. For the CLI, use an `https://` `central_url`; with a self-signed cert set
+4. For the CLI, use an `https://` `control_plane_url`; with a self-signed cert set
    `insecure_skip_verify: true`.
 
 The same certificate secures both the HTTP and gRPC servers.

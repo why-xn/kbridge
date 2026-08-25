@@ -1,7 +1,7 @@
 # Installation
 
-kbridge has three components: the **central** service, the cluster **agent**,
-and the **CLI**. The central service and agent are long-running; the CLI runs
+kbridge has three components: the **control plane** service, the cluster **agent**,
+and the **CLI**. The control plane and agent are long-running; the CLI runs
 on user machines.
 
 ## CLI installation
@@ -57,13 +57,13 @@ This requires Go 1.25+ and places `kb` in `$GOPATH/bin`.
 Requires Go 1.25+.
 
 ```bash
-make build      # builds bin/kb (+ kbridge symlink), bin/kbridge-central, bin/kbridge-agent
+make build      # builds bin/kb (+ kbridge symlink), bin/kbridge-control-plane, bin/kbridge-agent
 ```
 
-Run central and an agent with example configs:
+Run the control plane and an agent with example configs:
 
 ```bash
-./bin/kbridge-central --config configs/central.yaml
+./bin/kbridge-control-plane --config configs/control-plane.yaml
 ./bin/kbridge-agent   --config configs/agent.yaml
 ```
 
@@ -76,38 +76,38 @@ make docker                                  # builds all three images
 make docker IMAGE_PREFIX=ghcr.io/acme VERSION=v0.1.0-alpha.1
 ```
 
-Images produced (with defaults): `kbridge-central:latest`,
+Images produced (with defaults): `kbridge-control-plane:latest`,
 `kbridge-agent:latest`, `kbridge:latest`.
 
-Run central:
+Run the control plane:
 
 ```bash
 docker run -p 8080:8080 -p 9090:9090 \
-  -v "$PWD/configs/central.yaml:/etc/kbridge/central.yaml:ro" \
-  kbridge-central:latest
+  -v "$PWD/configs/control-plane.yaml:/etc/kbridge/control-plane.yaml:ro" \
+  kbridge-control-plane:latest
 ```
 
 ## Helm (Kubernetes)
 
-Charts live in `charts/central` and `charts/agent`.
+Charts live in `charts/control-plane` and `charts/agent`.
 
 ```bash
-# Central — change the secrets for any real deployment
-helm install kbridge-central ./charts/central \
+# Control Plane — change the secrets for any real deployment
+helm install kbridge-control-plane ./charts/control-plane \
   --set auth.jwtSecret="$(openssl rand -hex 32)" \
   --set auth.adminPassword="$(openssl rand -hex 12)"
 
 # Agent — deployed into each target cluster
 helm install kbridge-agent ./charts/agent \
-  --set central.url=kbridge-central:9090 \
-  --set central.token=<agent-token> \
+  --set control_plane.url=kbridge-control-plane:9090 \
+  --set control_plane.token=<agent-token> \
   --set cluster.name=prod-us-east
 ```
 
 Generate an agent token first with
 `kb admin agent-tokens create --cluster <name>` (see the
 [admin guide](admin.md)) — or via the `POST /api/v1/admin/agent-tokens` API, or
-by seeding one through central's `bootstrap` config.
+by seeding one through the control plane's `bootstrap` config.
 
 Key chart values are documented in each chart's `values.yaml`. The agent chart
 creates a ServiceAccount + ClusterRole; scope `rbac.rules` down to what your
@@ -122,6 +122,6 @@ kb clusters list                  # list registered clusters
 ```
 
 For production deployments, see [Production Install](production-install.md). Before
-exposing the central service to users, work through the
+exposing the control plane to users, work through the
 [Security Hardening Guide](security.md). For backup, upgrade, and troubleshooting
 procedures, see the [Operations Guide](operations.md).

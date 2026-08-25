@@ -9,7 +9,7 @@
 > and REST API paths may change between releases, and it is not yet recommended
 > for unattended production use.
 
-A lightweight, secure CLI tool for managing and accessing multiple Kubernetes clusters through a central gateway — without distributing kubeconfig files, opening inbound firewall rules, or requiring VPN access.
+A lightweight, secure CLI tool for managing and accessing multiple Kubernetes clusters through a central control plane — without distributing kubeconfig files, opening inbound firewall rules, or requiring VPN access.
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/why-xn/kbridge/master/install.sh | sh
@@ -28,11 +28,11 @@ These problems get worse with every new cluster, team, and environment.
 
 ## Solution
 
-kbridge eliminates direct cluster access by placing a central gateway between users and clusters. Users interact with a single CLI tool; clusters run a lightweight agent that connects outbound to the gateway. No inbound ports, no kubeconfig distribution, no VPN required.
+kbridge eliminates direct cluster access by placing a control plane between users and clusters. Users interact with a single CLI tool; clusters run a lightweight agent that connects outbound to the gateway. No inbound ports, no kubeconfig distribution, no VPN required.
 
-1. **Central Service (`kbridge-central`)** — API gateway that authenticates users, enforces access policies, queues commands, and collects results. The single point of control for all cluster access.
-2. **Cluster Agent (`kbridge-agent`)** — A small daemon deployed in each cluster that initiates an outbound gRPC connection to central. It polls for pending commands, executes them via kubectl locally, and returns results. Since connections are outbound-only, no firewall changes or public endpoints are needed.
-3. **CLI (`kb`)** — A user-friendly command-line tool that talks to central over REST. Developers use familiar kubectl syntax (`kb get pods`) without needing direct cluster credentials or network access. (Installed as `kb`, with a `kbridge` symlink for back-compat.)
+1. **Control Plane (`kbridge-control-plane`)** — API gateway that authenticates users, enforces access policies, queues commands, and collects results. The single point of control for all cluster access.
+2. **Cluster Agent (`kbridge-agent`)** — A small daemon deployed in each cluster that initiates an outbound gRPC connection to the control plane. It polls for pending commands, executes them via kubectl locally, and returns results. Since connections are outbound-only, no firewall changes or public endpoints are needed.
+3. **CLI (`kb`)** — A user-friendly command-line tool that talks to the control plane over REST. Developers use familiar kubectl syntax (`kb get pods`) without needing direct cluster credentials or network access. (Installed as `kb`, with a `kbridge` symlink for back-compat.)
 
 ## Architecture
 
@@ -47,8 +47,8 @@ kbridge eliminates direct cluster access by placing a central gateway between us
 |                |                  |  |  +---------+  +----------+  | |
 |  - login       |  +-----------+  |  +-------+---------------------+ |
 |  - clusters    |->|           |<-+----------+                       |
-|  - use         |  |  Central  |  +----------------------------------+
-|  - kubectl     |<-|  Service  |
+|  - use         |  |  Control  |  +----------------------------------+
+|  - kubectl     |<-|   Plane   |
 |                |  |           |  +----------------------------------+
 +----------------+  |  - Auth   |  |         Kubernetes Cluster B     |
                     |  - RBAC   |  |  +-----------------------------+ |
@@ -68,11 +68,11 @@ kbridge eliminates direct cluster access by placing a central gateway between us
 ### How It Works
 
 ```
-CLI (kbridge) --HTTP REST--> Central Service <--gRPC-- Agent (per cluster) --> kubectl
+CLI (kbridge) --HTTP REST--> Control Plane <--gRPC-- Agent (per cluster) --> kubectl
 ```
 
-- **CLI to Central**: REST API for login, cluster listing, and kubectl execution
-- **Agent to Central**: gRPC for registration, heartbeats, command polling, and result submission
+- **CLI to control plane**: REST API for login, cluster listing, and kubectl execution
+- **Agent to control plane**: gRPC for registration, heartbeats, command polling, and result submission
 - **Agent to K8s**: kubectl for local command execution
 
 ## Components
@@ -84,7 +84,7 @@ management command (`login`, `logout`, `status`, `clusters`, `admin`) is run as
 kubectl on the selected cluster. (`kbridge` remains as a back-compat alias.)
 
 ```bash
-kb login                      # Login to central service
+kb login                      # Login to the control plane
 kb logout                     # Logout
 kb clusters list              # List available clusters
 kb clusters use <cluster>     # Select active cluster
@@ -103,13 +103,13 @@ kb admin agent-tokens create --cluster prod  # Generate an agent token
 kb admin audit --user dev@corp.com           # View the command audit log
 ```
 
-### Central Service (`kbridge-central`)
+### Control Plane (`kbridge-control-plane`)
 
 API gateway and control plane. Handles user authentication, cluster registry, RBAC enforcement, command proxying, and audit logging.
 
 ### Agent (`kbridge-agent`)
 
-Lightweight daemon running in each Kubernetes cluster. Connects outbound to central, registers cluster metadata, polls for commands, executes kubectl locally, and submits results back.
+Lightweight daemon running in each Kubernetes cluster. Connects outbound to the control plane, registers cluster metadata, polls for commands, executes kubectl locally, and submits results back.
 
 ## Quick Start
 
@@ -127,16 +127,16 @@ make build
 
 This produces three binaries in `bin/`:
 - `kb` - CLI tool (with a `kbridge` symlink for back-compat)
-- `kbridge-central` - Central service
+- `kbridge-control-plane` - control plane
 - `kbridge-agent` - Cluster agent
 
 ### Run Locally
 
-**1. Start the central service:**
+**1. Start the control plane:**
 ```bash
-# central requires a real jwt_secret (>=32 chars). Generate one:
+# Control Plane requires a real jwt_secret (>=32 chars). Generate one:
 export KBRIDGE_JWT_SECRET="$(openssl rand -hex 32)"
-./bin/kbridge-central --config configs/central.yaml
+./bin/kbridge-control-plane --config configs/control-plane.yaml
 ```
 
 **2. Start an agent (in a cluster with kubectl access):**
@@ -146,7 +146,7 @@ export KBRIDGE_JWT_SECRET="$(openssl rand -hex 32)"
 
 **3. Log in and use the CLI:**
 ```bash
-# Default admin is seeded from central.yaml (admin@kbridge.local / admin123 in
+# Default admin is seeded from control-plane.yaml (admin@kbridge.local / admin123 in
 # the example config — change admin_password after first login for any real deployment).
 ./bin/kb login
 ./bin/kb clusters list
@@ -159,7 +159,7 @@ installs, and the [Documentation](#documentation) section below for full referen
 
 ## Configuration
 
-### Central Service (`central.yaml`)
+### Control Plane (`control-plane.yaml`)
 
 ```yaml
 server:
@@ -184,8 +184,8 @@ See [docs/configuration.md](docs/configuration.md) for the complete reference
 ### Agent (`agent.yaml`)
 
 ```yaml
-central:
-  url: localhost:9090              # Central gRPC address
+control_plane:
+  url: localhost:9090              # control plane gRPC address
   token: dev-token                 # Authentication token
 
 cluster:
@@ -195,7 +195,7 @@ cluster:
 ### CLI (`~/.kbridge/config.yaml`)
 
 ```yaml
-central_url: https://central.example.com:8080
+control_plane_url: https://control-plane.example.com:8080
 current_cluster: production-us-east
 token: ""
 ```
@@ -207,15 +207,15 @@ token: ""
 | Variable | Description | Default |
 |----------|-------------|---------|
 | `KBRIDGE_CONFIG` | Path to config file | `configs/agent.yaml` or `/etc/kbridge/agent.yaml` |
-| `KBRIDGE_CENTRAL_URL` | Central gRPC address | `localhost:9090` |
+| `KBRIDGE_CONTROL_PLANE_URL` | control plane gRPC address | `localhost:9090` |
 | `KBRIDGE_AGENT_TOKEN` | Authentication token | — |
 | `KBRIDGE_CLUSTER_NAME` | Cluster name | `default` |
 
-**Central:**
+**control plane:**
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `KBRIDGE_CONFIG` | Path to config file | `configs/central.yaml` |
+| `KBRIDGE_CONFIG` | Path to config file | `configs/control-plane.yaml` |
 
 ## Agent Deployment
 
@@ -234,8 +234,8 @@ spec:
       - name: agent
         image: kbridge-agent:latest
         env:
-        - name: KBRIDGE_CENTRAL_URL
-          value: "central.example.com:9090"
+        - name: KBRIDGE_CONTROL_PLANE_URL
+          value: "control-plane.example.com:9090"
         - name: KBRIDGE_CLUSTER_NAME
           value: "production-us-east"
         - name: KBRIDGE_AGENT_TOKEN
@@ -249,7 +249,7 @@ spec:
 
 ### Authentication
 
-Users authenticate via `kb login`, which obtains a JWT token from central and stores it locally. All subsequent API calls include this token.
+Users authenticate via `kb login`, which obtains a JWT token from the control plane and stores it locally. All subsequent API calls include this token.
 
 ### RBAC
 
@@ -293,7 +293,7 @@ staleness detection. Tokens are managed with
 
 ### TLS
 
-Server-authenticated TLS secures the HTTP API, the agent↔central gRPC channel,
+Server-authenticated TLS secures the HTTP API, the agent↔control plane gRPC channel,
 and the CLI. Generate a dev certificate with `make certs`; see
 [docs/configuration.md](docs/configuration.md#tls).
 
@@ -322,7 +322,7 @@ cluster, command, result, and duration. Query via `kb admin audit` or
 | Guide | Contents |
 |-------|----------|
 | [Installation](docs/installation.md) | Binary, Docker, and Helm installation |
-| [Configuration](docs/configuration.md) | All central / agent / CLI options, incl. TLS |
+| [Configuration](docs/configuration.md) | All control plane / agent / CLI options, incl. TLS |
 | [CLI reference](docs/cli.md) | Every command with examples |
 | [API reference](docs/api.md) | All HTTP endpoints |
 | [RBAC](docs/rbac.md) | Policy file format and examples |

@@ -55,8 +55,8 @@ func TestDefaultConfig(t *testing.T) {
 		t.Fatal("expected non-nil config")
 	}
 
-	if cfg.Central.URL != "localhost:9090" {
-		t.Errorf("expected default URL 'localhost:9090', got %q", cfg.Central.URL)
+	if cfg.ControlPlane.URL != "localhost:9090" {
+		t.Errorf("expected default URL 'localhost:9090', got %q", cfg.ControlPlane.URL)
 	}
 
 	if cfg.Cluster.Name != "default" {
@@ -68,8 +68,8 @@ func TestDefaultConfig(t *testing.T) {
 func TestLoadConfig(t *testing.T) {
 	// Create temp config file
 	content := `
-central:
-  url: central.example.com:9090
+control_plane:
+  url: control-plane.example.com:9090
   token: test-token
 cluster:
   name: production
@@ -85,12 +85,12 @@ cluster:
 		t.Fatalf("failed to load config: %v", err)
 	}
 
-	if cfg.Central.URL != "central.example.com:9090" {
-		t.Errorf("expected URL 'central.example.com:9090', got %q", cfg.Central.URL)
+	if cfg.ControlPlane.URL != "control-plane.example.com:9090" {
+		t.Errorf("expected URL 'control-plane.example.com:9090', got %q", cfg.ControlPlane.URL)
 	}
 
-	if cfg.Central.Token != "test-token" {
-		t.Errorf("expected token 'test-token', got %q", cfg.Central.Token)
+	if cfg.ControlPlane.Token != "test-token" {
+		t.Errorf("expected token 'test-token', got %q", cfg.ControlPlane.Token)
 	}
 
 	if cfg.Cluster.Name != "production" {
@@ -125,7 +125,7 @@ func TestLoadConfig_EnvVar(t *testing.T) {
 
 	// Create config without token
 	content := `
-central:
+control_plane:
   url: localhost:9090
 cluster:
   name: test
@@ -141,8 +141,8 @@ cluster:
 		t.Fatalf("failed to load config: %v", err)
 	}
 
-	if cfg.Central.Token != "env-token" {
-		t.Errorf("expected token from env 'env-token', got %q", cfg.Central.Token)
+	if cfg.ControlPlane.Token != "env-token" {
+		t.Errorf("expected token from env 'env-token', got %q", cfg.ControlPlane.Token)
 	}
 }
 
@@ -155,7 +155,7 @@ func TestConfig_Validate(t *testing.T) {
 		{
 			name: "valid config",
 			config: &Config{
-				Central: CentralConfig{URL: "localhost:9090", Token: "token"},
+				ControlPlane: ControlPlaneConfig{URL: "localhost:9090", Token: "token"},
 				Cluster: ClusterConfig{Name: "test"},
 			},
 			wantErr: false,
@@ -163,7 +163,7 @@ func TestConfig_Validate(t *testing.T) {
 		{
 			name: "missing URL",
 			config: &Config{
-				Central: CentralConfig{URL: "", Token: "token"},
+				ControlPlane: ControlPlaneConfig{URL: "", Token: "token"},
 				Cluster: ClusterConfig{Name: "test"},
 			},
 			wantErr: true,
@@ -171,7 +171,7 @@ func TestConfig_Validate(t *testing.T) {
 		{
 			name: "missing token",
 			config: &Config{
-				Central: CentralConfig{URL: "localhost:9090", Token: ""},
+				ControlPlane: ControlPlaneConfig{URL: "localhost:9090", Token: ""},
 				Cluster: ClusterConfig{Name: "test"},
 			},
 			wantErr: true,
@@ -179,7 +179,7 @@ func TestConfig_Validate(t *testing.T) {
 		{
 			name: "missing cluster name",
 			config: &Config{
-				Central: CentralConfig{URL: "localhost:9090", Token: "token"},
+				ControlPlane: ControlPlaneConfig{URL: "localhost:9090", Token: "token"},
 				Cluster: ClusterConfig{Name: ""},
 			},
 			wantErr: true,
@@ -198,23 +198,23 @@ func TestConfig_Validate(t *testing.T) {
 
 func TestDefaultConfigWithEnv(t *testing.T) {
 	// Set environment variables
-	os.Setenv("KBRIDGE_CENTRAL_URL", "central.example.com:9090")
+	os.Setenv("KBRIDGE_CONTROL_PLANE_URL", "control-plane.example.com:9090")
 	os.Setenv("KBRIDGE_AGENT_TOKEN", "env-agent-token")
 	os.Setenv("KBRIDGE_CLUSTER_NAME", "env-cluster")
 	defer func() {
-		os.Unsetenv("KBRIDGE_CENTRAL_URL")
+		os.Unsetenv("KBRIDGE_CONTROL_PLANE_URL")
 		os.Unsetenv("KBRIDGE_AGENT_TOKEN")
 		os.Unsetenv("KBRIDGE_CLUSTER_NAME")
 	}()
 
 	cfg := DefaultConfigWithEnv()
 
-	if cfg.Central.URL != "central.example.com:9090" {
-		t.Errorf("expected URL 'central.example.com:9090', got %q", cfg.Central.URL)
+	if cfg.ControlPlane.URL != "control-plane.example.com:9090" {
+		t.Errorf("expected URL 'control-plane.example.com:9090', got %q", cfg.ControlPlane.URL)
 	}
 
-	if cfg.Central.Token != "env-agent-token" {
-		t.Errorf("expected token 'env-agent-token', got %q", cfg.Central.Token)
+	if cfg.ControlPlane.Token != "env-agent-token" {
+		t.Errorf("expected token 'env-agent-token', got %q", cfg.ControlPlane.Token)
 	}
 
 	if cfg.Cluster.Name != "env-cluster" {
@@ -224,16 +224,16 @@ func TestDefaultConfigWithEnv(t *testing.T) {
 
 func TestLoadConfig_EnvOverrides(t *testing.T) {
 	// Set environment variable that should override config file
-	os.Setenv("KBRIDGE_CENTRAL_URL", "override.example.com:9090")
+	os.Setenv("KBRIDGE_CONTROL_PLANE_URL", "override.example.com:9090")
 	os.Setenv("KBRIDGE_CLUSTER_NAME", "override-cluster")
 	defer func() {
-		os.Unsetenv("KBRIDGE_CENTRAL_URL")
+		os.Unsetenv("KBRIDGE_CONTROL_PLANE_URL")
 		os.Unsetenv("KBRIDGE_CLUSTER_NAME")
 	}()
 
 	// Create config file
 	content := `
-central:
+control_plane:
   url: original.example.com:9090
   token: file-token
 cluster:
@@ -251,8 +251,8 @@ cluster:
 	}
 
 	// Environment variables should override file values
-	if cfg.Central.URL != "override.example.com:9090" {
-		t.Errorf("expected URL to be overridden to 'override.example.com:9090', got %q", cfg.Central.URL)
+	if cfg.ControlPlane.URL != "override.example.com:9090" {
+		t.Errorf("expected URL to be overridden to 'override.example.com:9090', got %q", cfg.ControlPlane.URL)
 	}
 
 	if cfg.Cluster.Name != "override-cluster" {
@@ -260,8 +260,8 @@ cluster:
 	}
 
 	// Token should still come from file since not overridden
-	if cfg.Central.Token != "file-token" {
-		t.Errorf("expected token 'file-token', got %q", cfg.Central.Token)
+	if cfg.ControlPlane.Token != "file-token" {
+		t.Errorf("expected token 'file-token', got %q", cfg.ControlPlane.Token)
 	}
 }
 
@@ -276,7 +276,7 @@ func TestLoadConfig_KBRIDGEAgentTokenOverridesAgentToken(t *testing.T) {
 
 	// Create minimal config file
 	content := `
-central:
+control_plane:
   url: localhost:9090
 cluster:
   name: test
@@ -293,7 +293,7 @@ cluster:
 	}
 
 	// KBRIDGE_AGENT_TOKEN should win
-	if cfg.Central.Token != "new-token" {
-		t.Errorf("expected token 'new-token', got %q", cfg.Central.Token)
+	if cfg.ControlPlane.Token != "new-token" {
+		t.Errorf("expected token 'new-token', got %q", cfg.ControlPlane.Token)
 	}
 }

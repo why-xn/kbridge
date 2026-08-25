@@ -16,10 +16,10 @@ import (
 )
 
 // clusterStatus returns the status of a named cluster and whether it is present
-// in central's cluster list at all.
+// in control plane's cluster list at all.
 func clusterStatus(t *testing.T, name string) (string, bool) {
 	t.Helper()
-	body, code := httpGetAuth(t, fmt.Sprintf("%s/api/v1/clusters", *centralURL), authToken)
+	body, code := httpGetAuth(t, fmt.Sprintf("%s/api/v1/clusters", *controlPlaneURL), authToken)
 	if code != http.StatusOK {
 		t.Fatalf("list clusters: want 200, got %d", code)
 	}
@@ -41,13 +41,13 @@ func clusterStatus(t *testing.T, name string) (string, bool) {
 }
 
 // startAgentWithToken launches a real kbridge-agent process configured with the
-// given token and cluster, pointed at central's gRPC address. It returns a stop
+// given token and cluster, pointed at control plane's gRPC address. It returns a stop
 // function that kills the process. The agent uses a minimal config (the same
 // shape the harness writes for the main agent).
 func startAgentWithToken(t *testing.T, cluster, token string) func() {
 	t.Helper()
 	cfgPath := filepath.Join(t.TempDir(), "agent.yaml")
-	cfg := fmt.Sprintf("central:\n  url: %q\n  token: %q\ncluster:\n  name: %q\n",
+	cfg := fmt.Sprintf("control_plane:\n  url: %q\n  token: %q\ncluster:\n  name: %q\n",
 		*grpcAddr, token, cluster)
 	if err := os.WriteFile(cfgPath, []byte(cfg), 0o600); err != nil {
 		t.Fatalf("write agent config: %v", err)
@@ -94,7 +94,7 @@ func TestAgentAuthRejectsBadTokens(t *testing.T) {
 
 	t.Run("revoked token never connects", func(t *testing.T) {
 		cluster := "edge-revoked-agent-cluster"
-		tokensURL := fmt.Sprintf("%s/api/v1/admin/agent-tokens", *centralURL)
+		tokensURL := fmt.Sprintf("%s/api/v1/admin/agent-tokens", *controlPlaneURL)
 
 		// Create a real token (this also registers the cluster) then revoke it.
 		body, code := httpPostAuth(t, tokensURL, authToken, map[string]any{"cluster_name": cluster})

@@ -7,7 +7,7 @@ import (
 	"testing"
 )
 
-func TestCentralClient_Login_Success(t *testing.T) {
+func TestControlPlaneClient_Login_Success(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/auth/login" {
 			t.Errorf("unexpected path: %s", r.URL.Path)
@@ -33,7 +33,7 @@ func TestCentralClient_Login_Success(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := NewCentralClient(server.URL)
+	client := NewControlPlaneClient(server.URL)
 	resp, err := client.Login("admin@test.com", "password123")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -47,35 +47,35 @@ func TestCentralClient_Login_Success(t *testing.T) {
 	}
 }
 
-func TestCentralClient_Login_InvalidCredentials(t *testing.T) {
+func TestControlPlaneClient_Login_InvalidCredentials(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusUnauthorized)
 		w.Write([]byte(`{"error":"invalid credentials"}`))
 	}))
 	defer server.Close()
 
-	client := NewCentralClient(server.URL)
+	client := NewControlPlaneClient(server.URL)
 	_, err := client.Login("bad@test.com", "wrongpass")
 	if err == nil {
 		t.Fatal("expected error for invalid credentials")
 	}
 }
 
-func TestCentralClient_Login_DisabledAccount(t *testing.T) {
+func TestControlPlaneClient_Login_DisabledAccount(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusForbidden)
 		w.Write([]byte(`{"error":"account is disabled"}`))
 	}))
 	defer server.Close()
 
-	client := NewCentralClient(server.URL)
+	client := NewControlPlaneClient(server.URL)
 	_, err := client.Login("disabled@test.com", "password")
 	if err == nil {
 		t.Fatal("expected error for disabled account")
 	}
 }
 
-func TestCentralClient_SetToken_AuthHeader(t *testing.T) {
+func TestControlPlaneClient_SetToken_AuthHeader(t *testing.T) {
 	var gotHeader string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		gotHeader = r.Header.Get("Authorization")
@@ -85,7 +85,7 @@ func TestCentralClient_SetToken_AuthHeader(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := NewCentralClient(server.URL)
+	client := NewControlPlaneClient(server.URL)
 	client.SetToken("my-jwt-token")
 	client.ListClusters()
 
@@ -94,7 +94,7 @@ func TestCentralClient_SetToken_AuthHeader(t *testing.T) {
 	}
 }
 
-func TestCentralClient_NoToken_NoAuthHeader(t *testing.T) {
+func TestControlPlaneClient_NoToken_NoAuthHeader(t *testing.T) {
 	var gotHeader string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		gotHeader = r.Header.Get("Authorization")
@@ -104,7 +104,7 @@ func TestCentralClient_NoToken_NoAuthHeader(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := NewCentralClient(server.URL)
+	client := NewControlPlaneClient(server.URL)
 	client.ListClusters()
 
 	if gotHeader != "" {
@@ -112,14 +112,14 @@ func TestCentralClient_NoToken_NoAuthHeader(t *testing.T) {
 	}
 }
 
-func TestCentralClient_Unauthorized_Response(t *testing.T) {
+func TestControlPlaneClient_Unauthorized_Response(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusUnauthorized)
 		w.Write([]byte(`{"error":"invalid or expired token"}`))
 	}))
 	defer server.Close()
 
-	client := NewCentralClient(server.URL)
+	client := NewControlPlaneClient(server.URL)
 	_, err := client.ListClusters()
 	if err == nil {
 		t.Fatal("expected error for 401 response")

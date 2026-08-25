@@ -17,7 +17,7 @@ jobs:
       - run: go vet ./...
       - run: go test -race -cover ./...
       - uses: azure/setup-helm@v4
-      - run: helm lint charts/central charts/agent
+      - run: helm lint charts/control-plane charts/agent
       - name: Shellcheck install.sh
         run: shellcheck install.sh
       - uses: goreleaser/goreleaser-action@v6

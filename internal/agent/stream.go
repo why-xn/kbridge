@@ -46,7 +46,7 @@ func (a *Agent) openAndServeStream(ctx context.Context) error {
 	}}); err != nil {
 		return err
 	}
-	log.Printf("Opened command stream to central")
+	log.Printf("Opened command stream to control plane")
 
 	var mu sync.Mutex // guards stream.Send across session goroutines
 	sessions := newSessionCancels()
@@ -61,7 +61,7 @@ func (a *Agent) openAndServeStream(ctx context.Context) error {
 			return err
 		}
 		switch v := msg.GetMsg().(type) {
-		case *agentpb.CentralStreamMessage_Start:
+		case *agentpb.ControlPlaneStreamMessage_Start:
 			sctx, cancel := context.WithCancel(ctx)
 			sid := v.Start.GetSessionId()
 			if v.Start.GetTty() {
@@ -80,13 +80,13 @@ func (a *Agent) openAndServeStream(ctx context.Context) error {
 					a.runStreamSession(sctx, &mu, stream, start, stdin)
 				}(v.Start)
 			}
-		case *agentpb.CentralStreamMessage_Stdin:
+		case *agentpb.ControlPlaneStreamMessage_Stdin:
 			sessions.stdinTo(v.Stdin.GetSessionId(), v.Stdin.GetData())
-		case *agentpb.CentralStreamMessage_Resize:
+		case *agentpb.ControlPlaneStreamMessage_Resize:
 			sessions.resizeTo(v.Resize.GetSessionId(), uint16(v.Resize.GetRows()), uint16(v.Resize.GetCols()))
-		case *agentpb.CentralStreamMessage_Cancel:
+		case *agentpb.ControlPlaneStreamMessage_Cancel:
 			sessions.cancel(v.Cancel.GetSessionId())
-		case *agentpb.CentralStreamMessage_PfStart:
+		case *agentpb.ControlPlaneStreamMessage_PfStart:
 			sctx, cancel := context.WithCancel(ctx)
 			sid := v.PfStart.GetSessionId()
 			sessions.add(sid, cancel, nil, nil)
@@ -94,15 +94,15 @@ func (a *Agent) openAndServeStream(ctx context.Context) error {
 				defer sessions.cancel(sid)
 				a.runPortForwardSession(sctx, &mu, stream, start, sessions)
 			}(v.PfStart)
-		case *agentpb.CentralStreamMessage_PfOpen:
+		case *agentpb.ControlPlaneStreamMessage_PfOpen:
 			if pf := sessions.pfFor(v.PfOpen.GetSessionId()); pf != nil {
 				pf.open(v.PfOpen.GetConnId(), uint16(v.PfOpen.GetRemotePort()))
 			}
-		case *agentpb.CentralStreamMessage_PfData:
+		case *agentpb.ControlPlaneStreamMessage_PfData:
 			if pf := sessions.pfFor(v.PfData.GetSessionId()); pf != nil {
 				pf.data(v.PfData.GetConnId(), v.PfData.GetData())
 			}
-		case *agentpb.CentralStreamMessage_PfClose:
+		case *agentpb.ControlPlaneStreamMessage_PfClose:
 			if pf := sessions.pfFor(v.PfClose.GetSessionId()); pf != nil {
 				pf.closeConn(v.PfClose.GetConnId())
 			}

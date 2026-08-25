@@ -86,7 +86,7 @@ func parsePortSpec(spec string) (portMapping, bool) {
 
 // runPortForward opens the bidi stream, waits for READY, binds local listeners,
 // and pumps connections until Ctrl-C.
-func runPortForward(centralURL, cluster, token string, tgt pfTarget, insecure bool) error {
+func runPortForward(controlPlaneURL, cluster, token string, tgt pfTarget, insecure bool) error {
 	q := url.Values{}
 	q.Set("pod", tgt.pod)
 	if tgt.namespace != "" {
@@ -95,9 +95,9 @@ func runPortForward(centralURL, cluster, token string, tgt pfTarget, insecure bo
 	for _, m := range tgt.mappings {
 		q.Add("port", strconv.Itoa(int(m.remote)))
 	}
-	reqURL := fmt.Sprintf("%s/api/v1/clusters/%s/port-forward?%s", centralURL, url.PathEscape(cluster), q.Encode())
+	reqURL := fmt.Sprintf("%s/api/v1/clusters/%s/port-forward?%s", controlPlaneURL, url.PathEscape(cluster), q.Encode())
 
-	client, err := http2Client(centralURL, insecure)
+	client, err := http2Client(controlPlaneURL, insecure)
 	if err != nil {
 		return err
 	}
@@ -116,7 +116,7 @@ func runPortForward(centralURL, cluster, token string, tgt pfTarget, insecure bo
 		resp.Body.Close()
 		refreshToken := viper.GetString(ConfigKeyRefreshToken)
 		if refreshToken != "" {
-			newAccess, newRefresh, rerr := refreshTokenViaHTTP(centralURL, refreshToken, insecure)
+			newAccess, newRefresh, rerr := refreshTokenViaHTTP(controlPlaneURL, refreshToken, insecure)
 			if rerr == nil {
 				viper.Set(ConfigKeyToken, newAccess)
 				viper.Set(ConfigKeyRefreshToken, newRefresh)
@@ -309,13 +309,13 @@ func (r *pfConnRegistry) shutdown() {
 
 // portForwardFromConfig reads viper config and delegates to runPortForward.
 func portForwardFromConfig(tgt pfTarget) error {
-	centralURL := viper.GetString(ConfigKeyCentralURL)
-	if centralURL == "" {
-		return fmt.Errorf("central URL not configured, run 'kb login' first")
+	controlPlaneURL := viper.GetString(ConfigKeyControlPlaneURL)
+	if controlPlaneURL == "" {
+		return fmt.Errorf("control plane URL not configured, run 'kb login' first")
 	}
 	cluster := viper.GetString(ConfigKeyCurrentCluster)
 	if cluster == "" {
 		return fmt.Errorf("no cluster selected, run 'kb clusters use <name>' first")
 	}
-	return runPortForward(centralURL, cluster, viper.GetString(ConfigKeyToken), tgt, viper.GetBool(ConfigKeyInsecure))
+	return runPortForward(controlPlaneURL, cluster, viper.GetString(ConfigKeyToken), tgt, viper.GetBool(ConfigKeyInsecure))
 }

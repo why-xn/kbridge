@@ -14,12 +14,12 @@ import (
 type Type byte
 
 const (
-	Open         Type = 0x01 // CLI->central: conn_id(4) + remote_port(2)
+	Open         Type = 0x01 // CLI->control plane: conn_id(4) + remote_port(2)
 	Data         Type = 0x02 // both: conn_id(4) + raw bytes
 	Close        Type = 0x03 // both: conn_id(4)
-	ConnError    Type = 0x04 // central->CLI: conn_id(4) + UTF-8 error
-	Ready        Type = 0x05 // central->CLI: no payload
-	SessionError Type = 0x06 // central->CLI: UTF-8 error
+	ConnError    Type = 0x04 // control plane->CLI: conn_id(4) + UTF-8 error
+	Ready        Type = 0x05 // control plane->CLI: no payload
+	SessionError Type = 0x06 // control plane->CLI: UTF-8 error
 )
 
 // Encode writes one typed port-forward frame.

@@ -33,7 +33,7 @@ make build          # compile all three binaries to bin/
 
 Produces:
 - `bin/kb` — CLI (with `bin/kbridge` symlink)
-- `bin/kbridge-central` — Central service
+- `bin/kbridge-control-plane` — Control plane
 - `bin/kbridge-agent` — Cluster agent
 
 ## Running tests
@@ -58,7 +58,7 @@ Never edit files in `api/proto/agentpb/` by hand — they are generated output.
 
 ## Code style
 
-- Domain-driven package layout (`internal/central/`, `internal/agent/`, `internal/cli/`).
+- Domain-driven package layout (`internal/controlplane/`, `internal/agent/`, `internal/cli/`).
 - Functions stay under 20 lines; prefer composition over inheritance.
 - Error messages: lowercase, no trailing punctuation, wrapped with context:
   ```go
@@ -83,7 +83,7 @@ Common types: `feat`, `fix`, `docs`, `test`, `refactor`, `chore`.
 Examples:
 ```
 feat(auth): add refresh-token rotation
-fix(agent): handle gRPC reconnect on central restart
+fix(agent): handle gRPC reconnect on control plane restart
 docs: update configuration reference for TLS
 ```
 
