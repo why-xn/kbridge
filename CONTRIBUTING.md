@@ -104,4 +104,8 @@ git push origin vX.Y.Z
 # release.yml publishes binaries+checksums, GHCR images, and OCI charts
 ```
 
+A tag carrying a pre-release suffix (`vX.Y.Z-alpha.N`, `-rc.N`, …) is published
+as a GitHub **pre-release** automatically — `.goreleaser.yaml` sets
+`prerelease: auto`, which infers it from the semver tag. No extra flag needed.
+
 Only maintainers with push access to the repository can cut a release.

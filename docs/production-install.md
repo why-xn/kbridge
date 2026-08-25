@@ -42,7 +42,7 @@ kubectl create secret generic kbridge-central-secrets \
 
 ```bash
 helm install kbridge-central oci://ghcr.io/why-xn/charts/kbridge-central \
-  --version 1.0.0 \
+  --version 0.1.0-alpha.1 \
   --set auth.existingSecret=kbridge-central-secrets \
   --set auth.adminEmail=admin@example.com \
   --set persistence.enabled=true \
@@ -212,7 +212,7 @@ at `/etc/kbridge-token/token`, passing it via `KBRIDGE_AGENT_TOKEN_FILE`.
 ```bash
 # Still in the target cluster context
 helm install kbridge-agent oci://ghcr.io/why-xn/charts/kbridge-agent \
-  --version 1.0.0 \
+  --version 0.1.0-alpha.1 \
   --set central.url=<EXTERNAL-IP>:9090 \
   --set central.existingSecret=kbridge-agent-secrets \
   --set central.tls.enabled=true \

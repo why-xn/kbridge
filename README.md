@@ -1,9 +1,13 @@
 # kbridge
 
 ![CI](https://github.com/why-xn/kbridge/actions/workflows/ci.yml/badge.svg)
-![Release](https://img.shields.io/github/v/release/why-xn/kbridge)
+![Release](https://img.shields.io/github/v/release/why-xn/kbridge?include_prereleases)
 ![Go](https://img.shields.io/github/go-mod/go-version/why-xn/kbridge)
 ![License](https://img.shields.io/badge/license-Elastic%20License%202.0-blue)
+
+> **Status: alpha.** kbridge is pre-1.0 — config keys, the RBAC policy schema,
+> and REST API paths may change between releases, and it is not yet recommended
+> for unattended production use.
 
 A lightweight, secure CLI tool for managing and accessing multiple Kubernetes clusters through a central gateway — without distributing kubeconfig files, opening inbound firewall rules, or requiring VPN access.
 

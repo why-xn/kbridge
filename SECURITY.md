@@ -2,12 +2,13 @@
 
 ## Supported Versions
 
-| Version | Supported |
-|---------|-----------|
-| 1.0.x   | Yes       |
+| Version       | Supported |
+|---------------|-----------|
+| 0.1.x-alpha   | Yes       |
 
-Older versions receive no security fixes. Please upgrade to the latest 1.0.x
-patch release.
+kbridge is in alpha. Only the newest pre-release receives security fixes — there
+is no patch backporting to earlier alphas. Please upgrade to the latest
+pre-release before reporting an issue.
 
 ## Reporting a Vulnerability
 

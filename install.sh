@@ -1,13 +1,15 @@
 #!/bin/sh
 # kbridge CLI installer. Usage:
 #   curl -fsSL https://raw.githubusercontent.com/why-xn/kbridge/master/install.sh | sh
-#   KBRIDGE_VERSION=v1.0.0 KBRIDGE_INSTALL_DIR=~/.local/bin sh install.sh
+#   KBRIDGE_VERSION=v0.1.0-alpha.1 KBRIDGE_INSTALL_DIR=~/.local/bin sh install.sh
 set -eu
 
 REPO="why-xn/kbridge"
 INSTALL_DIR="${KBRIDGE_INSTALL_DIR:-/usr/local/bin}"
 
 fail() { echo "install: $1" >&2; exit 1; }
+warn() { echo "install: $1" >&2; }
+gh_tag() { curl -fsSL "$1" | grep '"tag_name"' | head -1 | cut -d'"' -f4; }
 
 os="$(uname -s | tr '[:upper:]' '[:lower:]')"
 case "$os" in linux|darwin) ;; *) fail "unsupported OS: $os" ;; esac
@@ -20,8 +22,12 @@ esac
 
 version="${KBRIDGE_VERSION:-}"
 if [ -z "$version" ]; then
-  version="$(curl -fsSL "https://api.github.com/repos/${REPO}/releases/latest" \
-    | grep '"tag_name"' | head -1 | cut -d'"' -f4)"
+  api="https://api.github.com/repos/${REPO}/releases"
+  version="$(gh_tag "${api}/latest" 2>/dev/null)" || version=""
+  if [ -z "$version" ]; then
+    version="$(gh_tag "${api}?per_page=1")" || version=""
+    [ -z "$version" ] || warn "no stable release found; installing pre-release ${version}"
+  fi
   [ -n "$version" ] || fail "could not resolve latest version"
 fi
 

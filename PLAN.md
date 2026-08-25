@@ -2,7 +2,7 @@
 
 ## Current Status
 
-All phases (1–9) are complete. **v1.0.0 ships the full feature set.**
+All phases (1–9) are complete. **v0.1.0-alpha.1 ships the full feature set.**
 
 **Phases 1 & 2 (core system):**
 - CLI, Central, and Agent binaries build and work end-to-end
@@ -338,7 +338,7 @@ frees the bare `version` word for kubectl. Implemented as an arg rewrite
 (`rewriteArgs`) wired into `Execute`; verified by unit tests and e2e
 (`TestKubectlByDefault`).
 
-**Post-1.0 items (not in scope for v1.0.0):**
+**Post-1.0 items (not in scope for the alpha series or 1.0.0):**
 - PostgreSQL store driver (the interface is ready; only SQLite is implemented).
 - Mutual TLS (client certificates) — currently server-authenticated TLS only.
 - Prometheus metrics endpoint.

@@ -18,10 +18,12 @@ Or with `wget`:
 wget -qO- https://raw.githubusercontent.com/why-xn/kbridge/master/install.sh | sh
 ```
 
-The installer auto-detects the latest release. To pin a version:
+The installer auto-detects the newest stable release, and falls back to the
+newest pre-release (with a warning) when no stable release exists — which is the
+case while kbridge is in alpha. To pin a version:
 
 ```bash
-KBRIDGE_VERSION=v1.0.0 curl -fsSL \
+KBRIDGE_VERSION=v0.1.0-alpha.1 curl -fsSL \
   https://raw.githubusercontent.com/why-xn/kbridge/master/install.sh | sh
 ```
 
@@ -71,7 +73,7 @@ Multi-stage, CGO-free images (the agent image bundles `kubectl`):
 
 ```bash
 make docker                                  # builds all three images
-make docker IMAGE_PREFIX=ghcr.io/acme VERSION=v1.0.0
+make docker IMAGE_PREFIX=ghcr.io/acme VERSION=v0.1.0-alpha.1
 ```
 
 Images produced (with defaults): `kbridge-central:latest`,
