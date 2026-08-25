@@ -89,6 +89,10 @@ func (e *KubectlExecutor) ExecuteWithStdin(ctx context.Context, args []string, n
 // streamChunkSize bounds how much output is buffered before a chunk is emitted.
 const streamChunkSize = 32 * 1024
 
+// streamDrainGrace bounds how long the pipe readers are given to finish after
+// the process exits before their read ends are force-closed.
+const streamDrainGrace = 500 * time.Millisecond
+
 // ExecuteStream runs a kubectl command, invoking onChunk for each piece of
 // output as it is produced. Cancelling ctx kills the process.
 // onChunk may be called concurrently from the stdout and stderr readers;
@@ -99,33 +103,72 @@ func (e *KubectlExecutor) ExecuteStream(ctx context.Context, args []string, name
 		cmdArgs = append([]string{"-n", namespace}, args...)
 	}
 	cmd := exec.CommandContext(ctx, e.kubectlPath, cmdArgs...)
-	// WaitDelay ensures pipes are force-closed after context cancellation so that
-	// any goroutines blocked on Read are unblocked even if child processes
-	// inherited and still hold the pipe handles.
+	// WaitDelay bounds cancellation: if the process outlives the interrupt,
+	// os/exec force-kills it this long after ctx is done.
 	cmd.WaitDelay = 500 * time.Millisecond
-	stdout, err := cmd.StdoutPipe()
+
+	outR, errR, closeWriters, err := attachStreamPipes(cmd)
 	if err != nil {
-		return -1, fmt.Errorf("stdout pipe: %w", err)
+		return -1, err
 	}
-	stderr, err := cmd.StderrPipe()
-	if err != nil {
-		return -1, fmt.Errorf("stderr pipe: %w", err)
-	}
+	defer func() { outR.Close(); errR.Close() }()
+
 	if err := cmd.Start(); err != nil {
+		closeWriters()
 		return -1, fmt.Errorf("starting kubectl: %w", err)
 	}
+	// The child holds the write ends now; drop the parent's copies so the
+	// readers see EOF once the process (and any inheritor) is gone.
+	closeWriters()
 
-	// waitCh carries the result of cmd.Wait so we can unblock pipe readers.
-	waitCh := make(chan error, 1)
-	go func() { waitCh <- cmd.Wait() }()
+	return drainStream(cmd, outR, errR, onChunk)
+}
 
+// attachStreamPipes wires fresh os.Pipe pairs to cmd's stdout and stderr,
+// returning the parent's read ends and a closer for the parent's write ends.
+//
+// It deliberately avoids cmd.StdoutPipe/StderrPipe: Wait closes the parent end
+// of an exec-owned pipe as soon as the process exits, which races the readers
+// and silently truncates output, while WaitDelay does not cover those pipes at
+// all (os/exec only force-closes them when it created copy goroutines of its
+// own, which it does not do for StdoutPipe). Owning the pipes puts both the
+// truncation and the unblocking under our control.
+func attachStreamPipes(cmd *exec.Cmd) (outR, errR *os.File, closeWriters func(), err error) {
+	outR, outW, err := os.Pipe()
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("stdout pipe: %w", err)
+	}
+	errR, errW, err := os.Pipe()
+	if err != nil {
+		outR.Close()
+		outW.Close()
+		return nil, nil, nil, fmt.Errorf("stderr pipe: %w", err)
+	}
+	cmd.Stdout, cmd.Stderr = outW, errW
+	return outR, errR, func() { outW.Close(); errW.Close() }, nil
+}
+
+// drainStream pumps both pipes until the process exits and the readers drain.
+// Nothing else closes these pipes, so if a grandchild inherited a write end and
+// holds it open, the read ends are force-closed after streamDrainGrace.
+func drainStream(cmd *exec.Cmd, outR, errR *os.File, onChunk func(bool, []byte)) (int, error) {
 	var wg sync.WaitGroup
 	wg.Add(2)
-	go pumpStream(&wg, stdout, true, onChunk)
-	go pumpStream(&wg, stderr, false, onChunk)
-	wg.Wait()
+	go pumpStream(&wg, outR, true, onChunk)
+	go pumpStream(&wg, errR, false, onChunk)
 
-	waitErr := <-waitCh
+	drained := make(chan struct{})
+	go func() { wg.Wait(); close(drained) }()
+
+	waitErr := cmd.Wait()
+	select {
+	case <-drained:
+	case <-time.After(streamDrainGrace):
+		outR.Close()
+		errR.Close()
+		<-drained
+	}
+
 	if waitErr != nil {
 		if exitErr, ok := waitErr.(*exec.ExitError); ok {
 			return exitErr.ExitCode(), nil
