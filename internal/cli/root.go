@@ -17,13 +17,14 @@ multiple Kubernetes clusters through a control plane.
 
 kubectl by default: any command that is not a kbridge management command is run
 as kubectl on the selected cluster. Management commands are login, logout,
-status, clusters, policy, and admin.
+status, clusters, policy, request, grants, and admin.
 
   kb get pods -A            # runs kubectl on the active cluster
   kb logs -f deploy/api     # streaming works too
   kb clusters use prod      # management command
   kb admin users list       # management command
   kb delete ns old --reason "INC-4521"   # justify a guarded command
+  kb request prod-eu --duration 2h --reason "INC-4521"   # ask for access
 
 Use 'kb kubectl ...' (or 'kb k ...') to force kubectl explicitly.`,
 	Version: version.String(),

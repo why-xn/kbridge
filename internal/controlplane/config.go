@@ -22,6 +22,7 @@ type Config struct {
 	Audit     AuditConfig     `yaml:"audit"`
 	Bootstrap BootstrapConfig `yaml:"bootstrap"`
 	RBAC      RBACConfig      `yaml:"rbac"`
+	Grants    GrantsConfig    `yaml:"grants"`
 	TLS       TLSConfig       `yaml:"tls"`
 	Streams   StreamsConfig   `yaml:"streams"`
 }
@@ -37,6 +38,19 @@ type TLSConfig struct {
 // StreamsConfig limits concurrent streaming sessions.
 type StreamsConfig struct {
 	MaxConcurrent int `yaml:"max_concurrent"`
+}
+
+// GrantsConfig bounds just-in-time access grants. MaxDuration is the ceiling on
+// how long any single grant can run, so a request for a thousand hours is
+// refused rather than quietly becoming standing access.
+type GrantsConfig struct {
+	MaxDurationStr     string        `yaml:"max_duration"`
+	MaxDuration        time.Duration `yaml:"-"`
+	DefaultDurationStr string        `yaml:"default_duration"`
+	DefaultDuration    time.Duration `yaml:"-"`
+	// AllowSelfApproval lets a requester approve their own grant. Off by
+	// default: a second pair of eyes is the whole point.
+	AllowSelfApproval bool `yaml:"allow_self_approval"`
 }
 
 // RBACConfig configures policy-file-based access control. When PolicyFile is
@@ -111,6 +125,12 @@ func DefaultConfig() *Config {
 			CleanupInterval:    24 * time.Hour,
 		},
 		Streams: StreamsConfig{MaxConcurrent: 50},
+		Grants: GrantsConfig{
+			MaxDurationStr:     "8h",
+			MaxDuration:        8 * time.Hour,
+			DefaultDurationStr: "1h",
+			DefaultDuration:    time.Hour,
+		},
 	}
 }
 
@@ -169,6 +189,18 @@ func (c *Config) parseDurations() error {
 			return fmt.Errorf("invalid cleanup_interval %q: %w", c.Audit.CleanupIntervalStr, err)
 		}
 	}
+	if c.Grants.MaxDurationStr != "" {
+		c.Grants.MaxDuration, err = time.ParseDuration(c.Grants.MaxDurationStr)
+		if err != nil {
+			return fmt.Errorf("invalid grants.max_duration %q: %w", c.Grants.MaxDurationStr, err)
+		}
+	}
+	if c.Grants.DefaultDurationStr != "" {
+		c.Grants.DefaultDuration, err = time.ParseDuration(c.Grants.DefaultDurationStr)
+		if err != nil {
+			return fmt.Errorf("invalid grants.default_duration %q: %w", c.Grants.DefaultDurationStr, err)
+		}
+	}
 	return nil
 }
 
@@ -183,7 +215,51 @@ func (c *Config) Validate() error {
 	if err := c.validateAuth(); err != nil {
 		return err
 	}
+	if err := c.validateGrants(); err != nil {
+		return err
+	}
 	return c.validateTLS()
+}
+
+// Built-in grant bounds, used when a config leaves them unset.
+const (
+	defaultGrantMaxDuration     = 8 * time.Hour
+	defaultGrantDefaultDuration = time.Hour
+)
+
+// EffectiveMaxDuration is the ceiling on a grant's window. Zero means unset, so
+// a config that predates just-in-time access (or a hand-built one) still gets
+// a sane bound rather than being rejected.
+func (g GrantsConfig) EffectiveMaxDuration() time.Duration {
+	if g.MaxDuration <= 0 {
+		return defaultGrantMaxDuration
+	}
+	return g.MaxDuration
+}
+
+// EffectiveDefaultDuration is the window used when a request names none.
+func (g GrantsConfig) EffectiveDefaultDuration() time.Duration {
+	if g.DefaultDuration <= 0 {
+		return defaultGrantDefaultDuration
+	}
+	return g.DefaultDuration
+}
+
+// validateGrants rejects bounds that are self-contradictory. Unset (zero) is
+// fine and falls back to the built-in defaults; only a negative value or a
+// default past the ceiling is an error.
+func (c *Config) validateGrants() error {
+	if c.Grants.MaxDuration < 0 {
+		return fmt.Errorf("grants.max_duration must not be negative, got %s", c.Grants.MaxDuration)
+	}
+	if c.Grants.DefaultDuration < 0 {
+		return fmt.Errorf("grants.default_duration must not be negative, got %s", c.Grants.DefaultDuration)
+	}
+	if c.Grants.EffectiveDefaultDuration() > c.Grants.EffectiveMaxDuration() {
+		return fmt.Errorf("grants.default_duration (%s) exceeds grants.max_duration (%s)",
+			c.Grants.EffectiveDefaultDuration(), c.Grants.EffectiveMaxDuration())
+	}
+	return nil
 }
 
 func (c *Config) validateTLS() error {

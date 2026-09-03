@@ -14,6 +14,10 @@ const (
 	// ActionRequireReason rejects the command unless the caller supplied a
 	// justification, which is then recorded in the audit log.
 	ActionRequireReason Action = "require-reason"
+	// ActionRequireApproval rejects the command unless someone else has already
+	// approved a time-boxed grant covering it. A reason is self-asserted; an
+	// approval is not, which is what makes this the stronger control.
+	ActionRequireApproval Action = "require-approval"
 )
 
 // Reason length bounds. A reason must be substantial enough to be useful in an
@@ -22,6 +26,15 @@ const (
 	MinReasonLength = 8
 	MaxReasonLength = 512
 )
+
+// valid reports whether the action is one this engine knows how to apply.
+func (a Action) valid() bool {
+	switch a {
+	case ActionDeny, ActionRequireReason, ActionRequireApproval:
+		return true
+	}
+	return false
+}
 
 // Match narrows a guardrail to a subset of commands. Unlike a Rule, an omitted
 // or empty list means "any value" rather than "no value", so a guardrail that
@@ -54,7 +67,7 @@ type Guardrail struct {
 func (m Match) matches(req AccessRequest) bool {
 	return matchesAny(m.Clusters, req.Cluster) &&
 		matchesAny(m.Namespaces, req.Namespace) &&
-		matchesAny(m.Resources, req.Resource) &&
+		resourceMatchesAny(m.Resources, req.Resource) &&
 		verbMatchesAny(m.Verbs, req.Verb) &&
 		allArgsPresent(m.Args, req.Args) &&
 		noArgPresent(m.ArgsNot, req.Args)
@@ -63,7 +76,7 @@ func (m Match) matches(req AccessRequest) bool {
 // exempts reports whether subject is excused from this guardrail.
 func (g Guardrail) exempts(subject string) bool {
 	for _, pattern := range g.Exempt {
-		if matchPattern(pattern, subject) {
+		if MatchPattern(pattern, subject) {
 			return true
 		}
 	}
@@ -75,16 +88,62 @@ func (g Guardrail) explain() string {
 	if g.Message != "" {
 		return g.Message
 	}
-	if g.Action == ActionRequireReason {
+	switch g.Action {
+	case ActionRequireReason:
 		return "this command requires a reason"
+	case ActionRequireApproval:
+		return "this command requires an approved access grant"
+	default:
+		return "this command is blocked by policy"
 	}
-	return "this command is blocked by policy"
 }
 
 // matchesAny reports whether value matches any pattern. An empty pattern list
 // matches everything.
 func matchesAny(patterns []string, value string) bool {
 	return len(patterns) == 0 || anyMatch(patterns, value)
+}
+
+// resourceMatchesAny is matchesAny for resources, additionally tolerating the
+// singular/plural spellings kubectl treats as the same thing, so a guardrail
+// written for "deployments" also catches "delete deployment api".
+//
+// This widening is deliberately confined to guardrails, which only take access
+// away. Role rules stay exact: there, a spelling that matched more than the
+// author meant would grant more than they intended.
+func resourceMatchesAny(patterns []string, resource string) bool {
+	if len(patterns) == 0 {
+		return true
+	}
+	if anyMatch(patterns, resource) {
+		return true
+	}
+	for _, alias := range resourceAliases(resource) {
+		if anyMatch(patterns, alias) {
+			return true
+		}
+	}
+	return false
+}
+
+// resourceAliases returns the other spellings of a resource name. It covers the
+// regular English forms kubectl uses; an irregular resource can always be listed
+// explicitly in the guardrail.
+func resourceAliases(r string) []string {
+	switch {
+	case r == "":
+		return nil
+	case strings.HasSuffix(r, "ies"):
+		return []string{strings.TrimSuffix(r, "ies") + "y"}
+	case strings.HasSuffix(r, "es"):
+		return []string{strings.TrimSuffix(r, "es"), strings.TrimSuffix(r, "s")}
+	case strings.HasSuffix(r, "s"):
+		return []string{strings.TrimSuffix(r, "s")}
+	case strings.HasSuffix(r, "y"):
+		return []string{strings.TrimSuffix(r, "y") + "ies"}
+	default:
+		return []string{r + "s", r + "es"}
+	}
 }
 
 // verbMatchesAny is matchesAny for verbs, which compare case-insensitively.
@@ -116,10 +175,10 @@ func noArgPresent(patterns, args []string) bool {
 // written as "--namespace=kube-system" also matches the bare "--namespace".
 func anyArgMatches(pattern string, args []string) bool {
 	for _, arg := range args {
-		if matchPattern(pattern, arg) {
+		if MatchPattern(pattern, arg) {
 			return true
 		}
-		if name, _, ok := strings.Cut(arg, "="); ok && matchPattern(pattern, name) {
+		if name, _, ok := strings.Cut(arg, "="); ok && MatchPattern(pattern, name) {
 			return true
 		}
 	}
@@ -153,9 +212,9 @@ func (p *Policy) validateGuardrails() error {
 			return fmt.Errorf("duplicate guardrail %q", g.Name)
 		}
 		seen[g.Name] = true
-		if g.Action != ActionDeny && g.Action != ActionRequireReason {
-			return fmt.Errorf("guardrail %q has unknown action %q (want %q or %q)",
-				g.Name, g.Action, ActionDeny, ActionRequireReason)
+		if !g.Action.valid() {
+			return fmt.Errorf("guardrail %q has unknown action %q (want one of %q, %q, %q)",
+				g.Name, g.Action, ActionDeny, ActionRequireReason, ActionRequireApproval)
 		}
 	}
 	return nil

@@ -126,7 +126,11 @@ namespace, and resource — which is usually what you want, but check your
 | Action | Effect |
 |---|---|
 | `deny` | The command is refused. `403`, audit status `blocked`. |
-| `require-reason` | The command is refused **unless** the caller supplied `--reason`. With a reason it runs, and the reason is stored on the audit entry. |
+| `require-reason` | Refused **unless** the caller supplied `--reason`. With a reason it runs, and the reason is stored on the audit entry. |
+| `require-approval` | Refused **unless** someone else has approved a time-boxed grant covering it. See [Just-in-time access](#just-in-time-access). |
+
+A reason is self-asserted; an approval is not. Use `require-reason` where you
+want the record, and `require-approval` where you want a second pair of eyes.
 
 A reason must be at least 8 characters after trimming (so `INC-4521` qualifies)
 and is truncated at 512. Users supply it with the `--reason` flag, which kbridge
@@ -190,11 +194,86 @@ kb policy test -f configs/rbac.yaml -u alice@corp.com -c prod-eu -- delete ns pa
 gate a merge. It prints the parsed request alongside the verdict, which is the
 fastest way to see why a guardrail did or did not fire.
 
+### Resource spelling
+
+Guardrail `resources` matching tolerates the singular and plural forms kubectl
+accepts, so a guardrail written for `deployments` also catches
+`delete deployment api`. Irregular names can still be listed explicitly.
+
+This widening applies to **guardrails only**. Role rules stay exact, because
+there a loose match would grant more than the author spelled out, whereas a
+guardrail can only take access away.
+
 ### Known limitation
 
 The resource is parsed as the first non-flag token after the verb, so
 `apply -f app.yaml` reports its resource as `app.yaml`. Scope guardrails on
 `apply` by verb and cluster rather than by `resources`.
+
+## Just-in-time access
+
+A `require-approval` guardrail is satisfied only by an **approved, unexpired
+grant**: a time-boxed permission one person requests and another approves.
+
+```
+kb request  ──▶  pending  ──▶  kb admin grants approve  ──▶  approved
+                                                                │
+                                              expires on its own │ or kb admin grants revoke
+                                                                ▼
+                                                          no longer admits
+```
+
+### Asking for access
+
+```bash
+kb request prod-eu --duration 2h --reason "INC-4521 rolling back bad deploy"
+kb request prod-eu --namespace payments --reason "INC-4521 investigating"
+kb grants                    # your requests and how long each has left
+```
+
+A request needs a reason of at least 8 characters. Omitting `--duration` uses
+`grants.default_duration`; anything above `grants.max_duration` is refused. A
+pending request grants nothing, and carries no expiry — the clock starts at
+approval, not at request time.
+
+### Deciding
+
+```bash
+kb admin grants list --status pending
+kb admin grants approve <id> --note "paged, go ahead"
+kb admin grants approve <id> --duration 30m     # shorten the window
+kb admin grants deny <id> --note "use the runbook instead"
+kb admin grants revoke <id>                     # end an approved grant early
+```
+
+Approving your own request is refused unless `grants.allow_self_approval` is on.
+A grant can be decided once; a second decision returns `409`. Revocation takes
+effect immediately, and works on a pending grant too.
+
+### Scope
+
+A grant covers a cluster and, optionally, one namespace. Both are glob patterns,
+so a grant for `prod-*` covers every production cluster while one for `prod-eu`
+with namespace `payments` covers nothing else.
+
+### Configuration
+
+```yaml
+grants:
+  max_duration: 8h              # ceiling on any single grant
+  default_duration: 1h          # used when a request names no duration
+  allow_self_approval: false    # a second pair of eyes is the point
+```
+
+Both durations are optional: leaving them unset falls back to these values, so a
+config written before just-in-time access existed keeps working.
+
+### Audit
+
+Every step is recorded: `grant-requested`, `grant-approved`, `grant-denied`, and
+`grant-revoked`, each carrying the grant ID. Commands a grant admitted carry the
+same `grant_id`, so `GET /api/v1/admin/audit?grant_id=<id>` returns the request,
+the decision, and everything run under it.
 
 ## Reloading
 

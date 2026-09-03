@@ -80,8 +80,10 @@ func NewServer(cfg *Config) (*Server, error) {
 	}
 
 	sessionManager := NewSessionManager(cfg.Streams.MaxConcurrent)
+	grantService := NewGrantService(dbStore, auditRecorder, cfg.Grants)
 
-	httpHandler := NewHTTPServer(agentStore, commandQueue, authHandlers, adminHandlers, policy, auditRecorder, sessionManager, jwtManager)
+	httpHandler := NewHTTPServer(agentStore, commandQueue, authHandlers, adminHandlers, policy,
+		auditRecorder, sessionManager, jwtManager, WithGrants(grantService, cfg.Grants))
 	grpcHandler := NewGRPCServer(agentStore, commandQueue, authenticator, sessionManager)
 
 	grpcOpts, err := grpcServerOptions(cfg.TLS)

@@ -66,6 +66,25 @@ CREATE INDEX IF NOT EXISTS idx_audit_logs_cluster_id ON audit_logs(cluster_id);
 CREATE INDEX IF NOT EXISTS idx_audit_logs_created_at ON audit_logs(created_at);
 CREATE INDEX IF NOT EXISTS idx_audit_logs_user_email ON audit_logs(user_email);
 
+CREATE TABLE IF NOT EXISTS grants (
+    id            TEXT PRIMARY KEY,
+    subject       TEXT NOT NULL,
+    user_id       TEXT REFERENCES users(id) ON DELETE SET NULL,
+    cluster_name  TEXT NOT NULL,
+    namespace     TEXT,
+    status        TEXT NOT NULL,
+    reason        TEXT NOT NULL,
+    duration_ns   INTEGER NOT NULL,
+    requested_at  TEXT NOT NULL,
+    decided_at    TEXT,
+    decided_by    TEXT,
+    decision_note TEXT,
+    expires_at    TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_grants_subject ON grants(subject);
+CREATE INDEX IF NOT EXISTS idx_grants_status ON grants(status);
+CREATE INDEX IF NOT EXISTS idx_grants_expires_at ON grants(expires_at);
+
 CREATE TABLE IF NOT EXISTS refresh_tokens (
     id         TEXT PRIMARY KEY,
     user_id    TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -82,6 +101,7 @@ CREATE INDEX IF NOT EXISTS idx_refresh_tokens_token_hash ON refresh_tokens(token
 var addedColumns = []struct{ table, column, definition string }{
 	{"users", "is_admin", "INTEGER NOT NULL DEFAULT 0"},
 	{"audit_logs", "reason", "TEXT"},
+	{"audit_logs", "grant_id", "TEXT"},
 }
 
 func createSchema(db *sql.DB) error {

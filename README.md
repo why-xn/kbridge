@@ -323,6 +323,38 @@ kb policy validate -f configs/rbac.yaml
 kb policy test -f configs/rbac.yaml -u alice@corp.com -c prod-eu -- delete ns payments
 ```
 
+### Just-in-time access
+
+Guardrails can also require that someone *else* says yes. A `require-approval`
+guardrail is satisfied only by a time-boxed grant, so nobody changes production
+alone and the access disappears on a timer instead of lingering.
+
+```yaml
+guardrails:
+  - name: prod-workload-delete-needs-approval
+    match:
+      clusters: ["prod-*"]
+      resources: ["deployments", "statefulsets"]
+      verbs: ["delete"]
+    action: require-approval
+```
+
+```bash
+# Ask
+kb request prod-eu --duration 2h --reason "INC-4521 rolling back bad deploy"
+kb grants                                    # yours, with time remaining
+
+# Decide (admin)
+kb admin grants list --status pending
+kb admin grants approve <id> --note "paged, go ahead"
+kb admin grants revoke <id>                  # end one early
+```
+
+A pending request grants nothing — the clock starts at approval, not at request
+time — and self-approval is refused by default. Every step is audited, and a
+command an approval admitted carries the same grant ID, so one query returns the
+request, the decision, and everything run under it.
+
 ### Agent Authentication
 
 Agents authenticate with database-backed tokens. Each token is a high-entropy

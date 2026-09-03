@@ -64,8 +64,20 @@ guardrails:
     action: deny
     message: "bulk delete is not allowed in production; name the resources explicitly"
 
-  # Mutating production is allowed, but it has to be justified. args_not exempts
-  # a server-side dry run, which changes nothing.
+  # Deleting a workload in production needs a second pair of eyes: only an
+  # approved, time-boxed grant admits it (see `kb request` / `kb admin grants`).
+  # A reason is self-asserted; an approval is not.
+  - name: prod-workload-delete-needs-approval
+    description: Requires an approved access grant to delete production workloads.
+    match:
+      clusters: ["prod-*", "prod"]
+      resources: ["deployments", "statefulsets", "daemonsets"]
+      verbs: ["delete"]
+    action: require-approval
+    message: "deleting production workloads requires an approved access grant"
+
+  # Other mutations are allowed, but have to be justified. args_not exempts a
+  # server-side dry run, which changes nothing.
   - name: prod-writes-need-a-reason
     description: Requires a justification for any production mutation.
     match:

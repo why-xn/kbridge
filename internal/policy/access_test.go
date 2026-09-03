@@ -26,8 +26,8 @@ func TestMatchPattern(t *testing.T) {
 		{"", "x", false},
 	}
 	for _, tt := range tests {
-		if got := matchPattern(tt.pattern, tt.value); got != tt.want {
-			t.Errorf("matchPattern(%q, %q) = %v, want %v", tt.pattern, tt.value, got, tt.want)
+		if got := MatchPattern(tt.pattern, tt.value); got != tt.want {
+			t.Errorf("MatchPattern(%q, %q) = %v, want %v", tt.pattern, tt.value, got, tt.want)
 		}
 	}
 }

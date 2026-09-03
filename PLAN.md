@@ -2,8 +2,8 @@
 
 ## Current Status
 
-All phases (1–10) are complete. **v0.2.0-alpha.1 ships phases 1–9; command
-guardrails (phase 10) are on master and unreleased.**
+All phases (1–11) are complete. **v0.2.0-alpha.1 ships phases 1–9; command
+guardrails (phase 10) and just-in-time access (phase 11) are unreleased.**
 
 **Phases 1 & 2 (core system):**
 - CLI, control plane, and Agent binaries build and work end-to-end
@@ -340,9 +340,8 @@ frees the bare `version` word for kubectl. Implemented as an arg rewrite
 (`TestKubectlByDefault`).
 
 **Post-1.0 items (not in scope for the alpha series or 1.0.0):**
-- Just-in-time access with approval workflows (time-boxed grants, Slack/Teams
-  approval). Guardrails (Phase 10) are the enforcement half; this adds the time
-  dimension and an approval state machine on top of the same policy engine.
+- Slack/Teams notification on a new access request, and approval from the chat
+  message. Phase 11 ships the state machine; this is a webhook on top of it.
 - Stateful guardrails, such as requiring a server-side dry run within N minutes
   before the real apply. Phase 10 guardrails are stateless by design.
 - PostgreSQL store driver (the interface is ready; only SQLite is implemented).
@@ -355,6 +354,41 @@ frees the bare `version` word for kubectl. Implemented as an arg rewrite
   handed a kubeconfig. Runs as a mode of the control plane, reusing
   `authorizeExec` (`internal/controlplane/http.go`) and `AuditRecorder`
   rather than adding a second authorization path.
+
+## Phase 11: Just-in-time access grants — DONE
+
+Shipped after Phase 10. Guardrails gain a third action, `require-approval`,
+satisfied only by an approved, unexpired grant — a time-boxed permission one
+person requests and another approves. This is the control `require-reason`
+cannot be: a reason is self-asserted, an approval is not, which also makes it
+the only guardrail an AI agent cannot satisfy on its own.
+
+Grants carry a subject, a cluster and optional namespace (both globs), a reason,
+and a window. A pending request grants nothing and has no expiry; the clock
+starts at approval. **Expiry is derived, not stored as a status**, so a grant
+lapses without any background job flipping rows. Self-approval is refused unless
+`grants.allow_self_approval` is set, and revocation takes effect immediately.
+
+The policy package stays pure: it returns `approval-required` and the control
+plane, which owns the dynamic state, checks for a covering grant before treating
+that as a refusal. `grant_id` on `ExecRequest` is server-side only — a client
+that sends one is ignored, so a forged grant cannot admit a command.
+
+CLI: `kb request`, `kb grants`, and `kb admin grants list/approve/deny/revoke`.
+Config: a `grants` section whose durations are optional, so a pre-existing
+config keeps working. Audit: `grant_id` on every entry plus four lifecycle
+statuses, making "who asked, who approved, and what did they run" one query.
+
+Also fixed here: guardrail `resources` matching now tolerates kubectl's
+singular/plural spellings, which had silently stopped a guardrail written for
+`deployments` from catching `delete deployment api`. Role rules stay exact.
+
+Verified at every layer, all run green: policy unit tests, grant domain and
+service unit tests (50 subtests), store tests including the
+upgrade-from-old-schema path, config tests, HTTP tests covering the endpoints,
+admission, scope, expiry and the forged-grant case, CLI tests, and three e2e
+suites against a real Kind cluster (`TestGrantsHTTPFlow`, `TestGrantsAPIEdgeCases`,
+`TestGrantsCLI`) driving the genuine two-person flow.
 
 ## Phase 10: Command guardrails — DONE
 
