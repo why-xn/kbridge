@@ -47,6 +47,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   CLI can evaluate a policy file offline without linking the control plane's
   HTTP, gRPC, and SQLite stacks. No configuration or wire format changed.
 
+### Fixed
+
+- A refused command no longer prints its error three times with cobra usage
+  text appended; errors from the kubectl path are printed once.
+- `kb policy` writes its verdict to stdout rather than stderr, so it can be
+  piped. Cobra's `cmd.Print` defaults to stderr, which is not what a command
+  whose output *is* the result wants.
+
 ### Migration
 
 Existing databases gain the `audit_logs.reason` column automatically on startup.

@@ -37,7 +37,8 @@ bindings, duplicate role or guardrail names, and unknown guardrail actions.
 
 Examples:
   kb policy validate -f configs/rbac.yaml`,
-	RunE: runPolicyValidate,
+	SilenceUsage: true,
+	RunE:         runPolicyValidate,
 }
 
 var policyTestCmd = &cobra.Command{
@@ -49,7 +50,8 @@ running anything against a cluster.
 Examples:
   kb policy test -f configs/rbac.yaml -u alice@corp.com -c prod-eu -- delete ns payments
   kb policy test -f configs/rbac.yaml -u bob@corp.com -c prod-eu --reason "INC-4521" -- delete pod api-0`,
-	RunE: runPolicyTest,
+	SilenceUsage: true,
+	RunE:         runPolicyTest,
 }
 
 func init() {
@@ -82,7 +84,7 @@ func runPolicyValidate(cmd *cobra.Command, _ []string) error {
 	if err != nil {
 		return err
 	}
-	cmd.Printf("%s is valid: %d role(s), %d binding(s), %d guardrail(s)\n",
+	fmt.Fprintf(cmd.OutOrStdout(), "%s is valid: %d role(s), %d binding(s), %d guardrail(s)\n",
 		policyFile, len(p.Roles), len(p.Bindings), len(p.Guardrails))
 	return nil
 }
@@ -98,7 +100,7 @@ func runPolicyTest(cmd *cobra.Command, args []string) error {
 
 	req := policy.ParseAccessRequest(policyCluster, args, policyNamespace)
 	decision := p.Evaluate(policyUser, req, policyReason)
-	cmd.Print(formatDecision(policyUser, req, decision))
+	fmt.Fprint(cmd.OutOrStdout(), formatDecision(policyUser, req, decision))
 	if !decision.Allowed() {
 		os.Exit(exitPolicyRefused)
 	}

@@ -379,8 +379,11 @@ on existing databases.
 Verified by unit tests (guardrail matching, arg globbing, reason normalization,
 policy validation, schema migration including the upgrade-from-old-schema path),
 HTTP-level tests (deny, reason-required, reason-accepted, audit rows, match
-scoping), CLI tests (flag extraction, rejection rendering, audit table), an e2e
-test (`TestGuardrailsEnforced`), and a live control-plane-plus-agent smoke run.
+scoping), CLI tests (flag extraction, rejection rendering, audit table), and
+three e2e suites against a real Kind cluster: `TestGuardrailsEnforced` (HTTP
+surface), `TestGuardrailsCLI` (the `kb` binary, including that `--reason` is
+consumed by kbridge rather than forwarded to kubectl), and
+`TestPolicyCLICommands` (`kb policy validate` / `test` exit codes and output).
 
 ## Phase 8: Interactive exec (`kb exec -it`) — DONE
 
