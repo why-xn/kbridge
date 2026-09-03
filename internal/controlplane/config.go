@@ -56,15 +56,35 @@ type GrantsConfig struct {
 	Notify []NotifyConfig `yaml:"notify"`
 }
 
-// NotifyConfig is one webhook receiving grant events.
+// NotifyConfig is one webhook receiving grant events. The URL is itself a
+// secret for chat services (anyone holding a Slack webhook URL can post to the
+// channel), so both it and the signing secret follow the same file/env/inline
+// resolution as every other secret in this config.
 type NotifyConfig struct {
-	URL    string `yaml:"url"`
-	Format string `yaml:"format"` // slack, google-chat, or json
+	URL     string `yaml:"url"`
+	URLFile string `yaml:"url_file"`
+	Format  string `yaml:"format"` // slack, google-chat, or json
 	// Secret, for json hooks, signs each body with HMAC-SHA256 so the receiver
 	// can verify the sender. Ignored for chat formats, which cannot check it.
-	Secret string `yaml:"secret"`
+	Secret     string `yaml:"secret"`
+	SecretFile string `yaml:"secret_file"`
 	// Events narrows the hook to some lifecycle events. Empty means all.
 	Events []string `yaml:"events"`
+}
+
+// resolveSecrets fills URL and Secret from their file or env sources. The env
+// names are indexed by the hook's position, KBRIDGE_GRANTS_NOTIFY_0_URL and so
+// on, because hooks are a list.
+func (n *NotifyConfig) resolveSecrets(index int) error {
+	prefix := fmt.Sprintf("KBRIDGE_GRANTS_NOTIFY_%d", index)
+	var err error
+	if n.URL, err = resolveSecret(n.URL, n.URLFile, prefix+"_URL"); err != nil {
+		return fmt.Errorf("grants.notify[%d]: %w", index, err)
+	}
+	if n.Secret, err = resolveSecret(n.Secret, n.SecretFile, prefix+"_SECRET"); err != nil {
+		return fmt.Errorf("grants.notify[%d]: %w", index, err)
+	}
+	return nil
 }
 
 // wants reports whether the hook subscribes to an event.
@@ -418,6 +438,11 @@ func (c *Config) resolveSecrets() error {
 	}
 	if c.Auth.AdminPassword, err = resolveSecret(c.Auth.AdminPassword, c.Auth.AdminPasswordFile, "KBRIDGE_ADMIN_PASSWORD"); err != nil {
 		return err
+	}
+	for i := range c.Grants.Notify {
+		if err := c.Grants.Notify[i].resolveSecrets(i); err != nil {
+			return err
+		}
 	}
 	return nil
 }

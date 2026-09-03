@@ -131,8 +131,10 @@ grants:
     # TestGrantNotifications listens here and verifies the signed payload.
     - url: "http://localhost:${NOTIFY_PORT}/hook"
       format: json
-      secret: "e2e-notify-secret"
+      secret_file: "${CONFIG_DIR}/notify-secret"
 EOF
+    # The signing secret is mounted from a file, as a production install would.
+    printf 'e2e-notify-secret\n' > "${CONFIG_DIR}/notify-secret"
 
     # Create RBAC policy: the e2e admin gets full access; everyone else is a viewer.
     cat > "${CONFIG_DIR}/rbac.yaml" <<EOF

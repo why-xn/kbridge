@@ -2,6 +2,7 @@ package controlplane
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -204,5 +205,96 @@ grants:
 	}
 	if cfg.Grants.Notify[1].Secret != "hunter2" || len(cfg.Grants.Notify[1].Events) != 2 {
 		t.Errorf("second hook not parsed fully: %+v", cfg.Grants.Notify[1])
+	}
+}
+
+// writeSecret writes one secret to a temp file and returns its path.
+func writeSecret(t *testing.T, name, value string) string {
+	t.Helper()
+	p := filepath.Join(t.TempDir(), name)
+	if err := os.WriteFile(p, []byte(value+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return p
+}
+
+func TestNotifyConfig_ResolvesFromFiles(t *testing.T) {
+	urlFile := writeSecret(t, "url", "https://hooks.slack.com/services/T/B/from-file")
+	secretFile := writeSecret(t, "secret", "hunter2-from-file")
+
+	dir := t.TempDir()
+	path := filepath.Join(dir, "control-plane.yaml")
+	doc := fmt.Sprintf(`
+auth:
+  jwt_secret: "a-secret-that-is-at-least-32-characters"
+grants:
+  notify:
+    - url_file: %q
+      format: slack
+    - url: https://example.com/hook
+      format: json
+      secret_file: %q
+`, urlFile, secretFile)
+	if err := os.WriteFile(path, []byte(doc), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := LoadConfig(path)
+	if err != nil {
+		t.Fatalf("load config: %v", err)
+	}
+	if got := cfg.Grants.Notify[0].URL; got != "https://hooks.slack.com/services/T/B/from-file" {
+		t.Errorf("url from file = %q", got)
+	}
+	if got := cfg.Grants.Notify[1].Secret; got != "hunter2-from-file" {
+		t.Errorf("secret from file = %q, want it trimmed and read", got)
+	}
+	if err := cfg.Validate(); err != nil {
+		t.Errorf("a hook whose url came from a file must validate: %v", err)
+	}
+}
+
+func TestNotifyConfig_ResolvesFromEnv(t *testing.T) {
+	// Env wins over inline, and _FILE wins over env, matching every other
+	// secret. Hooks are indexed by position.
+	t.Setenv("KBRIDGE_GRANTS_NOTIFY_0_URL", "https://from-env.example.com/hook")
+	t.Setenv("KBRIDGE_GRANTS_NOTIFY_1_SECRET_FILE", writeSecret(t, "s", "from-env-file"))
+
+	cfg := DefaultConfig()
+	cfg.Grants.Notify = []NotifyConfig{
+		{URL: "https://inline.example.com", Format: "json"},
+		{URL: "https://example.com", Format: "json", Secret: "inline"},
+	}
+	if err := cfg.resolveSecrets(); err != nil {
+		t.Fatalf("resolve: %v", err)
+	}
+	if got := cfg.Grants.Notify[0].URL; got != "https://from-env.example.com/hook" {
+		t.Errorf("hook 0 url = %q, want the env value", got)
+	}
+	if got := cfg.Grants.Notify[1].Secret; got != "from-env-file" {
+		t.Errorf("hook 1 secret = %q, want the _FILE env value", got)
+	}
+}
+
+func TestNotifyConfig_FileErrors(t *testing.T) {
+	tests := []struct {
+		name string
+		hook NotifyConfig
+		want string
+	}{
+		{"missing url file", NotifyConfig{URLFile: "/nonexistent/url", Format: "slack"}, "reading secret file"},
+		{"empty secret file", NotifyConfig{URL: "https://x", Format: "json", SecretFile: writeSecret(t, "e", "   ")}, "is empty"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := DefaultConfig()
+			cfg.Grants.Notify = []NotifyConfig{tt.hook}
+			err := cfg.resolveSecrets()
+			if err == nil || !strings.Contains(err.Error(), tt.want) {
+				t.Errorf("error = %v, want it to contain %q", err, tt.want)
+			}
+			if err != nil && !strings.Contains(err.Error(), "grants.notify[0]") {
+				t.Errorf("error should name the hook: %v", err)
+			}
+		})
 	}
 }

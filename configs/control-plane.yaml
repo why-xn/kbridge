@@ -49,10 +49,14 @@ grants:
   notify: []
   #  - url: https://hooks.slack.com/services/T000/B000/xxxx
   #    format: slack               # slack | google-chat | json
+  #  - url_file: /run/secrets/slack-webhook-url   # a webhook URL is itself a secret
+  #    format: slack
   #  - url: https://automation.example.com/kbridge
   #    format: json
-  #    secret: "REPLACE_ME"        # json only: HMAC-SHA256 in X-Kbridge-Signature
+  #    secret_file: /run/secrets/kbridge-notify-secret  # or secret: "..." inline
   #    events: [grant-requested]   # default: every lifecycle event
+  # Env overrides, indexed by position: KBRIDGE_GRANTS_NOTIFY_0_URL,
+  # KBRIDGE_GRANTS_NOTIFY_0_SECRET, and their _FILE variants.
 
 # streams bounds concurrent streaming sessions (kubectl logs -f, get -w).
 streams:

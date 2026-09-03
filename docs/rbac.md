@@ -311,6 +311,27 @@ ok := hmac.Equal([]byte(hex.EncodeToString(mac.Sum(nil))), []byte(r.Header.Get("
 
 Chat webhooks cannot check a signature, so none is sent to them.
 
+**Keep the URL out of the config file.** A Slack or Google Chat webhook URL is a
+credential: anyone holding it can post to the channel. Both `url` and `secret`
+accept a `_file` variant, and an env override indexed by the hook's position,
+with the same precedence as every other secret (`_FILE` env, then env, then
+file, then inline):
+
+```yaml
+grants:
+  notify:
+    - url_file: /run/secrets/slack-webhook-url
+      format: slack
+    - url: https://automation.example.com/kbridge
+      format: json
+      secret_file: /run/secrets/kbridge-notify-secret
+```
+
+```bash
+KBRIDGE_GRANTS_NOTIFY_0_URL_FILE=/run/secrets/slack-webhook-url
+KBRIDGE_GRANTS_NOTIFY_1_SECRET=...
+```
+
 Approving from inside the chat message is not yet supported: incoming webhooks
 are one-way. That needs a Slack app with interactive components, which is the
 natural follow-up.
