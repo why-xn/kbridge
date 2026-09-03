@@ -95,10 +95,11 @@ func (g *Grant) DisplayStatus(now time.Time) string {
 // GrantService is the domain service for just-in-time access: it creates
 // requests, records decisions, and answers whether a command is covered.
 type GrantService struct {
-	store  Store
-	audit  *AuditRecorder
-	limits GrantsConfig
-	now    func() time.Time
+	store    Store
+	audit    *AuditRecorder
+	limits   GrantsConfig
+	notifier Notifier
+	now      func() time.Time
 }
 
 // NewGrantService creates a GrantService bounded by the configured limits.
@@ -111,6 +112,11 @@ func NewGrantService(store Store, audit *AuditRecorder, limits GrantsConfig) *Gr
 // would make about it.
 func (s *GrantService) Now() time.Time {
 	return s.now()
+}
+
+// SetNotifier routes lifecycle events to a notifier. Nil disables it.
+func (s *GrantService) SetNotifier(n Notifier) {
+	s.notifier = n
 }
 
 // Request records a pending access request. The duration is the window the
@@ -133,6 +139,7 @@ func (s *GrantService) Request(ctx context.Context, subject, userID, cluster, na
 		return nil, fmt.Errorf("creating grant: %w", err)
 	}
 	s.record(g, AuditStatusGrantRequested, "")
+	s.notify(AuditStatusGrantRequested, g, "", "")
 	return g, nil
 }
 
@@ -178,6 +185,7 @@ func (s *GrantService) Approve(ctx context.Context, id, approver, note string, o
 		return nil, fmt.Errorf("approving grant: %w", err)
 	}
 	s.record(g, AuditStatusGrantApproved, note)
+	s.notify(AuditStatusGrantApproved, g, approver, note)
 	return g, nil
 }
 
@@ -193,6 +201,7 @@ func (s *GrantService) Deny(ctx context.Context, id, approver, note string) (*Gr
 		return nil, fmt.Errorf("denying grant: %w", err)
 	}
 	s.record(g, AuditStatusGrantDenied, note)
+	s.notify(AuditStatusGrantDenied, g, approver, note)
 	return g, nil
 }
 
@@ -216,6 +225,7 @@ func (s *GrantService) Revoke(ctx context.Context, id, approver, note string) (*
 		return nil, fmt.Errorf("revoking grant: %w", err)
 	}
 	s.record(g, AuditStatusGrantRevoked, note)
+	s.notify(AuditStatusGrantRevoked, g, approver, note)
 	return g, nil
 }
 
@@ -278,6 +288,16 @@ func (s *GrantService) record(g *Grant, status, note string) {
 		ErrorMessage: note,
 	}
 	s.audit.Record(entry)
+}
+
+// notify tells the configured receivers about a lifecycle event. It hands the
+// notifier a copy so a later mutation of the grant cannot race a delivery.
+func (s *GrantService) notify(event string, g *Grant, actor, note string) {
+	if s.notifier == nil {
+		return
+	}
+	snapshot := *g
+	s.notifier.Notify(GrantEvent{Event: event, Grant: &snapshot, Actor: actor, Note: note, At: s.now().UTC()})
 }
 
 // grantSummary renders a grant as the audit log's command column.

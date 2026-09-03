@@ -3,6 +3,7 @@ package controlplane
 import (
 	"context"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -446,5 +447,102 @@ func TestGrantService_AuditsLifecycle(t *testing.T) {
 		if !seen[want] {
 			t.Errorf("no audit entry with status %q", want)
 		}
+	}
+}
+
+// recordingNotifier captures events the service emits.
+type recordingNotifier struct {
+	mu     sync.Mutex
+	events []GrantEvent
+}
+
+func (r *recordingNotifier) Notify(ev GrantEvent) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.events = append(r.events, ev)
+}
+
+func (r *recordingNotifier) got() []GrantEvent {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return append([]GrantEvent(nil), r.events...)
+}
+
+func TestGrantService_NotifiesLifecycle(t *testing.T) {
+	now := time.Date(2026, 9, 3, 12, 0, 0, 0, time.UTC)
+	svc, _ := newGrantService(t, now, testGrantLimits)
+	rec := &recordingNotifier{}
+	svc.SetNotifier(rec)
+	ctx := context.Background()
+
+	g, _ := svc.Request(ctx, "dev@corp.com", "", "prod-eu", "", time.Hour, "INC-4521 rollback")
+	svc.Approve(ctx, g.ID, "boss@corp.com", "paged", 0)
+	svc.Revoke(ctx, g.ID, "boss@corp.com", "done")
+
+	events := rec.got()
+	if len(events) != 3 {
+		t.Fatalf("events = %d, want 3", len(events))
+	}
+	want := []struct{ event, actor, note string }{
+		{AuditStatusGrantRequested, "", ""},
+		{AuditStatusGrantApproved, "boss@corp.com", "paged"},
+		{AuditStatusGrantRevoked, "boss@corp.com", "done"},
+	}
+	for i, w := range want {
+		ev := events[i]
+		if ev.Event != w.event || ev.Actor != w.actor || ev.Note != w.note {
+			t.Errorf("event %d = %s/%q/%q, want %s/%q/%q", i, ev.Event, ev.Actor, ev.Note, w.event, w.actor, w.note)
+		}
+		if ev.Grant == nil || ev.Grant.ID != g.ID {
+			t.Errorf("event %d carries the wrong grant", i)
+		}
+		if !ev.At.Equal(now) {
+			t.Errorf("event %d At = %v, want the service clock %v", i, ev.At, now)
+		}
+	}
+}
+
+func TestGrantService_NotifiesDeny(t *testing.T) {
+	now := time.Date(2026, 9, 3, 12, 0, 0, 0, time.UTC)
+	svc, _ := newGrantService(t, now, testGrantLimits)
+	rec := &recordingNotifier{}
+	svc.SetNotifier(rec)
+	ctx := context.Background()
+
+	g, _ := svc.Request(ctx, "dev@corp.com", "", "prod-eu", "", time.Hour, "INC-4521 rollback")
+	svc.Deny(ctx, g.ID, "boss@corp.com", "use the runbook")
+
+	events := rec.got()
+	if len(events) != 2 || events[1].Event != AuditStatusGrantDenied {
+		t.Fatalf("events = %v, want request then deny", events)
+	}
+	if events[1].Grant.Status != GrantStatusDenied {
+		t.Errorf("the denied event should carry the decided grant, got status %q", events[1].Grant.Status)
+	}
+}
+
+// TestGrantService_NotifierGetsASnapshot pins that a later change to the grant
+// does not reach into an event already handed off, since delivery is async.
+func TestGrantService_NotifierGetsASnapshot(t *testing.T) {
+	now := time.Date(2026, 9, 3, 12, 0, 0, 0, time.UTC)
+	svc, _ := newGrantService(t, now, testGrantLimits)
+	rec := &recordingNotifier{}
+	svc.SetNotifier(rec)
+	ctx := context.Background()
+
+	g, _ := svc.Request(ctx, "dev@corp.com", "", "prod-eu", "", time.Hour, "INC-4521 rollback")
+	svc.Approve(ctx, g.ID, "boss@corp.com", "", 0)
+
+	requested := rec.got()[0]
+	if requested.Grant.Status != GrantStatusPending {
+		t.Errorf("the request event now reads %q; it must keep the state it was sent with", requested.Grant.Status)
+	}
+}
+
+func TestGrantService_NoNotifierIsFine(t *testing.T) {
+	now := time.Date(2026, 9, 3, 12, 0, 0, 0, time.UTC)
+	svc, _ := newGrantService(t, now, testGrantLimits)
+	if _, err := svc.Request(context.Background(), "dev@corp.com", "", "prod-eu", "", time.Hour, "INC-4521 rollback"); err != nil {
+		t.Fatalf("a service with no notifier must still work: %v", err)
 	}
 }

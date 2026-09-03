@@ -29,6 +29,7 @@ type Server struct {
 	store        Store
 	commandQueue *CommandQueue
 	policy       *PolicyEngine
+	notifier     *WebhookNotifier
 	stopCh       chan struct{}
 }
 
@@ -81,6 +82,11 @@ func NewServer(cfg *Config) (*Server, error) {
 
 	sessionManager := NewSessionManager(cfg.Streams.MaxConcurrent)
 	grantService := NewGrantService(dbStore, auditRecorder, cfg.Grants)
+	notifier := NewWebhookNotifier(cfg.Grants.Notify)
+	grantService.SetNotifier(notifier)
+	if n := len(cfg.Grants.Notify); n > 0 {
+		log.Printf("grant notifications enabled for %d webhook(s)", n)
+	}
 
 	httpHandler := NewHTTPServer(agentStore, commandQueue, authHandlers, adminHandlers, policy,
 		auditRecorder, sessionManager, jwtManager, WithGrants(grantService, cfg.Grants))
@@ -114,6 +120,7 @@ func NewServer(cfg *Config) (*Server, error) {
 		store:        dbStore,
 		commandQueue: commandQueue,
 		policy:       policy,
+		notifier:     notifier,
 		stopCh:       make(chan struct{}),
 	}, nil
 }
@@ -376,6 +383,11 @@ func (s *Server) shutdown() error {
 		return fmt.Errorf("HTTP server shutdown error: %w", err)
 	}
 	log.Println("HTTP server stopped")
+
+	// Let in-flight notifications finish before the process exits.
+	if s.notifier != nil {
+		s.notifier.Flush()
+	}
 
 	// Close database
 	if s.store != nil {

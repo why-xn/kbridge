@@ -340,8 +340,11 @@ frees the bare `version` word for kubectl. Implemented as an arg rewrite
 (`TestKubectlByDefault`).
 
 **Post-1.0 items (not in scope for the alpha series or 1.0.0):**
-- Slack/Teams notification on a new access request, and approval from the chat
-  message. Phase 11 ships the state machine; this is a webhook on top of it.
+- Approve a grant from inside the chat message. Phase 11 notifies via one-way
+  incoming webhooks; acting from the message needs a Slack app with interactive
+  components and a signed callback into the approve endpoint.
+- Break-glass: a self-approved grant with a short window, a loud audit status,
+  and a mandatory notification, for when no approver is awake.
 - Stateful guardrails, such as requiring a server-side dry run within N minutes
   before the real apply. Phase 10 guardrails are stateless by design.
 - PostgreSQL store driver (the interface is ready; only SQLite is implemented).
@@ -382,6 +385,15 @@ statuses, making "who asked, who approved, and what did they run" one query.
 Also fixed here: guardrail `resources` matching now tolerates kubectl's
 singular/plural spellings, which had silently stopped a guardrail written for
 `deployments` from catching `delete deployment api`. Role rules stay exact.
+
+**Notifications** (same phase, follow-up commit): `grants.notify` webhooks in
+`slack`, `google-chat`, and signed `json` formats deliver every lifecycle event
+asynchronously with one retry, so a request reaches approvers with the approve
+command in the message. Covered by notifier unit tests (formats, signing,
+filtering, retry, fan-out, non-blocking on a dead host), service tests (events,
+actor, note, snapshot isolation), config tests, and `TestGrantNotifications`
+e2e, in which the test owns the webhook endpoint the harness points the control
+plane at and verifies the HMAC.
 
 Verified at every layer, all run green: policy unit tests, grant domain and
 service unit tests (50 subtests), store tests including the

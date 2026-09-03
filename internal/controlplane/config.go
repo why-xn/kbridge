@@ -51,6 +51,33 @@ type GrantsConfig struct {
 	// AllowSelfApproval lets a requester approve their own grant. Off by
 	// default: a second pair of eyes is the whole point.
 	AllowSelfApproval bool `yaml:"allow_self_approval"`
+	// Notify lists webhooks that receive grant lifecycle events. Empty means
+	// nobody is told, and a request waits for an admin to go looking.
+	Notify []NotifyConfig `yaml:"notify"`
+}
+
+// NotifyConfig is one webhook receiving grant events.
+type NotifyConfig struct {
+	URL    string `yaml:"url"`
+	Format string `yaml:"format"` // slack, google-chat, or json
+	// Secret, for json hooks, signs each body with HMAC-SHA256 so the receiver
+	// can verify the sender. Ignored for chat formats, which cannot check it.
+	Secret string `yaml:"secret"`
+	// Events narrows the hook to some lifecycle events. Empty means all.
+	Events []string `yaml:"events"`
+}
+
+// wants reports whether the hook subscribes to an event.
+func (n NotifyConfig) wants(event string) bool {
+	if len(n.Events) == 0 {
+		return true
+	}
+	for _, e := range n.Events {
+		if e == event {
+			return true
+		}
+	}
+	return false
 }
 
 // RBACConfig configures policy-file-based access control. When PolicyFile is
@@ -258,6 +285,37 @@ func (c *Config) validateGrants() error {
 	if c.Grants.EffectiveDefaultDuration() > c.Grants.EffectiveMaxDuration() {
 		return fmt.Errorf("grants.default_duration (%s) exceeds grants.max_duration (%s)",
 			c.Grants.EffectiveDefaultDuration(), c.Grants.EffectiveMaxDuration())
+	}
+	for i, n := range c.Grants.Notify {
+		if err := n.validate(); err != nil {
+			return fmt.Errorf("grants.notify[%d]: %w", i, err)
+		}
+	}
+	return nil
+}
+
+// grantEvents are the lifecycle events a hook may subscribe to.
+var grantEvents = map[string]bool{
+	AuditStatusGrantRequested: true, AuditStatusGrantApproved: true,
+	AuditStatusGrantDenied: true, AuditStatusGrantRevoked: true,
+}
+
+// validate rejects a hook that could never deliver or that would silently
+// drop an unknown event name.
+func (n NotifyConfig) validate() error {
+	if !strings.HasPrefix(n.URL, "http://") && !strings.HasPrefix(n.URL, "https://") {
+		return fmt.Errorf("url must start with http:// or https://, got %q", n.URL)
+	}
+	switch n.Format {
+	case NotifyFormatSlack, NotifyFormatGoogleChat, NotifyFormatJSON:
+	default:
+		return fmt.Errorf("format must be %s, %s, or %s, got %q",
+			NotifyFormatSlack, NotifyFormatGoogleChat, NotifyFormatJSON, n.Format)
+	}
+	for _, e := range n.Events {
+		if !grantEvents[e] {
+			return fmt.Errorf("unknown event %q", e)
+		}
 	}
 	return nil
 }
