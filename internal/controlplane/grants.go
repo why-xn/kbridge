@@ -106,6 +106,13 @@ func NewGrantService(store Store, audit *AuditRecorder, limits GrantsConfig) *Gr
 	return &GrantService{store: store, audit: audit, limits: limits, now: time.Now}
 }
 
+// Now is the service's clock. Handlers render expiry against it rather than
+// the wall clock so every view of a grant agrees with the decision the service
+// would make about it.
+func (s *GrantService) Now() time.Time {
+	return s.now()
+}
+
 // Request records a pending access request. The duration is the window the
 // grant will run for once approved; the clock does not start until then.
 func (s *GrantService) Request(ctx context.Context, subject, userID, cluster, namespace string, d time.Duration, reason string) (*Grant, error) {

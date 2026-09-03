@@ -40,14 +40,14 @@ type grantView struct {
 	DisplayStatus string `json:"display_status"`
 }
 
-func viewGrant(g *Grant) grantView {
-	return grantView{Grant: g, DisplayStatus: g.DisplayStatus(time.Now())}
+func (h *GrantHandlers) view(g *Grant) grantView {
+	return grantView{Grant: g, DisplayStatus: g.DisplayStatus(h.grants.Now())}
 }
 
-func viewGrants(grants []*Grant) []grantView {
+func (h *GrantHandlers) views(grants []*Grant) []grantView {
 	out := make([]grantView, 0, len(grants))
 	for _, g := range grants {
-		out = append(out, viewGrant(g))
+		out = append(out, h.view(g))
 	}
 	return out
 }
@@ -76,7 +76,7 @@ func (h *GrantHandlers) HandleRequestGrant(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	c.JSON(http.StatusCreated, viewGrant(g))
+	c.JSON(http.StatusCreated, h.view(g))
 }
 
 // duration resolves a requested window, falling back to the configured default.
@@ -107,7 +107,7 @@ func (h *GrantHandlers) HandleListMyGrants(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"grants": viewGrants(grants)})
+	c.JSON(http.StatusOK, gin.H{"grants": h.views(grants)})
 }
 
 // HandleListGrants returns every grant, for administrators triaging requests.
@@ -121,7 +121,7 @@ func (h *GrantHandlers) HandleListGrants(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"grants": viewGrants(grants)})
+	c.JSON(http.StatusOK, gin.H{"grants": h.views(grants)})
 }
 
 // HandleApproveGrant activates a pending grant.
@@ -167,7 +167,7 @@ func (h *GrantHandlers) decide(c *gin.Context, action func(string, decideGrantRe
 	case err != nil:
 		c.JSON(http.StatusConflict, gin.H{"error": err.Error()})
 	default:
-		c.JSON(http.StatusOK, viewGrant(g))
+		c.JSON(http.StatusOK, h.view(g))
 	}
 }
 
