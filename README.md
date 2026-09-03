@@ -350,6 +350,9 @@ kb admin grants approve <id> --note "paged, go ahead"
 kb admin grants revoke <id>                  # end one early
 ```
 
+Point `grants.notify` at a Slack, Google Chat, or JSON webhook and every request
+lands where approvers already are, with the approve command in the message.
+
 A pending request grants nothing — the clock starts at approval, not at request
 time — and self-approval is refused by default. Every step is audited, and a
 command an approval admitted carries the same grant ID, so one query returns the

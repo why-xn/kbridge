@@ -7,6 +7,7 @@ set -e
 CLUSTER_NAME="kbridge-e2e-test"
 CONTROL_PLANE_PORT="${CONTROL_PLANE_PORT:-8080}"
 GRPC_PORT="${GRPC_PORT:-9090}"
+NOTIFY_PORT="${NOTIFY_PORT:-18999}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 BIN_DIR="${PROJECT_ROOT}/bin"
@@ -125,7 +126,15 @@ bootstrap:
   agent_cluster: "${CLUSTER_NAME}"
 rbac:
   policy_file: "${CONFIG_DIR}/rbac.yaml"
+grants:
+  notify:
+    # TestGrantNotifications listens here and verifies the signed payload.
+    - url: "http://localhost:${NOTIFY_PORT}/hook"
+      format: json
+      secret_file: "${CONFIG_DIR}/notify-secret"
 EOF
+    # The signing secret is mounted from a file, as a production install would.
+    printf 'e2e-notify-secret\n' > "${CONFIG_DIR}/notify-secret"
 
     # Create RBAC policy: the e2e admin gets full access; everyone else is a viewer.
     cat > "${CONFIG_DIR}/rbac.yaml" <<EOF
@@ -312,7 +321,7 @@ run_tests() {
     cd "${PROJECT_ROOT}"
 
     # Run Go e2e tests
-    go test -v -tags=e2e ./tests/e2e/... -control-plane-url="http://localhost:${CONTROL_PLANE_PORT}" -grpc-addr="localhost:${GRPC_PORT}" -cluster-name="${CLUSTER_NAME}" -bin-dir="${BIN_DIR}"
+    go test -v -tags=e2e ./tests/e2e/... -control-plane-url="http://localhost:${CONTROL_PLANE_PORT}" -grpc-addr="localhost:${GRPC_PORT}" -cluster-name="${CLUSTER_NAME}" -bin-dir="${BIN_DIR}" -notify-port="${NOTIFY_PORT}"
 
     log_info "All e2e tests passed!"
 }

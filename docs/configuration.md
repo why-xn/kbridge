@@ -53,6 +53,8 @@ streams:
 | `rbac.policy_file` | no | When empty, all authenticated users are allowed |
 | `tls.*` | no | When `enabled`, `cert_file` + `key_file` are required |
 | `streams.max_concurrent` | no | Cap on concurrent streaming sessions; `0`/unset → default 50 |
+| `grants.max_duration` / `grants.default_duration` | no | Bounds on just-in-time grants; unset → 8h / 1h |
+| `grants.notify[]` | no | Webhooks for grant events. `url` and `secret` each accept a `_file` variant and env overrides `KBRIDGE_GRANTS_NOTIFY_<n>_URL` / `_SECRET` (+ `_FILE`), indexed by position. A chat webhook URL is a credential; keep it out of the file. See [rbac.md](rbac.md#notifications) |
 
 ## Agent (`agent.yaml`)
 

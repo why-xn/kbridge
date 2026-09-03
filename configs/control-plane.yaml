@@ -44,6 +44,19 @@ grants:
   max_duration: 8h        # ceiling on any single grant
   default_duration: 1h    # used when a request names no duration
   allow_self_approval: false  # a second pair of eyes is the point
+  # notify tells people a request exists. Without it, a request waits for an
+  # admin to run `kb admin grants list`. Each entry is one webhook.
+  notify: []
+  #  - url: https://hooks.slack.com/services/T000/B000/xxxx
+  #    format: slack               # slack | google-chat | json
+  #  - url_file: /run/secrets/slack-webhook-url   # a webhook URL is itself a secret
+  #    format: slack
+  #  - url: https://automation.example.com/kbridge
+  #    format: json
+  #    secret_file: /run/secrets/kbridge-notify-secret  # or secret: "..." inline
+  #    events: [grant-requested]   # default: every lifecycle event
+  # Env overrides, indexed by position: KBRIDGE_GRANTS_NOTIFY_0_URL,
+  # KBRIDGE_GRANTS_NOTIFY_0_SECRET, and their _FILE variants.
 
 # streams bounds concurrent streaming sessions (kubectl logs -f, get -w).
 streams:

@@ -31,6 +31,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `GET /api/v1/admin/grants`, `POST /api/v1/admin/grants/:id/approve`,
   `.../deny`, `DELETE /api/v1/admin/grants/:id` for admins.
 
+- **Grant notifications.** `grants.notify` lists webhooks that receive every
+  grant lifecycle event, so a request reaches approvers instead of waiting for
+  someone to run `kb admin grants list`. Formats: `slack` (text + blocks),
+  `google-chat` (text), and `json` (the structured event, HMAC-SHA256 signed in
+  `X-Kbridge-Signature` when a `secret` is set). Each hook may filter `events`.
+  The Slack and Chat message for a new request ends with the exact approve
+  command. Delivery is asynchronous, retried once, flushed on shutdown, and
+  never fails the request that triggered it. Both `url` and `secret` accept a
+  `_file` variant and indexed env overrides (`KBRIDGE_GRANTS_NOTIFY_0_URL`,
+  `..._SECRET`, and their `_FILE` forms), since a chat webhook URL is itself a
+  credential.
+
 - **`grants` config section** bounding the feature. Both durations are optional,
   so a config written before grants existed keeps working:
 

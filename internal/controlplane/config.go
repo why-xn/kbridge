@@ -51,6 +51,53 @@ type GrantsConfig struct {
 	// AllowSelfApproval lets a requester approve their own grant. Off by
 	// default: a second pair of eyes is the whole point.
 	AllowSelfApproval bool `yaml:"allow_self_approval"`
+	// Notify lists webhooks that receive grant lifecycle events. Empty means
+	// nobody is told, and a request waits for an admin to go looking.
+	Notify []NotifyConfig `yaml:"notify"`
+}
+
+// NotifyConfig is one webhook receiving grant events. The URL is itself a
+// secret for chat services (anyone holding a Slack webhook URL can post to the
+// channel), so both it and the signing secret follow the same file/env/inline
+// resolution as every other secret in this config.
+type NotifyConfig struct {
+	URL     string `yaml:"url"`
+	URLFile string `yaml:"url_file"`
+	Format  string `yaml:"format"` // slack, google-chat, or json
+	// Secret, for json hooks, signs each body with HMAC-SHA256 so the receiver
+	// can verify the sender. Ignored for chat formats, which cannot check it.
+	Secret     string `yaml:"secret"`
+	SecretFile string `yaml:"secret_file"`
+	// Events narrows the hook to some lifecycle events. Empty means all.
+	Events []string `yaml:"events"`
+}
+
+// resolveSecrets fills URL and Secret from their file or env sources. The env
+// names are indexed by the hook's position, KBRIDGE_GRANTS_NOTIFY_0_URL and so
+// on, because hooks are a list.
+func (n *NotifyConfig) resolveSecrets(index int) error {
+	prefix := fmt.Sprintf("KBRIDGE_GRANTS_NOTIFY_%d", index)
+	var err error
+	if n.URL, err = resolveSecret(n.URL, n.URLFile, prefix+"_URL"); err != nil {
+		return fmt.Errorf("grants.notify[%d]: %w", index, err)
+	}
+	if n.Secret, err = resolveSecret(n.Secret, n.SecretFile, prefix+"_SECRET"); err != nil {
+		return fmt.Errorf("grants.notify[%d]: %w", index, err)
+	}
+	return nil
+}
+
+// wants reports whether the hook subscribes to an event.
+func (n NotifyConfig) wants(event string) bool {
+	if len(n.Events) == 0 {
+		return true
+	}
+	for _, e := range n.Events {
+		if e == event {
+			return true
+		}
+	}
+	return false
 }
 
 // RBACConfig configures policy-file-based access control. When PolicyFile is
@@ -259,6 +306,37 @@ func (c *Config) validateGrants() error {
 		return fmt.Errorf("grants.default_duration (%s) exceeds grants.max_duration (%s)",
 			c.Grants.EffectiveDefaultDuration(), c.Grants.EffectiveMaxDuration())
 	}
+	for i, n := range c.Grants.Notify {
+		if err := n.validate(); err != nil {
+			return fmt.Errorf("grants.notify[%d]: %w", i, err)
+		}
+	}
+	return nil
+}
+
+// grantEvents are the lifecycle events a hook may subscribe to.
+var grantEvents = map[string]bool{
+	AuditStatusGrantRequested: true, AuditStatusGrantApproved: true,
+	AuditStatusGrantDenied: true, AuditStatusGrantRevoked: true,
+}
+
+// validate rejects a hook that could never deliver or that would silently
+// drop an unknown event name.
+func (n NotifyConfig) validate() error {
+	if !strings.HasPrefix(n.URL, "http://") && !strings.HasPrefix(n.URL, "https://") {
+		return fmt.Errorf("url must start with http:// or https://, got %q", n.URL)
+	}
+	switch n.Format {
+	case NotifyFormatSlack, NotifyFormatGoogleChat, NotifyFormatJSON:
+	default:
+		return fmt.Errorf("format must be %s, %s, or %s, got %q",
+			NotifyFormatSlack, NotifyFormatGoogleChat, NotifyFormatJSON, n.Format)
+	}
+	for _, e := range n.Events {
+		if !grantEvents[e] {
+			return fmt.Errorf("unknown event %q", e)
+		}
+	}
 	return nil
 }
 
@@ -360,6 +438,11 @@ func (c *Config) resolveSecrets() error {
 	}
 	if c.Auth.AdminPassword, err = resolveSecret(c.Auth.AdminPassword, c.Auth.AdminPasswordFile, "KBRIDGE_ADMIN_PASSWORD"); err != nil {
 		return err
+	}
+	for i := range c.Grants.Notify {
+		if err := c.Grants.Notify[i].resolveSecrets(i); err != nil {
+			return err
+		}
 	}
 	return nil
 }
