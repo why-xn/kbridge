@@ -1,4 +1,4 @@
-package controlplane
+package policy
 
 import (
 	"strings"
@@ -10,6 +10,9 @@ type AccessRequest struct {
 	Namespace string
 	Resource  string
 	Verb      string
+	// Args is the raw kubectl argument list. Role rules ignore it; guardrails
+	// use it to match on flags such as --all that the verb alone cannot express.
+	Args []string
 }
 
 // matchPattern reports whether value matches pattern, where '*' is a wildcard
@@ -59,13 +62,13 @@ var podScopedVerbs = map[string]bool{
 	"logs": true, "exec": true, "attach": true, "port-forward": true, "cp": true,
 }
 
-// parseAccessRequest derives an AccessRequest from a kubectl command (the args
+// ParseAccessRequest derives an AccessRequest from a kubectl command (the args
 // after "kubectl"). The verb is the first token; the resource is the first
 // non-flag token after it (with any "/name" suffix stripped), or "pods" for
 // pod-scoped verbs. The namespace comes from -n/--namespace, "*" for
 // --all-namespaces/-A, else fallbackNamespace, else "default".
-func parseAccessRequest(cluster string, command []string, fallbackNamespace string) AccessRequest {
-	req := AccessRequest{Cluster: cluster, Namespace: fallbackNamespace}
+func ParseAccessRequest(cluster string, command []string, fallbackNamespace string) AccessRequest {
+	req := AccessRequest{Cluster: cluster, Namespace: fallbackNamespace, Args: command}
 	if req.Namespace == "" {
 		req.Namespace = "default"
 	}

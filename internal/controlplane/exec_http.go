@@ -120,8 +120,8 @@ func (s *HTTPServer) handleExecAttach(c *gin.Context) {
 	namespace := c.Query("namespace")
 
 	args := buildExecArgs(pod, container, command, tty)
-	req := ExecRequest{Command: args, Namespace: namespace}
-	if !s.authorizeExec(c, clusterName, req) {
+	req := ExecRequest{Command: args, Namespace: namespace, Reason: c.Query("reason")}
+	if !s.authorizeExec(c, clusterName, &req) {
 		return // 403 + denied audit already written
 	}
 

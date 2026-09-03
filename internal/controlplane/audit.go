@@ -8,11 +8,14 @@ import (
 
 // Audit status values for a recorded command.
 const (
-	AuditStatusSuccess = "success"
-	AuditStatusFailed  = "failed"
-	AuditStatusDenied  = "denied"
-	AuditStatusTimeout = "timeout"
+	AuditStatusSuccess  = "success"
+	AuditStatusFailed   = "failed"
+	AuditStatusDenied   = "denied"
+	AuditStatusTimeout  = "timeout"
 	AuditStatusCanceled = "canceled"
+	// AuditStatusBlocked marks a command a guardrail rejected: the user's role
+	// granted it, but a guardrail blocked it or demanded a missing reason.
+	AuditStatusBlocked = "blocked"
 )
 
 // auditWriteTimeout bounds how long an audit insert may take.

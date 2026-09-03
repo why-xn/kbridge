@@ -17,15 +17,19 @@ multiple Kubernetes clusters through a control plane.
 
 kubectl by default: any command that is not a kbridge management command is run
 as kubectl on the selected cluster. Management commands are login, logout,
-status, clusters, and admin.
+status, clusters, policy, and admin.
 
   kb get pods -A            # runs kubectl on the active cluster
   kb logs -f deploy/api     # streaming works too
   kb clusters use prod      # management command
   kb admin users list       # management command
+  kb delete ns old --reason "INC-4521"   # justify a guarded command
 
 Use 'kb kubectl ...' (or 'kb k ...') to force kubectl explicitly.`,
 	Version: version.String(),
+	// Execute below prints the error itself; without this cobra prints its own
+	// copy first.
+	SilenceErrors: true,
 }
 
 // Execute adds all child commands to the root command and sets flags appropriately.
@@ -35,7 +39,7 @@ func Execute() {
 	// dispatched to kubectl. See rewriteArgs.
 	rootCmd.SetArgs(rewriteArgs(os.Args[1:]))
 	if err := rootCmd.Execute(); err != nil {
-		fmt.Fprintln(os.Stderr, err)
+		fmt.Fprintln(os.Stderr, "Error:", err)
 		os.Exit(1)
 	}
 }

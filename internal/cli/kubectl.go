@@ -28,6 +28,7 @@ Examples:
   kb kubectl describe node my-node
   kb kubectl logs my-pod -f`,
 	DisableFlagParsing: true,
+	SilenceUsage:       true,
 	RunE:               runKubectl,
 }
 
@@ -43,6 +44,7 @@ Examples:
   kb k get pods
   kb k get svc -A`,
 	DisableFlagParsing: true,
+	SilenceUsage:       true,
 	RunE:               runKubectl,
 }
 
@@ -59,18 +61,23 @@ func runKubectl(cmd *cobra.Command, args []string) error {
 		}
 	}
 
+	// --reason is ours, not kubectl's: strip it before the command travels.
+	reason, args := extractReason(args)
+
 	// Check if this is an edit command - handle specially
 	if isEditCommand(args) {
-		return runKubectlEdit(args)
+		return runKubectlEdit(args, reason)
 	}
 
 	// Interactive exec (-i/-t) needs a bidirectional stream, not the one-shot path.
 	if tgt, ok := parseExecArgs(args); ok {
+		tgt.reason = reason
 		return execInteractiveFromConfig(tgt)
 	}
 
 	// Port-forward needs a bidi HTTP/2 stream with per-connection multiplexing.
 	if tgt, ok := parsePortForwardArgs(args); ok {
+		tgt.reason = reason
 		return portForwardFromConfig(tgt)
 	}
 
@@ -100,6 +107,7 @@ func runKubectl(cmd *cobra.Command, args []string) error {
 		ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
 		defer cancel()
 		streamClient := newAuthenticatedClient(controlPlaneURL)
+		streamClient.SetReason(reason)
 		if err := streamClient.StreamCommand(ctx, currentCluster, args, namespace, os.Stdout); err != nil {
 			return err
 		}
@@ -108,11 +116,11 @@ func runKubectl(cmd *cobra.Command, args []string) error {
 
 	// Create client with longer timeout for command execution
 	client := newAuthenticatedClientWithTimeout(controlPlaneURL, defaultKubectlTimeout+10*time.Second)
+	client.SetReason(reason)
 
 	// Execute the command
 	resp, err := client.ExecCommand(currentCluster, args, namespace, int(defaultKubectlTimeout.Seconds()))
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		return err
 	}
 
@@ -147,17 +155,11 @@ func isStreamingCommand(args []string) bool {
 }
 
 // runKubectlEdit handles the kubectl edit command using a local editor workflow.
-func runKubectlEdit(args []string) error {
+func runKubectlEdit(args []string, reason string) error {
 	handler, err := NewEditHandler(args)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		return err
 	}
-
-	if err := handler.Execute(); err != nil {
-		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-		return err
-	}
-
-	return nil
+	handler.SetReason(reason)
+	return handler.Execute()
 }

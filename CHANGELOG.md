@@ -7,6 +7,60 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Command guardrails.** The policy file gains a `guardrails:` section that runs
+  after the role rules and can only take access away. A guardrail matches on
+  cluster, namespace, resource, verb, and — new — the raw command arguments, so
+  it can tell `delete pod api-0` from `delete pod --all`, and `apply` from
+  `apply --dry-run=server`. Two actions are supported:
+
+  | Action | Effect |
+  |---|---|
+  | `deny` | The command is refused. `403`, audit status `blocked`. |
+  | `require-reason` | Refused unless the caller passes `--reason`; the reason is stored on the audit entry. |
+
+  Guardrails are evaluated in file order, first match wins; `exempt` lists
+  subject patterns that skip one (break-glass identities are still audited).
+  Enforcement covers every command path: one-shot exec, streaming, interactive
+  `exec -it`, `port-forward`, and `edit`. See [docs/rbac.md](docs/rbac.md).
+
+- **`--reason` flag.** Supplies a justification for guardrails that require one,
+  on any command: `kb delete pod api-0 --reason "INC-4521 rollback"`. kbridge
+  strips it before the command reaches kubectl. Minimum 8 characters, truncated
+  at 512.
+
+- **`kb policy` command.** `kb policy validate -f <file>` checks a policy file
+  for structural problems; `kb policy test -f <file> -u <user> -c <cluster> --
+  <args>` shows how it would rule on one command. Both read the file directly
+  with no control plane involved, and `test` exits non-zero when the command
+  would be refused, so they run in CI on a proposed policy.
+
+- Audit entries carry a `reason` column and a new `blocked` status, which
+  separates "you never had this access" (`denied`) from "you have it, but not
+  for this command" (`blocked`).
+
+### Changed
+
+- The authorization domain moved from `internal/controlplane` to a new
+  `internal/policy` package with no transport or storage dependencies, so the
+  CLI can evaluate a policy file offline without linking the control plane's
+  HTTP, gRPC, and SQLite stacks. No configuration or wire format changed.
+
+### Fixed
+
+- A refused command no longer prints its error three times with cobra usage
+  text appended; errors from the kubectl path are printed once.
+- `kb policy` writes its verdict to stdout rather than stderr, so it can be
+  piped. Cobra's `cmd.Print` defaults to stderr, which is not what a command
+  whose output *is* the result wants.
+
+### Migration
+
+Existing databases gain the `audit_logs.reason` column automatically on startup.
+Policy files without a `guardrails:` section keep working unchanged — guardrails
+are opt-in, and a policy with none behaves exactly as before.
+
 ## [0.2.0-alpha.1] - 2026-08-24
 
 ### Changed

@@ -10,6 +10,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/why-xn/kbridge/internal/auth"
+	"github.com/why-xn/kbridge/internal/policy"
 )
 
 // ClusterResponse represents a cluster in API responses.
@@ -24,6 +25,7 @@ type ExecRequest struct {
 	Namespace string   `json:"namespace,omitempty"`
 	Timeout   int      `json:"timeout,omitempty"` // seconds, default 30
 	Stdin     string   `json:"stdin,omitempty"`   // optional stdin input for the command
+	Reason    string   `json:"reason,omitempty"`  // justification, when a guardrail requires one
 }
 
 // ExecResponse represents a command execution response.
@@ -203,7 +205,7 @@ func (s *HTTPServer) handleExecCommand(c *gin.Context) {
 	}
 
 	// Enforce RBAC before routing the command to the agent.
-	if !s.authorizeExec(c, clusterName, req) {
+	if !s.authorizeExec(c, clusterName, &req) {
 		return
 	}
 
@@ -280,10 +282,12 @@ func (s *HTTPServer) handleExecCommand(c *gin.Context) {
 	c.JSON(http.StatusOK, response)
 }
 
-// authorizeExec checks the requesting user's RBAC permissions for the command.
-// It writes the appropriate error response and returns false when the request
-// must be rejected. When no authorizer is configured it allows the request.
-func (s *HTTPServer) authorizeExec(c *gin.Context, clusterName string, req ExecRequest) bool {
+// authorizeExec checks the requesting user's permissions for the command: role
+// rules first, then guardrails. It writes the appropriate error response and
+// returns false when the request must be rejected. When no policy is configured
+// it allows the request. An accepted justification is written back into req so
+// the caller audits it alongside the command.
+func (s *HTTPServer) authorizeExec(c *gin.Context, clusterName string, req *ExecRequest) bool {
 	if s.policy == nil {
 		return true
 	}
@@ -295,14 +299,43 @@ func (s *HTTPServer) authorizeExec(c *gin.Context, clusterName string, req ExecR
 	}
 
 	access := parseAccessRequest(clusterName, req.Command, req.Namespace)
-	if !s.policy.Allows(claims.Email, access) {
-		log.Printf("RBAC denied: user=%s cluster=%s verb=%s resource=%s namespace=%s",
-			claims.Email, clusterName, access.Verb, access.Resource, access.Namespace)
-		s.recordExecAudit(c, clusterName, req, AuditStatusDenied, nil, nil, "permission denied")
-		c.JSON(http.StatusForbidden, gin.H{"error": "permission denied"})
-		return false
+	decision := s.policy.Evaluate(claims.Email, access, req.Reason)
+	req.Reason = decision.Reason
+	if decision.Allowed() {
+		return true
 	}
-	return true
+	s.rejectExec(c, clusterName, *req, claims.Email, access, decision)
+	return false
+}
+
+// rejectExec logs, audits, and responds to a command the policy refused.
+func (s *HTTPServer) rejectExec(c *gin.Context, clusterName string, req ExecRequest, email string, access AccessRequest, d PolicyDecision) {
+	log.Printf("policy %s: user=%s cluster=%s verb=%s resource=%s namespace=%s guardrail=%s",
+		d.Outcome, email, clusterName, access.Verb, access.Resource, access.Namespace, d.Guardrail)
+	s.recordExecAudit(c, clusterName, req, auditStatusFor(d), nil, nil, d.Message)
+	c.JSON(http.StatusForbidden, execRejection(d))
+}
+
+// execRejection renders a refused decision as a response body. The extra fields
+// let the CLI tell "you may not do this" apart from "say why you are doing
+// this", which it can act on by prompting for a reason.
+func execRejection(d PolicyDecision) gin.H {
+	body := gin.H{"error": d.Message}
+	if d.Guardrail != "" {
+		body["guardrail"] = d.Guardrail
+	}
+	if d.Outcome == policy.OutcomeReasonRequired {
+		body["reason_required"] = true
+	}
+	return body
+}
+
+// auditStatusFor maps a policy decision to the audit status recorded for it.
+func auditStatusFor(d PolicyDecision) string {
+	if d.Outcome == policy.OutcomeDenied {
+		return AuditStatusDenied
+	}
+	return AuditStatusBlocked
 }
 
 // recordExecAudit writes an audit entry for an exec attempt, attributing it to
@@ -320,6 +353,7 @@ func (s *HTTPServer) recordExecAudit(c *gin.Context, cluster string, req ExecReq
 		DurationMs:   durationMs,
 		ErrorMessage: errMsg,
 		ClientIP:     c.ClientIP(),
+		Reason:       req.Reason,
 	}
 	if claims := auth.GetUserFromContext(c); claims != nil {
 		entry.UserID = claims.UserID
@@ -362,7 +396,7 @@ func (s *HTTPServer) handleStreamCommand(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "command is required"})
 		return
 	}
-	if !s.authorizeExec(c, clusterName, req) {
+	if !s.authorizeExec(c, clusterName, &req) {
 		return
 	}
 

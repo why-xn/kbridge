@@ -105,8 +105,8 @@ func (s *HTTPServer) handlePortForward(c *gin.Context) {
 		return
 	}
 
-	req := ExecRequest{Command: []string{"port-forward", pod}, Namespace: namespace}
-	if !s.authorizeExec(c, clusterName, req) {
+	req := ExecRequest{Command: []string{"port-forward", pod}, Namespace: namespace, Reason: c.Query("reason")}
+	if !s.authorizeExec(c, clusterName, &req) {
 		return
 	}
 

@@ -58,6 +58,7 @@ CREATE TABLE IF NOT EXISTS audit_logs (
     duration_ms   INTEGER,
     error_message TEXT,
     client_ip     TEXT,
+    reason        TEXT,
     created_at    TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
 );
 CREATE INDEX IF NOT EXISTS idx_audit_logs_user_id ON audit_logs(user_id);
@@ -76,13 +77,21 @@ CREATE INDEX IF NOT EXISTS idx_refresh_tokens_user_id ON refresh_tokens(user_id)
 CREATE INDEX IF NOT EXISTS idx_refresh_tokens_token_hash ON refresh_tokens(token_hash);
 `
 
+// addedColumns are columns introduced after the initial schema. CREATE TABLE
+// covers fresh databases; these ALTERs bring existing ones forward.
+var addedColumns = []struct{ table, column, definition string }{
+	{"users", "is_admin", "INTEGER NOT NULL DEFAULT 0"},
+	{"audit_logs", "reason", "TEXT"},
+}
+
 func createSchema(db *sql.DB) error {
 	if _, err := db.Exec(schemaSQL); err != nil {
 		return fmt.Errorf("create schema: %w", err)
 	}
-	// Add is_admin to existing DBs; ignore "duplicate column" on fresh ones.
-	if err := addIsAdminColumn(db); err != nil {
-		return err
+	for _, c := range addedColumns {
+		if err := addColumn(db, c.table, c.column, c.definition); err != nil {
+			return err
+		}
 	}
 	// Drop obsolete tables if they exist (no-op on fresh DBs).
 	for _, tbl := range []string{"user_roles", "permissions", "roles"} {
@@ -93,10 +102,12 @@ func createSchema(db *sql.DB) error {
 	return nil
 }
 
-func addIsAdminColumn(db *sql.DB) error {
-	_, err := db.Exec(`ALTER TABLE users ADD COLUMN is_admin INTEGER NOT NULL DEFAULT 0`)
-	if err != nil && !strings.Contains(err.Error(), "duplicate column") {
-		return fmt.Errorf("add is_admin column: %w", err)
+// addColumn adds a column, treating "already there" as success so the migration
+// is idempotent across both fresh and existing databases.
+func addColumn(db *sql.DB, table, column, definition string) error {
+	stmt := fmt.Sprintf("ALTER TABLE %s ADD COLUMN %s %s", table, column, definition)
+	if _, err := db.Exec(stmt); err != nil && !strings.Contains(err.Error(), "duplicate column") {
+		return fmt.Errorf("add %s.%s column: %w", table, column, err)
 	}
 	return nil
 }

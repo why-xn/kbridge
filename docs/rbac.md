@@ -85,6 +85,117 @@ With this policy: `admin@corp.com` can do anything; anyone at `dev.corp.com`
 gets developer access on dev/staging; everyone else falls back to read-only
 `viewer`.
 
+## Guardrails
+
+Role rules answer "may this person touch this resource at all?". Guardrails
+answer a narrower question: "is *this particular command* one we want run right
+now?" They are evaluated **after** the role rules and can only take access away,
+never grant it, so a command a role does not permit is denied before any
+guardrail is consulted.
+
+Guardrails exist because kbridge sees the command, not just the API call. It can
+tell `delete pod api-0` from `delete pod --all`, and `apply` from
+`apply --dry-run=server`, which cluster-side RBAC cannot express.
+
+```yaml
+guardrails:
+  - name: no-prod-namespace-delete     # required, unique
+    description: Optional prose for humans reading the file.
+    match:
+      clusters:   ["prod-*"]           # omit a field to match anything
+      namespaces: ["*"]
+      resources:  ["namespaces", "ns"]
+      verbs:      ["delete"]
+      args:       ["--all"]            # every pattern must match some argument
+      args_not:   ["--dry-run*"]       # no pattern may match any argument
+    action: deny                       # deny | require-reason
+    message: "deleting namespaces in production is not allowed"
+    exempt: ["breakglass@corp.com"]    # subject patterns that skip this rule
+```
+
+**Evaluation order.** Guardrails are checked in file order and the **first one
+that matches decides**. Put the most specific first.
+
+**Empty means any.** This is the opposite of a role rule, where an empty list
+grants nothing. A guardrail that names only `verbs` applies to every cluster,
+namespace, and resource — which is usually what you want, but check your
+`clusters` scoping before deploying a broad one.
+
+### Actions
+
+| Action | Effect |
+|---|---|
+| `deny` | The command is refused. `403`, audit status `blocked`. |
+| `require-reason` | The command is refused **unless** the caller supplied `--reason`. With a reason it runs, and the reason is stored on the audit entry. |
+
+A reason must be at least 8 characters after trimming (so `INC-4521` qualifies)
+and is truncated at 512. Users supply it with the `--reason` flag, which kbridge
+strips before the command reaches kubectl:
+
+```bash
+kb delete pod api-0 --reason "INC-4521 rolling back bad deploy"
+kb apply -f app.yaml --reason="scaling for the launch"
+```
+
+The flag works on every command path: one-shot, streaming, `exec -it`,
+`port-forward`, and `edit`.
+
+### Matching on arguments
+
+`args` and `args_not` match raw command tokens with the same `*` wildcards used
+elsewhere. A token written as `--flag=value` matches both the whole token and
+the bare `--flag`, so `args_not: ["--dry-run"]` catches `--dry-run=server`.
+
+Use `args` to catch a dangerous *form* of an otherwise ordinary verb, and
+`args_not` to carve out a safe one:
+
+```yaml
+  # delete is fine; delete --all is not
+  - name: no-bulk-delete
+    match:
+      clusters: ["prod-*"]
+      verbs: ["delete"]
+      args: ["--all"]
+    action: deny
+
+  # mutations need a reason, but a server-side dry run changes nothing
+  - name: prod-writes-need-a-reason
+    match:
+      clusters: ["prod-*"]
+      verbs: ["apply", "delete", "edit", "patch", "scale"]
+      args_not: ["--dry-run*"]
+    action: require-reason
+```
+
+### Exemptions
+
+`exempt` lists subject patterns (same wildcards as bindings) that skip the
+guardrail. A break-glass identity still produces a full audit trail — it is
+exempt from the block, not from the record.
+
+### Testing a policy before you ship it
+
+`kb policy` reads a policy file directly, with no control plane involved, so it
+runs in CI against a proposed change:
+
+```bash
+# structural check: unknown roles, duplicate names, bad actions
+kb policy validate -f configs/rbac.yaml
+
+# ask how one command would be ruled on
+kb policy test -f configs/rbac.yaml -u alice@corp.com -c prod-eu -- delete ns payments
+```
+
+`test` exits `0` when the command would be allowed and `1` otherwise, so it can
+gate a merge. It prints the parsed request alongside the verdict, which is the
+fastest way to see why a guardrail did or did not fire.
+
+### Known limitation
+
+The resource is parsed as the first non-flag token after the verb, so
+`apply -f app.yaml` reports its resource as `app.yaml`. Scope guardrails on
+`apply` by verb and cluster rather than by `resources`.
+
 ## Reloading
 
 The policy is reloaded by two mechanisms, whichever fires first:
@@ -107,7 +218,10 @@ stays active, so a bad edit never takes down enforcement.
 ## Operational notes
 
 - Denied commands return `403` and are recorded in the audit log with status
-  `denied` — useful for spotting over-broad expectations.
+  `denied` — useful for spotting over-broad expectations. Commands a guardrail
+  stopped are recorded as `blocked`, which separates "you never had this access"
+  from "you have it, but not for this command".
 - Validation runs at load time: a binding or `default` that names an undefined
-  role is rejected.
+  role is rejected, as is a guardrail with no name, a duplicate name, or an
+  action other than `deny` or `require-reason`.
 - Keep `default` least-privilege (or omit it to deny unbound users entirely).

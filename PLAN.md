@@ -2,7 +2,8 @@
 
 ## Current Status
 
-All phases (1–9) are complete. **v0.2.0-alpha.1 ships the full feature set.**
+All phases (1–10) are complete. **v0.2.0-alpha.1 ships phases 1–9; command
+guardrails (phase 10) are on master and unreleased.**
 
 **Phases 1 & 2 (core system):**
 - CLI, control plane, and Agent binaries build and work end-to-end
@@ -339,6 +340,11 @@ frees the bare `version` word for kubectl. Implemented as an arg rewrite
 (`TestKubectlByDefault`).
 
 **Post-1.0 items (not in scope for the alpha series or 1.0.0):**
+- Just-in-time access with approval workflows (time-boxed grants, Slack/Teams
+  approval). Guardrails (Phase 10) are the enforcement half; this adds the time
+  dimension and an approval state machine on top of the same policy engine.
+- Stateful guardrails, such as requiring a server-side dry run within N minutes
+  before the real apply. Phase 10 guardrails are stateless by design.
 - PostgreSQL store driver (the interface is ready; only SQLite is implemented).
 - Mutual TLS (client certificates) — currently server-authenticated TLS only.
 - Prometheus metrics endpoint.
@@ -349,6 +355,35 @@ frees the bare `version` word for kubectl. Implemented as an arg rewrite
   handed a kubeconfig. Runs as a mode of the control plane, reusing
   `authorizeExec` (`internal/controlplane/http.go`) and `AuditRecorder`
   rather than adding a second authorization path.
+
+## Phase 10: Command guardrails — DONE
+
+Shipped after Phase 9. The policy file gains a `guardrails:` section evaluated
+after the role rules, which can only take access away. A guardrail matches on
+cluster, namespace, resource, verb, and the raw command arguments (`args` /
+`args_not`), so it distinguishes `delete pod api-0` from `delete pod --all` and
+`apply` from `apply --dry-run=server` — distinctions cluster-side RBAC cannot
+express. Two actions: `deny` (refuse, audit `blocked`) and `require-reason`
+(refuse unless the caller passes `--reason`, then store the justification on the
+audit entry). Guardrails run in file order, first match wins, and `exempt` lists
+subject patterns that skip one.
+
+Enforcement lives in the single `authorizeExec` chokepoint, so it covers all
+four command paths: one-shot exec, streaming, interactive `exec -it`, and
+port-forward. The authorization domain moved to a new dependency-free
+`internal/policy` package so `kb policy validate` / `kb policy test` can
+evaluate a file offline (and in CI) without linking the control plane's HTTP,
+gRPC, and SQLite stacks. `audit_logs` gains a `reason` column, migrated in place
+on existing databases.
+
+Verified by unit tests (guardrail matching, arg globbing, reason normalization,
+policy validation, schema migration including the upgrade-from-old-schema path),
+HTTP-level tests (deny, reason-required, reason-accepted, audit rows, match
+scoping), CLI tests (flag extraction, rejection rendering, audit table), and
+three e2e suites against a real Kind cluster: `TestGuardrailsEnforced` (HTTP
+surface), `TestGuardrailsCLI` (the `kb` binary, including that `--reason` is
+consumed by kbridge rather than forwarded to kubectl), and
+`TestPolicyCLICommands` (`kb policy validate` / `test` exit codes and output).
 
 ## Phase 8: Interactive exec (`kb exec -it`) — DONE
 
