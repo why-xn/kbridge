@@ -36,3 +36,41 @@ bindings:
     roles: ["admin"]
   # - subject: "*@dev.example.com"
   #   roles: ["developer"]
+
+# guardrails run after the role rules above: a command a role grants can still
+# be blocked here, or held until the user supplies a reason. They are evaluated
+# in order and the first one that matches decides. Unlike a rule, an omitted
+# match field means "any", so a guardrail naming only verbs applies everywhere.
+guardrails:
+  # Namespace deletion in production is never routine.
+  - name: no-prod-namespace-delete
+    description: Deleting a production namespace takes out everything in it.
+    match:
+      clusters: ["prod-*", "prod"]
+      resources: ["namespaces", "ns"]
+      verbs: ["delete"]
+    action: deny
+    message: "deleting namespaces in production is not allowed"
+    # A break-glass identity can still do it; the action is audited either way.
+    exempt: ["breakglass@kbridge.local"]
+
+  # Bulk deletes are the classic way to take out more than intended.
+  - name: no-bulk-delete-in-prod
+    description: Blocks `delete ... --all` against production clusters.
+    match:
+      clusters: ["prod-*", "prod"]
+      verbs: ["delete"]
+      args: ["--all"]
+    action: deny
+    message: "bulk delete is not allowed in production; name the resources explicitly"
+
+  # Mutating production is allowed, but it has to be justified. args_not exempts
+  # a server-side dry run, which changes nothing.
+  - name: prod-writes-need-a-reason
+    description: Requires a justification for any production mutation.
+    match:
+      clusters: ["prod-*", "prod"]
+      verbs: ["apply", "delete", "edit", "patch", "scale", "replace"]
+      args_not: ["--dry-run*"]
+    action: require-reason
+    message: "changing production requires a reason"

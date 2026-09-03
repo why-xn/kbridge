@@ -280,6 +280,49 @@ bindings:
 
 See [docs/rbac.md](docs/rbac.md) for the full policy reference.
 
+### Guardrails
+
+Roles decide what a person may touch. Guardrails decide whether a *particular
+command* should run, and are evaluated after the roles so they can only take
+access away. Because kbridge sees the command rather than just the API call, a
+guardrail can tell `delete pod api-0` from `delete pod --all`, and `apply` from
+`apply --dry-run=server` — distinctions cluster-side RBAC cannot express.
+
+```yaml
+guardrails:
+  # Some commands should never run in production.
+  - name: no-bulk-delete-in-prod
+    match:
+      clusters: ["prod-*"]
+      verbs: ["delete"]
+      args: ["--all"]
+    action: deny
+    message: "bulk delete is not allowed in production"
+
+  # Others are fine, but must be justified. args_not exempts a dry run.
+  - name: prod-writes-need-a-reason
+    match:
+      clusters: ["prod-*"]
+      verbs: ["apply", "delete", "edit", "patch", "scale"]
+      args_not: ["--dry-run*"]
+    action: require-reason
+```
+
+A `require-reason` guardrail is satisfied with the `--reason` flag, and the
+justification is stored on the audit entry:
+
+```bash
+kb delete pod api-0 --reason "INC-4521 rolling back bad deploy"
+```
+
+Test a policy before shipping it — both commands read the file directly, so they
+run in CI, and `test` exits non-zero when the command would be refused:
+
+```bash
+kb policy validate -f configs/rbac.yaml
+kb policy test -f configs/rbac.yaml -u alice@corp.com -c prod-eu -- delete ns payments
+```
+
 ### Agent Authentication
 
 Agents authenticate with database-backed tokens. Each token is a high-entropy

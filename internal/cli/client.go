@@ -20,6 +20,7 @@ type ControlPlaneClient struct {
 	httpClient   *http.Client
 	token        string
 	refreshToken string
+	reason       string
 	persist      func(access, refresh string) error
 }
 
@@ -49,6 +50,12 @@ func NewControlPlaneClient(baseURL string) *ControlPlaneClient {
 			Timeout: 10 * time.Second,
 		},
 	}
+}
+
+// SetReason sets the justification sent with command requests, which guardrails
+// configured with the require-reason action demand. Empty when none was given.
+func (c *ControlPlaneClient) SetReason(reason string) {
+	c.reason = reason
 }
 
 // SetToken sets the auth token for authenticated requests.
@@ -337,6 +344,7 @@ type AuditLogInfo struct {
 	Namespace   string `json:"namespace"`
 	Status      string `json:"status"`
 	ExitCode    *int32 `json:"exit_code"`
+	Reason      string `json:"reason"`
 	CreatedAt   string `json:"created_at"`
 }
 
@@ -508,6 +516,7 @@ type ExecRequest struct {
 	Command   []string `json:"command"`
 	Namespace string   `json:"namespace,omitempty"`
 	Timeout   int      `json:"timeout,omitempty"`
+	Reason    string   `json:"reason,omitempty"`
 }
 
 // ExecResponse represents a command execution response.
@@ -525,6 +534,7 @@ func (c *ControlPlaneClient) ExecCommand(clusterName string, command []string, n
 		Command:   command,
 		Namespace: namespace,
 		Timeout:   timeout,
+		Reason:    c.reason,
 	}
 
 	jsonBody, err := json.Marshal(reqBody)
@@ -596,6 +606,7 @@ type ExecRequestWithStdin struct {
 	Namespace string   `json:"namespace,omitempty"`
 	Timeout   int      `json:"timeout,omitempty"`
 	Stdin     string   `json:"stdin,omitempty"`
+	Reason    string   `json:"reason,omitempty"`
 }
 
 // ExecCommandWithStdin executes a kubectl command with stdin input.
@@ -607,6 +618,7 @@ func (c *ControlPlaneClient) ExecCommandWithStdin(clusterName string, command []
 		Namespace: namespace,
 		Timeout:   timeout,
 		Stdin:     stdin,
+		Reason:    c.reason,
 	}
 
 	jsonBody, err := json.Marshal(reqBody)
@@ -631,7 +643,7 @@ func (c *ControlPlaneClient) ExecCommandWithStdin(clusterName string, command []
 // StreamCommand runs a streaming kubectl command, copying the chunked response
 // body to out until the stream ends or ctx is cancelled.
 func (c *ControlPlaneClient) StreamCommand(ctx context.Context, clusterName string, command []string, namespace string, out io.Writer) error {
-	reqBody, _ := json.Marshal(ExecRequest{Command: command, Namespace: namespace})
+	reqBody, _ := json.Marshal(ExecRequest{Command: command, Namespace: namespace, Reason: c.reason})
 	reqURL := fmt.Sprintf("%s/api/v1/clusters/%s/stream", c.baseURL, clusterName)
 
 	// No client timeout for streaming: the request lives as long as the stream.
@@ -682,7 +694,8 @@ func (c *ControlPlaneClient) StreamCommand(ctx context.Context, clusterName stri
 	case http.StatusUnauthorized:
 		return fmt.Errorf("authentication required: run 'kb login' first")
 	case http.StatusForbidden:
-		return fmt.Errorf("permission denied")
+		b, _ := io.ReadAll(resp.Body)
+		return policyRejectionError(b)
 	case http.StatusNotFound:
 		return fmt.Errorf("cluster %q not found", clusterName)
 	case http.StatusServiceUnavailable:
@@ -709,6 +722,9 @@ func (c *ControlPlaneClient) parseExecResponse(resp *http.Response, clusterName 
 	}
 	if resp.StatusCode == http.StatusGatewayTimeout {
 		return nil, fmt.Errorf("command execution timed out")
+	}
+	if resp.StatusCode == http.StatusForbidden {
+		return nil, policyRejectionError(body)
 	}
 
 	var execResp ExecResponse

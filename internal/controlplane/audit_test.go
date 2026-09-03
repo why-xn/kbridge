@@ -96,8 +96,7 @@ func TestAdminHandler_ListAuditLogs_BadTimestamp(t *testing.T) {
 func TestExecHandler_RecordsDeniedAudit(t *testing.T) {
 	store := newTestStore(t)
 	jm := auth.NewJWTManager("test-secret-at-least-32-chars!!", time.Hour)
-	eng := &PolicyEngine{}
-	eng.current.Store(mustParse(t, `
+	eng := mustPolicyEngine(t, `
 default: viewer
 roles:
   - name: viewer
@@ -106,7 +105,7 @@ roles:
         namespaces: ["*"]
         resources: ["*"]
         verbs: ["get"]
-`))
+`)
 	agents := NewAgentStore()
 	agents.Register(&AgentInfo{ID: "a1", ClusterName: "prod"})
 	srv := NewHTTPServer(agents, NewCommandQueue(),

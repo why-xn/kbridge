@@ -23,6 +23,7 @@ type pfTarget struct {
 	namespace string
 	pod       string
 	mappings  []portMapping
+	reason    string
 }
 
 // parsePortForwardArgs recognizes `port-forward <pod> [LOCAL:REMOTE|REMOTE|:REMOTE ...]`.
@@ -89,6 +90,9 @@ func parsePortSpec(spec string) (portMapping, bool) {
 func runPortForward(controlPlaneURL, cluster, token string, tgt pfTarget, insecure bool) error {
 	q := url.Values{}
 	q.Set("pod", tgt.pod)
+	if tgt.reason != "" {
+		q.Set("reason", tgt.reason)
+	}
 	if tgt.namespace != "" {
 		q.Set("namespace", tgt.namespace)
 	}

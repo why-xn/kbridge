@@ -120,6 +120,12 @@ func (h *EditHandler) parseArgs(args []string) error {
 	return nil
 }
 
+// SetReason attaches a justification to the fetch and apply this edit performs,
+// for guardrails that require one.
+func (h *EditHandler) SetReason(reason string) {
+	h.client.SetReason(reason)
+}
+
 // Execute performs the edit workflow: fetch, edit locally, apply.
 func (h *EditHandler) Execute() error {
 	// Step 1: Fetch the current resource YAML

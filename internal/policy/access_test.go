@@ -1,4 +1,4 @@
-package controlplane
+package policy
 
 import (
 	"testing"
@@ -19,8 +19,8 @@ func TestMatchPattern(t *testing.T) {
 		{"*-prod", "us-prod", true},
 		{"*-prod", "us-prod-1", false},
 		{"app-*-svc", "app-web-svc", true},
-		{"app-*-svc", "app--svc", true},  // '*' matches empty
-		{"app-*-svc", "app-svc", false},  // missing the second '-'
+		{"app-*-svc", "app--svc", true}, // '*' matches empty
+		{"app-*-svc", "app-svc", false}, // missing the second '-'
 		{"app-*-svc", "app-web-api", false},
 		{"", "", true},
 		{"", "x", false},
@@ -41,7 +41,7 @@ func TestVerbAllowed(t *testing.T) {
 		{"get,list,logs", "list", true},
 		{"get,list,logs", "delete", false},
 		{"get, list , logs", "list", true}, // tolerate spaces
-		{"GET,LIST", "get", true},           // case-insensitive
+		{"GET,LIST", "get", true},          // case-insensitive
 		{"get", "GET", true},
 		{"", "get", false},
 	}
@@ -54,12 +54,12 @@ func TestVerbAllowed(t *testing.T) {
 
 func TestParseAccessRequest(t *testing.T) {
 	tests := []struct {
-		name      string
-		command   []string
-		fallback  string
-		wantVerb  string
-		wantRes   string
-		wantNS    string
+		name     string
+		command  []string
+		fallback string
+		wantVerb string
+		wantRes  string
+		wantNS   string
 	}{
 		{"simple get", []string{"get", "pods"}, "", "get", "pods", "default"},
 		{"fallback namespace", []string{"get", "pods"}, "app", "get", "pods", "app"},
@@ -74,7 +74,7 @@ func TestParseAccessRequest(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := parseAccessRequest("c1", tt.command, tt.fallback)
+			got := ParseAccessRequest("c1", tt.command, tt.fallback)
 			if got.Cluster != "c1" {
 				t.Errorf("cluster = %q, want c1", got.Cluster)
 			}

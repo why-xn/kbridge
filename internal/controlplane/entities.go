@@ -49,6 +49,7 @@ type AuditLog struct {
 	DurationMs   *int64    `json:"duration_ms,omitempty"`
 	ErrorMessage string    `json:"error_message,omitempty"`
 	ClientIP     string    `json:"client_ip,omitempty"`
+	Reason       string    `json:"reason,omitempty"`
 	CreatedAt    time.Time `json:"created_at"`
 }
 

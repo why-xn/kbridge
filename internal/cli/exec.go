@@ -27,6 +27,7 @@ type execTarget struct {
 	command   []string
 	tty       bool
 	stdin     bool
+	reason    string
 }
 
 // parseExecArgs recognizes an interactive `exec` (has -i and/or -t). It returns
@@ -83,7 +84,7 @@ func httpStatusError(resp *http.Response) error {
 	case http.StatusUnauthorized:
 		return fmt.Errorf("authentication required, run kb login")
 	case http.StatusForbidden:
-		return fmt.Errorf("permission denied")
+		return policyRejectionError(body)
 	case http.StatusNotFound:
 		return fmt.Errorf("cluster not found")
 	case http.StatusServiceUnavailable:
@@ -278,6 +279,9 @@ func execURL(controlPlaneURL, cluster string, tgt execTarget, rows, cols uint16)
 	}
 	if tgt.tty {
 		q.Set("tty", "true")
+	}
+	if tgt.reason != "" {
+		q.Set("reason", tgt.reason)
 	}
 	q.Set("rows", strconv.Itoa(int(rows)))
 	q.Set("cols", strconv.Itoa(int(cols)))

@@ -154,7 +154,46 @@ kb admin audit --cluster prod --limit 100
 | `--status` | `success` / `failed` / `denied` / `timeout` | — |
 | `--limit` | Max entries | 50 |
 
+## Policy
+
+### `kb policy validate -f <file>`
+
+Parses a policy file and reports structural problems: bindings that name an
+undefined role, duplicate role or guardrail names, and unknown guardrail
+actions. Reads the file directly, so it needs no control plane and runs in CI.
+
+```bash
+kb policy validate -f configs/rbac.yaml
+```
+
+### `kb policy test -f <file> -u <user> -c <cluster> -- <kubectl args...>`
+
+Shows how a policy would rule on one command, without running anything.
+
+```bash
+kb policy test -f configs/rbac.yaml -u alice@corp.com -c prod-eu -- delete ns payments
+kb policy test -f configs/rbac.yaml -u bob@corp.com -c prod-eu --reason "INC-4521" -- apply -f app.yaml
+```
+
+| Flag | Meaning | Default |
+|---|---|---|
+| `-f`, `--file` | Policy file to evaluate (required) | |
+| `-u`, `--user` | Subject to evaluate as, matched against bindings (required) | |
+| `-c`, `--cluster` | Cluster the command targets (required) | |
+| `-n`, `--namespace` | Namespace to assume when the command names none | |
+| `--reason` | Justification to supply, for guardrails that require one | |
+
+The verdict is one of `allowed`, `denied` (no role grants it), `blocked` (a
+guardrail refused it), or `reason-required` (a guardrail wants `--reason`). Exit
+status is `0` for `allowed` and `1` otherwise, so it can gate a CI job.
+
 ## Global behaviour
 
 - A `401` response means your token expired — run `kb login` again.
 - Permission errors (`403`) come from the RBAC policy; see [rbac.md](rbac.md).
+  A `403` naming a guardrail means your role does permit the command, but a
+  guardrail stopped this particular invocation.
+- `--reason "<why>"` supplies a justification for guardrails that require one.
+  It works on every command (`kb delete pod api-0 --reason "INC-4521"`), is
+  stripped before the command reaches kubectl, and is stored on the audit entry.
+  A reason must be at least 8 characters.

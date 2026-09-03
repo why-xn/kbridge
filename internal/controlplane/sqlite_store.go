@@ -448,12 +448,13 @@ func (s *SQLiteStore) CreateAuditLog(ctx context.Context, log *AuditLog) error {
 	}
 	now := time.Now().UTC().Format(timeFormat)
 	_, err := s.db.ExecContext(ctx,
-		`INSERT INTO audit_logs (id, user_id, user_email, cluster_name, cluster_id, command, namespace, status, exit_code, duration_ms, error_message, client_ip, created_at)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		`INSERT INTO audit_logs (id, user_id, user_email, cluster_name, cluster_id, command, namespace, status, exit_code, duration_ms, error_message, client_ip, reason, created_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		log.ID, nilIfEmpty(log.UserID), log.UserEmail, log.ClusterName,
 		nilIfEmpty(log.ClusterID), log.Command, nilIfEmpty(log.Namespace),
 		log.Status, log.ExitCode, log.DurationMs,
-		nilIfEmpty(log.ErrorMessage), nilIfEmpty(log.ClientIP), now,
+		nilIfEmpty(log.ErrorMessage), nilIfEmpty(log.ClientIP),
+		nilIfEmpty(log.Reason), now,
 	)
 	if err != nil {
 		return fmt.Errorf("create audit log: %w", err)
@@ -473,7 +474,7 @@ func (s *SQLiteStore) ListAuditLogs(ctx context.Context, filter AuditLogFilter) 
 	}
 
 	// Fetch page
-	query := `SELECT id, user_id, user_email, cluster_name, cluster_id, command, namespace, status, exit_code, duration_ms, error_message, client_ip, created_at
+	query := `SELECT id, user_id, user_email, cluster_name, cluster_id, command, namespace, status, exit_code, duration_ms, error_message, client_ip, reason, created_at
 		 FROM audit_logs` + where + ` ORDER BY created_at DESC`
 	pageArgs := append([]any{}, args...)
 	if filter.PerPage > 0 {
@@ -533,11 +534,11 @@ func buildAuditFilter(f AuditLogFilter) (string, []any) {
 
 func scanAuditRow(rows *sql.Rows) (*AuditLog, error) {
 	var l AuditLog
-	var userID, clusterID, ns, errMsg, clientIP *string
+	var userID, clusterID, ns, errMsg, clientIP, reason *string
 	var createdAt string
 	err := rows.Scan(&l.ID, &userID, &l.UserEmail, &l.ClusterName, &clusterID,
 		&l.Command, &ns, &l.Status, &l.ExitCode, &l.DurationMs,
-		&errMsg, &clientIP, &createdAt)
+		&errMsg, &clientIP, &reason, &createdAt)
 	if err != nil {
 		return nil, fmt.Errorf("scan audit log: %w", err)
 	}
@@ -546,6 +547,7 @@ func scanAuditRow(rows *sql.Rows) (*AuditLog, error) {
 	l.Namespace = derefStr(ns)
 	l.ErrorMessage = derefStr(errMsg)
 	l.ClientIP = derefStr(clientIP)
+	l.Reason = derefStr(reason)
 	l.CreatedAt, _ = time.Parse(timeFormat, createdAt)
 	return &l, nil
 }

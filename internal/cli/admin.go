@@ -198,15 +198,13 @@ func runAdminAudit(cmd *cobra.Command, args []string) error {
 		return nil
 	}
 
+	// The REASON column appears only when some entry carries one, so output is
+	// unchanged for deployments that use no require-reason guardrails.
+	withReason := anyHasReason(logs)
 	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-	fmt.Fprintln(w, "TIME\tUSER\tCLUSTER\tSTATUS\tEXIT\tCOMMAND")
+	fmt.Fprintln(w, auditHeader(withReason))
 	for _, l := range logs {
-		exit := "-"
-		if l.ExitCode != nil {
-			exit = strconv.Itoa(int(*l.ExitCode))
-		}
-		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\n",
-			l.CreatedAt, l.UserEmail, l.ClusterName, l.Status, exit, l.Command)
+		fmt.Fprintln(w, auditRow(l, withReason))
 	}
 	w.Flush()
 	fmt.Printf("\nShowing %d of %d entries.\n", len(logs), total)
@@ -276,4 +274,41 @@ func promptPassword(prompt string) (string, error) {
 	// Non-interactive (e.g. piped input): read a line.
 	line, _ := bufio.NewReader(os.Stdin).ReadString('\n')
 	return strings.TrimRight(line, "\r\n"), nil
+}
+
+// anyHasReason reports whether any entry carries a justification.
+func anyHasReason(logs []AuditLogInfo) bool {
+	for _, l := range logs {
+		if l.Reason != "" {
+			return true
+		}
+	}
+	return false
+}
+
+// auditHeader returns the tab-separated column titles.
+func auditHeader(withReason bool) string {
+	header := "TIME\tUSER\tCLUSTER\tSTATUS\tEXIT\tCOMMAND"
+	if withReason {
+		header += "\tREASON"
+	}
+	return header
+}
+
+// auditRow renders one entry as a tab-separated row.
+func auditRow(l AuditLogInfo, withReason bool) string {
+	exit := "-"
+	if l.ExitCode != nil {
+		exit = strconv.Itoa(int(*l.ExitCode))
+	}
+	row := fmt.Sprintf("%s\t%s\t%s\t%s\t%s\t%s",
+		l.CreatedAt, l.UserEmail, l.ClusterName, l.Status, exit, l.Command)
+	if withReason {
+		reason := l.Reason
+		if reason == "" {
+			reason = "-"
+		}
+		row += "\t" + reason
+	}
+	return row
 }
