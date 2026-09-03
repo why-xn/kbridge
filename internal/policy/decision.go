@@ -14,6 +14,11 @@ const (
 	// OutcomeReasonRequired means a guardrail will admit the command once the
 	// caller supplies a justification.
 	OutcomeReasonRequired Outcome = "reason-required"
+	// OutcomeApprovalRequired means a guardrail will admit the command only
+	// while an approved grant covers it. Whether one does is dynamic state the
+	// control plane holds, not something this package can answer, so a caller
+	// that manages grants checks for one before treating this as a refusal.
+	OutcomeApprovalRequired Outcome = "approval-required"
 )
 
 // Decision is the verdict on a single command, carrying enough detail to
@@ -56,11 +61,24 @@ func (g Guardrail) decide(reason string) Decision {
 	if g.Action == ActionRequireReason && reasonSatisfied(reason) {
 		return allowed(reason)
 	}
-	outcome := OutcomeBlocked
-	if g.Action == ActionRequireReason {
-		outcome = OutcomeReasonRequired
+	return Decision{
+		Outcome:   g.Action.outcome(),
+		Guardrail: g.Name,
+		Message:   g.explain(),
+		Reason:    reason,
 	}
-	return Decision{Outcome: outcome, Guardrail: g.Name, Message: g.explain()}
+}
+
+// outcome is the verdict an action produces when it does not admit the command.
+func (a Action) outcome() Outcome {
+	switch a {
+	case ActionRequireReason:
+		return OutcomeReasonRequired
+	case ActionRequireApproval:
+		return OutcomeApprovalRequired
+	default:
+		return OutcomeBlocked
+	}
 }
 
 // Evaluate decides whether subject may run req under the current policy.

@@ -50,6 +50,7 @@ type AuditLog struct {
 	ErrorMessage string    `json:"error_message,omitempty"`
 	ClientIP     string    `json:"client_ip,omitempty"`
 	Reason       string    `json:"reason,omitempty"`
+	GrantID      string    `json:"grant_id,omitempty"`
 	CreatedAt    time.Time `json:"created_at"`
 }
 
@@ -65,6 +66,7 @@ type AuditLogFilter struct {
 	UserEmail   string
 	ClusterName string
 	Status      string
+	GrantID     string
 	From        *time.Time
 	To          *time.Time
 	Page        int

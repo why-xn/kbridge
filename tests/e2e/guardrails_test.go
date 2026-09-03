@@ -358,6 +358,7 @@ type auditEntry struct {
 	Command   string `json:"command"`
 	Status    string `json:"status"`
 	Reason    string `json:"reason"`
+	GrantID   string `json:"grant_id"`
 }
 
 // auditQuery fetches audit entries matching a raw query string.

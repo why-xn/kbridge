@@ -138,6 +138,28 @@ kb admin agent-tokens revoke <id>
 | `--description` | Optional description |
 | `--expires-in-days` | Optional expiry in days (0 = no expiry) |
 
+### `kb admin grants` (alias `grant`)
+
+Triage access requests. Requires the admin role.
+
+```bash
+# See what is waiting
+kb admin grants list --status pending
+kb admin grants list --subject alice@corp.com
+
+# Decide
+kb admin grants approve <id> --note "paged, go ahead"
+kb admin grants approve <id> --duration 30m    # shorten the window
+kb admin grants deny <id> --note "use the runbook instead"
+
+# End an approved grant early
+kb admin grants revoke <id>
+```
+
+Approving your own request is refused unless the server has
+`grants.allow_self_approval` enabled. A grant can be decided once; deciding it
+again fails. Revocation takes effect immediately.
+
 ### `kb admin audit`
 Shows the command audit log, newest first.
 
@@ -153,6 +175,36 @@ kb admin audit --cluster prod --limit 100
 | `--cluster` | Filter by cluster name | — |
 | `--status` | `success` / `failed` / `denied` / `timeout` | — |
 | `--limit` | Max entries | 50 |
+
+## Access requests
+
+### `kb request [cluster]`
+
+Ask for time-boxed access to a cluster, for guardrails whose action is
+`require-approval`. With no cluster argument the selected cluster is used.
+
+```bash
+kb request prod-eu --duration 2h --reason "INC-4521 rolling back bad deploy"
+kb request --namespace payments --reason "INC-4521 investigating"
+```
+
+| Flag | Meaning | Default |
+|---|---|---|
+| `--duration` | How long the access lasts once approved | server's `grants.default_duration` |
+| `--reason` | Why the access is needed, min 8 characters (required) | |
+| `-n`, `--namespace` | Limit the grant to one namespace | any |
+
+The request is pending until an administrator approves it, and grants nothing
+until then. The clock starts at approval, not at request time.
+
+### `kb grants`
+
+List your own grants, with status and remaining time.
+
+```bash
+kb grants
+kb grants --status pending
+```
 
 ## Policy
 
@@ -193,6 +245,9 @@ status is `0` for `allowed` and `1` otherwise, so it can gate a CI job.
 - Permission errors (`403`) come from the RBAC policy; see [rbac.md](rbac.md).
   A `403` naming a guardrail means your role does permit the command, but a
   guardrail stopped this particular invocation.
+- A `403` saying approval is required means the command needs a grant: run
+  `kb request <cluster> --reason "<why>"` and have someone approve it. See
+  [rbac.md](rbac.md#just-in-time-access).
 - `--reason "<why>"` supplies a justification for guardrails that require one.
   It works on every command (`kb delete pod api-0 --reason "INC-4521"`), is
   stripped before the command reaches kubectl, and is stored on the audit entry.

@@ -37,6 +37,12 @@ type Store interface {
 	DeleteRefreshTokensByUser(ctx context.Context, userID string) error
 	CleanupExpiredRefreshTokens(ctx context.Context) error
 
+	// Grants
+	CreateGrant(ctx context.Context, g *Grant) error
+	GetGrant(ctx context.Context, id string) (*Grant, error)
+	UpdateGrant(ctx context.Context, g *Grant) error
+	ListGrants(ctx context.Context, f GrantFilter) ([]*Grant, error)
+
 	// Audit Logs
 	CreateAuditLog(ctx context.Context, log *AuditLog) error
 	ListAuditLogs(ctx context.Context, filter AuditLogFilter) ([]*AuditLog, int, error)

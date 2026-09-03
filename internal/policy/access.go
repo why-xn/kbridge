@@ -15,10 +15,11 @@ type AccessRequest struct {
 	Args []string
 }
 
-// matchPattern reports whether value matches pattern, where '*' is a wildcard
+// MatchPattern reports whether value matches pattern, where '*' is a wildcard
 // matching any (possibly empty) sequence of characters. A plain pattern with no
-// '*' must match value exactly.
-func matchPattern(pattern, value string) bool {
+// '*' must match value exactly. Exported because grant scopes are matched with
+// the same globs as policy rules.
+func MatchPattern(pattern, value string) bool {
 	// Two-pointer wildcard match with backtracking on the last '*'.
 	var p, v int
 	star, mark := -1, 0

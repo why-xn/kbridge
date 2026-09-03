@@ -123,5 +123,8 @@ func formatDecision(subject string, req policy.AccessRequest, d policy.Decision)
 	if d.Outcome == policy.OutcomeReasonRequired {
 		out += "hint:      " + reasonHint + "\n"
 	}
+	if d.Outcome == policy.OutcomeApprovalRequired {
+		out += "hint:      " + approvalHint + "\n"
+	}
 	return out
 }

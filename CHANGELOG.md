@@ -9,6 +9,61 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Just-in-time access grants.** A third guardrail action, `require-approval`,
+  is satisfied only by a time-boxed grant that one person requests and another
+  approves. A reason is self-asserted; an approval is not.
+
+  ```bash
+  kb request prod-eu --duration 2h --reason "INC-4521 rolling back bad deploy"
+  kb grants                                     # yours, with time remaining
+  kb admin grants list --status pending         # triage
+  kb admin grants approve <id> --duration 30m   # optionally shorten
+  kb admin grants revoke <id>                   # end one early
+  ```
+
+  A pending request grants nothing and carries no expiry: the clock starts at
+  approval. Grants lapse on their own — expiry is derived from the stored
+  window, so no background job flips rows. Self-approval is refused unless
+  `grants.allow_self_approval` is set. Scope is a cluster and optionally one
+  namespace, both glob patterns.
+
+  New endpoints: `POST/GET /api/v1/grants` for any authenticated user, and
+  `GET /api/v1/admin/grants`, `POST /api/v1/admin/grants/:id/approve`,
+  `.../deny`, `DELETE /api/v1/admin/grants/:id` for admins.
+
+- **`grants` config section** bounding the feature. Both durations are optional,
+  so a config written before grants existed keeps working:
+
+  ```yaml
+  grants:
+    max_duration: 8h
+    default_duration: 1h
+    allow_self_approval: false
+  ```
+
+- Audit entries carry a `grant_id`, and grant lifecycle events are recorded as
+  `grant-requested`, `grant-approved`, `grant-denied`, and `grant-revoked`. A
+  command an approval admitted carries the same `grant_id`, so
+  `GET /api/v1/admin/audit?grant_id=<id>` returns the request, the decision, and
+  everything run under it.
+
+### Changed
+
+- Guardrail `resources` matching now tolerates the singular and plural spellings
+  kubectl accepts, so a guardrail written for `deployments` also catches
+  `delete deployment api`. This widening applies to guardrails only — role rules
+  stay exact, because there a loose match would grant more than the author
+  spelled out, whereas a guardrail can only take access away.
+
+### Migration
+
+Existing databases gain the `grants` table and the `audit_logs.grant_id` column
+automatically on startup. Policy files without a `require-approval` guardrail
+behave exactly as before, and the grant endpoints only appear when the control
+plane wires the service, which it does by default.
+
+### Added
+
 - **Command guardrails.** The policy file gains a `guardrails:` section that runs
   after the role rules and can only take access away. A guardrail matches on
   cluster, namespace, resource, verb, and — new — the raw command arguments, so

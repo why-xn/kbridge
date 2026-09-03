@@ -12,6 +12,8 @@ var managementCommands = map[string]bool{
 	"cluster":    true, // alias for "clusters"
 	"login":      true,
 	"policy":     true,
+	"request":    true,
+	"grants":     true,
 	"logout":     true,
 	"status":     true,
 	"kubectl":    true, // explicit escape hatch

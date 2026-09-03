@@ -26,6 +26,11 @@ type ExecRequest struct {
 	Timeout   int      `json:"timeout,omitempty"` // seconds, default 30
 	Stdin     string   `json:"stdin,omitempty"`   // optional stdin input for the command
 	Reason    string   `json:"reason,omitempty"`  // justification, when a guardrail requires one
+
+	// grantID is set by the server when an approved grant admitted the command.
+	// It is deliberately not decoded from the request body: a client asserting
+	// its own grant would defeat the approval.
+	GrantID string `json:"-"`
 }
 
 // ExecResponse represents a command execution response.
@@ -48,6 +53,8 @@ type HTTPServer struct {
 	commandQueue  *CommandQueue
 	authHandlers  *AuthHandlers
 	adminHandlers *AdminHandlers
+	grantHandlers *GrantHandlers
+	grants        *GrantService
 	policy        *PolicyEngine
 	audit         *AuditRecorder
 	sessions      *SessionManager
@@ -56,7 +63,7 @@ type HTTPServer struct {
 }
 
 // NewHTTPServer creates a new HTTP server with configured routes.
-func NewHTTPServer(agentStore *AgentStore, cmdQueue *CommandQueue, ah *AuthHandlers, adminH *AdminHandlers, policy *PolicyEngine, audit *AuditRecorder, sessions *SessionManager, jm *auth.JWTManager) *HTTPServer {
+func NewHTTPServer(agentStore *AgentStore, cmdQueue *CommandQueue, ah *AuthHandlers, adminH *AdminHandlers, policy *PolicyEngine, audit *AuditRecorder, sessions *SessionManager, jm *auth.JWTManager, opts ...HTTPOption) *HTTPServer {
 	gin.SetMode(gin.ReleaseMode)
 	router := gin.New()
 	// Disable Gin's default trusted-proxy behaviour so c.ClientIP() returns the
@@ -77,8 +84,25 @@ func NewHTTPServer(agentStore *AgentStore, cmdQueue *CommandQueue, ah *AuthHandl
 		jwtManager:    jm,
 		loginLimiter:  newLoginLimiter(5.0/60.0, 5),
 	}
+	for _, opt := range opts {
+		opt(s)
+	}
 	s.setupRoutes()
 	return s
+}
+
+// HTTPOption configures optional server collaborators. Grants are optional so a
+// deployment that does not use just-in-time access wires nothing extra, and so
+// existing tests keep their call signature.
+type HTTPOption func(*HTTPServer)
+
+// WithGrants enables the just-in-time access endpoints and lets an approved
+// grant admit a command that a require-approval guardrail would refuse.
+func WithGrants(svc *GrantService, limits GrantsConfig) HTTPOption {
+	return func(s *HTTPServer) {
+		s.grants = svc
+		s.grantHandlers = NewGrantHandlers(svc, limits)
+	}
 }
 
 // Handler returns the HTTP handler for the server.
@@ -114,6 +138,12 @@ func (s *HTTPServer) setupRoutes() {
 			api.POST("/clusters/:name/port-forward", s.handlePortForward)
 		}
 
+		// Just-in-time access: anyone may ask, only admins may decide.
+		if s.grantHandlers != nil {
+			api.POST("/grants", bodyLimitMiddleware(1<<20), s.grantHandlers.HandleRequestGrant)
+			api.GET("/grants", s.grantHandlers.HandleListMyGrants)
+		}
+
 		// Auth routes that require authentication
 		if s.authHandlers != nil {
 			api.POST("/auth/logout", s.authHandlers.HandleLogout)
@@ -138,6 +168,13 @@ func (s *HTTPServer) setupRoutes() {
 				admin.DELETE("/users/:id", s.adminHandlers.HandleDeleteUser)
 
 				admin.GET("/audit", s.adminHandlers.HandleListAuditLogs)
+
+				if s.grantHandlers != nil {
+					admin.GET("/grants", s.grantHandlers.HandleListGrants)
+					admin.POST("/grants/:id/approve", s.grantHandlers.HandleApproveGrant)
+					admin.POST("/grants/:id/deny", s.grantHandlers.HandleDenyGrant)
+					admin.DELETE("/grants/:id", s.grantHandlers.HandleRevokeGrant)
+				}
 			}
 		}
 	}
@@ -304,8 +341,31 @@ func (s *HTTPServer) authorizeExec(c *gin.Context, clusterName string, req *Exec
 	if decision.Allowed() {
 		return true
 	}
+	if s.admitByGrant(c, req, claims.Email, access, decision) {
+		return true
+	}
 	s.rejectExec(c, clusterName, *req, claims.Email, access, decision)
 	return false
+}
+
+// admitByGrant lets an approved, unexpired grant satisfy a require-approval
+// guardrail. Whether one exists is dynamic state the policy file cannot see, so
+// it is checked here rather than in the policy engine. The grant's own reason is
+// carried onto the command's audit entry when the caller supplied none, so the
+// record always says why the access was granted.
+func (s *HTTPServer) admitByGrant(c *gin.Context, req *ExecRequest, email string, access AccessRequest, d PolicyDecision) bool {
+	if d.Outcome != policy.OutcomeApprovalRequired || s.grants == nil {
+		return false
+	}
+	g := s.grants.Covering(c.Request.Context(), email, access)
+	if g == nil {
+		return false
+	}
+	req.GrantID = g.ID
+	if req.Reason == "" {
+		req.Reason = g.Reason
+	}
+	return true
 }
 
 // rejectExec logs, audits, and responds to a command the policy refused.
@@ -326,6 +386,9 @@ func execRejection(d PolicyDecision) gin.H {
 	}
 	if d.Outcome == policy.OutcomeReasonRequired {
 		body["reason_required"] = true
+	}
+	if d.Outcome == policy.OutcomeApprovalRequired {
+		body["approval_required"] = true
 	}
 	return body
 }
@@ -354,6 +417,7 @@ func (s *HTTPServer) recordExecAudit(c *gin.Context, cluster string, req ExecReq
 		ErrorMessage: errMsg,
 		ClientIP:     c.ClientIP(),
 		Reason:       req.Reason,
+		GrantID:      req.GrantID,
 	}
 	if claims := auth.GetUserFromContext(c); claims != nil {
 		entry.UserID = claims.UserID

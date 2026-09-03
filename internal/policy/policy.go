@@ -61,7 +61,7 @@ func (r Rule) allows(req AccessRequest) bool {
 func (p *Policy) rolesFor(subject string) []string {
 	var roles []string
 	for _, b := range p.Bindings {
-		if matchPattern(b.Subject, subject) {
+		if MatchPattern(b.Subject, subject) {
 			roles = append(roles, b.Roles...)
 		}
 	}
@@ -130,7 +130,7 @@ func (p *Policy) validate() error {
 
 func anyMatch(patterns []string, value string) bool {
 	for _, p := range patterns {
-		if matchPattern(p, value) {
+		if MatchPattern(p, value) {
 			return true
 		}
 	}

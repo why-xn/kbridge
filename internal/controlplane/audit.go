@@ -16,6 +16,14 @@ const (
 	// AuditStatusBlocked marks a command a guardrail rejected: the user's role
 	// granted it, but a guardrail blocked it or demanded a missing reason.
 	AuditStatusBlocked = "blocked"
+
+	// Grant lifecycle events. They share the audit log with commands so that
+	// "who asked for production, and who let them in" is answerable from one
+	// place alongside what they then ran.
+	AuditStatusGrantRequested = "grant-requested"
+	AuditStatusGrantApproved  = "grant-approved"
+	AuditStatusGrantDenied    = "grant-denied"
+	AuditStatusGrantRevoked   = "grant-revoked"
 )
 
 // auditWriteTimeout bounds how long an audit insert may take.

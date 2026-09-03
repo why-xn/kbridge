@@ -38,6 +38,13 @@ tls:
   cert_file: "certs/tls.crt"
   key_file: "certs/tls.key"
 
+# grants bounds just-in-time access. A require-approval guardrail is satisfied
+# only by an approved grant, and every grant expires on its own.
+grants:
+  max_duration: 8h        # ceiling on any single grant
+  default_duration: 1h    # used when a request names no duration
+  allow_self_approval: false  # a second pair of eyes is the point
+
 # streams bounds concurrent streaming sessions (kubectl logs -f, get -w).
 streams:
   max_concurrent: 50
