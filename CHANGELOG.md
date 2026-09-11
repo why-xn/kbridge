@@ -171,7 +171,7 @@ are opt-in, and a policy with none behaves exactly as before.
 
 First public pre-release. The feature set below is complete and end-to-end
 tested, but interfaces — config keys, the RBAC policy schema, and REST API
-paths — may still change before 1.0.0.
+paths — may still change between alpha releases.
 
 ### Added
 

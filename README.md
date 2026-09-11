@@ -5,7 +5,7 @@
 ![Go](https://img.shields.io/github/go-mod/go-version/why-xn/kbridge)
 ![License](https://img.shields.io/badge/license-Elastic%20License%202.0-blue)
 
-> **Status: alpha.** kbridge is pre-1.0 — config keys, the RBAC policy schema,
+> **Status: alpha** (`v0.2.0-alpha.1`). Config keys, the RBAC policy schema,
 > and REST API paths may change between releases, and it is not yet recommended
 > for unattended production use.
 
