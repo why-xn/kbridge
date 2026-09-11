@@ -24,10 +24,11 @@ adopts one is already set up for the next.
 | **In progress** | Merged to `master`, not yet released |
 | **Planned** | Intended; not started |
 
-Work is organized into five tracks. Track 1 is the access path itself. Track 2
-decides whether an operation should run. Track 3 makes every action attributable
-and its record trustworthy. Track 4 extends all of it to AI agents. Track 5
-points the same door at systems beyond Kubernetes.
+Work is organized into four tracks, plus one additional track. Track 1 is the
+access path itself. Track 2 decides whether an operation should run. Track 3
+makes every action attributable and its record trustworthy. Track 4 extends all
+of it to AI agents. The additional track points the same door at systems beyond
+Kubernetes.
 
 ## Next up
 
@@ -199,7 +200,7 @@ is the use case that demonstrates it.
   the policy engine and routed for human authorization where the policy requires
   it. Faster diagnosis without relaxing least privilege.
 
-## Track 5: Other rooms behind the same door
+## Additional track: Other rooms behind the same door
 
 Kubernetes is not the only thing engineers reach into with long-lived
 credentials. The tracks above build the door; this one applies it to the next
@@ -228,7 +229,7 @@ system to run. Sequenced by what users ask for.
 | 2 | Policies adopted in pilots, and a count of destructive operations actually blocked. This is already queryable: guardrail refusals are audit entries with status `blocked`, so a pilot produces the evidence as a side effect of normal use |
 | 3 | Adoption in environments that require verifiable records, including regulated sectors; audit exports accepted by an existing security platform |
 | 4 | Pilot teams measuring time-to-diagnosis with agents operating under enforced least privilege, and zero privileged agent actions without an approval record |
-| 5 | Teams governing a second system through kbridge, and long-lived cloud or database credentials retired as a result |
+| Additional | Teams governing a second system through kbridge, and long-lived cloud or database credentials retired as a result |
 
 ## What we will not build
 
