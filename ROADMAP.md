@@ -213,10 +213,3 @@ is the use case that demonstrates it.
   agent, inside the customer's network. A hosted control plane knows who asked,
   whether the answer was yes, and what they did. Nothing else.
 - **Rooms nobody asked for.** Build the next room when a user names it.
-
-## How it becomes a business
-
-Free for small teams with one room. Paid when they want a second room,
-approvals, notifications, or the evidence vault. The same binary runs
-self-hosted or cloud-managed, so regulated buyers who must self-host are sold
-support and enterprise features rather than a different product.
