@@ -24,9 +24,10 @@ adopts one is already set up for the next.
 | **In progress** | Merged to `master`, not yet released |
 | **Planned** | Intended; not started |
 
-Work is organized into four tracks. Track 1 is the access path itself. Track 2
+Work is organized into five tracks. Track 1 is the access path itself. Track 2
 decides whether an operation should run. Track 3 makes every action attributable
-and its record trustworthy. Track 4 extends all of it to AI agents.
+and its record trustworthy. Track 4 extends all of it to AI agents. Track 5
+points the same door at systems beyond Kubernetes.
 
 ## Next up
 
@@ -78,6 +79,8 @@ outbound so no inbound port is needed, and access is revoked in one place.
 - **Agent-side hard denies.** A small policy the agent enforces itself, owned by
   the cluster operator and invisible to the control plane, so a compromised
   control plane cannot lift it.
+- **Operational gaps.** Prometheus metrics, and an idle timeout for port-forward
+  sessions, which currently hold the tunnel until the user interrupts them.
 - **Road to stable.** The alpha series is explicit that interfaces may change.
   Reaching a stable release means freezing the config schema, the policy schema,
   and the REST paths, and shipping mutual TLS and a PostgreSQL store option so
@@ -156,7 +159,11 @@ first, but the need is general.
 - **Enterprise identity integration.** SSO via OIDC and SAML, plus SCIM
   provisioning, so policy binds to organizational roles and access ends when the
   role does.
-- **Structured audit export** to Splunk, Datadog, Elastic, or syslog.
+- **Structured audit export** to standard security platforms: Splunk, Datadog,
+  Elastic, or plain syslog.
+- **Access inventory.** One picture of who can reach what across clusters, cloud
+  accounts, databases, and source control, so an access review starts from
+  reality rather than a spreadsheet.
 - **Anomaly detection on the audit stream.** Off-hours access, a first-time
   namespace, mass reads of secrets, a sudden spike in mutations. Alerts reuse the
   notification path already built for grants.
@@ -192,6 +199,25 @@ is the use case that demonstrates it.
   the policy engine and routed for human authorization where the policy requires
   it. Faster diagnosis without relaxing least privilege.
 
+## Track 5: Other rooms behind the same door
+
+Kubernetes is not the only thing engineers reach into with long-lived
+credentials. The tracks above build the door; this one applies it to the next
+rooms, reusing one login, one policy engine, one approval path, and one audit
+log, so a team that already governs cluster access gets the rest without a second
+system to run. Sequenced by what users ask for.
+
+**Planned**
+
+- **Cloud CLI broker.** `kb aws …`, `kb gcloud …`, `kb az …` run against
+  short-lived credentials the broker holds, never keys on a laptop, with
+  command-level guardrails so deleting a production bucket needs the same
+  approval a production namespace does.
+- **Database broker.** The port-forward tunnel already exists. Add credential
+  injection so an engineer connects to a database without ever seeing its
+  password, query-level guardrails, and session recording for the same
+  attribution story as Track 3.
+
 ---
 
 ## How we will know it is working
@@ -202,6 +228,7 @@ is the use case that demonstrates it.
 | 2 | Policies adopted in pilots, and a count of destructive operations actually blocked. This is already queryable: guardrail refusals are audit entries with status `blocked`, so a pilot produces the evidence as a side effect of normal use |
 | 3 | Adoption in environments that require verifiable records, including regulated sectors; audit exports accepted by an existing security platform |
 | 4 | Pilot teams measuring time-to-diagnosis with agents operating under enforced least privilege, and zero privileged agent actions without an approval record |
+| 5 | Teams governing a second system through kbridge, and long-lived cloud or database credentials retired as a result |
 
 ## What we will not build
 
