@@ -17,22 +17,63 @@ curl -fsSL https://raw.githubusercontent.com/why-xn/kbridge/master/install.sh | 
 
 ## Problem
 
-Organizations running multiple Kubernetes clusters face a compounding set of operational and security challenges:
+Giving an engineer access to a Kubernetes cluster usually means handing out a
+kubeconfig or exposing the API server. That creates four problems that compound
+with every new cluster, team, and environment.
 
-- **Credential sprawl** — Every developer needs kubeconfig files for every cluster they access. Distributing, rotating, and revoking these credentials across teams is error-prone and doesn't scale.
-- **No visibility** — There's no centralized record of who ran what command on which cluster. When incidents happen, tracing actions back to individuals requires stitching together logs from multiple sources.
-- **Network complexity** — Cluster API servers are typically behind firewalls or private networks. Granting access means configuring VPNs, bastion hosts, or public endpoints — each adding attack surface and operational overhead.
-- **Coarse access control** — Kubernetes RBAC is powerful but cluster-scoped. Enforcing consistent policies across many clusters requires duplicating configuration and hoping nothing drifts.
+- **Credential sprawl.** Every developer needs a kubeconfig for every cluster.
+  Distributing, rotating, and revoking those credentials does not scale, and a
+  credential on a laptop is a credential that can leak.
+- **Network exposure.** Cluster API servers sit behind firewalls, so granting
+  access means a VPN, a bastion, or a public endpoint. Each one is more attack
+  surface to maintain.
+- **Standing access, and no way to stop a mistake.** Permissions are granted
+  once and kept forever, and Kubernetes RBAC decides only whether a *verb* on a
+  *resource* is allowed. It cannot tell `delete pod api-0` from
+  `delete pod --all`, so a single mistaken command reaches the cluster and the
+  first anyone knows of it is the outage.
+- **Records that do not answer the question.** Reconstructing who did what means
+  stitching together logs from several clusters. And when the actor is an AI
+  agent using a shared credential, the cluster's own audit log cannot say which
+  human was behind it.
 
-These problems get worse with every new cluster, team, and environment.
+That last point is getting sharper. Teams are already letting AI agents inspect
+and change infrastructure, often by handing them long-lived credentials, which
+recreates every problem above at machine speed.
 
 ## Solution
 
-kbridge eliminates direct cluster access by placing a control plane between users and clusters. Users interact with a single CLI tool; clusters run a lightweight agent that connects outbound to the gateway. No inbound ports, no kubeconfig distribution, no VPN required.
+kbridge puts a **control plane** between people and clusters. Nobody holds
+cluster credentials: the user runs a CLI, each cluster runs a small agent that
+dials *outbound*, and every command is checked before it is forwarded. No inbound
+ports, no kubeconfig distribution, no VPN.
 
-1. **Control Plane (`kbridge-control-plane`)** — API gateway that authenticates users, enforces access policies, queues commands, and collects results. The single point of control for all cluster access.
-2. **Cluster Agent (`kbridge-agent`)** — A small daemon deployed in each cluster that initiates an outbound gRPC connection to the control plane. It polls for pending commands, executes them via kubectl locally, and returns results. Since connections are outbound-only, no firewall changes or public endpoints are needed.
-3. **CLI (`kb`)** — A user-friendly command-line tool that talks to the control plane over REST. Developers use familiar kubectl syntax (`kb get pods`) without needing direct cluster credentials or network access. (Installed as `kb`, with a `kbridge` symlink for back-compat.)
+1. **Control plane (`kbridge-control-plane`)** authenticates the user, decides
+   whether the command may run, routes it, and records the outcome. The one place
+   access is granted and revoked.
+2. **Cluster agent (`kbridge-agent`)** runs inside each cluster, opens an
+   outbound gRPC connection, executes approved commands with kubectl, and returns
+   the result. Because it dials out, no firewall change is needed, and because it
+   holds the credentials, the control plane never does.
+3. **CLI (`kb`)** speaks REST to the control plane with familiar kubectl syntax,
+   so `kb get pods` works with no local credentials and no network path to the
+   cluster.
+
+Because the control plane sees the **command** and not just an API call, it can
+do things a proxy cannot:
+
+| Problem | What kbridge does |
+|---|---|
+| Credential sprawl | Users authenticate to the control plane; cluster credentials never leave the agent, and access is revoked centrally |
+| Network exposure | The agent dials out, so no inbound port, bastion, or VPN is required |
+| Standing access | Just-in-time grants: request a role for a bounded window with a reason, someone approves, and it expires on its own |
+| Mistakes reaching the cluster | Guardrails evaluate the command before it is forwarded, so a destructive operation is refused rather than recorded |
+| Records that do not answer the question | One audit log across every cluster, with the reason and the approval that admitted each command |
+
+Work is organized into five tracks: credential-free access, just-in-time
+authorization and guardrails, verifiable attribution and audit, governed access
+for AI agents, and extending the same door to systems beyond Kubernetes. See
+[ROADMAP.md](ROADMAP.md) for what is shipped, in progress, and planned.
 
 ## Architecture
 
@@ -71,9 +112,21 @@ kbridge eliminates direct cluster access by placing a control plane between user
 CLI (kbridge) --HTTP REST--> Control Plane <--gRPC-- Agent (per cluster) --> kubectl
 ```
 
-- **CLI to control plane**: REST API for login, cluster listing, and kubectl execution
-- **Agent to control plane**: gRPC for registration, heartbeats, command polling, and result submission
-- **Agent to K8s**: kubectl for local command execution
+- **CLI to control plane**: REST for login, cluster listing, and one-shot
+  commands; HTTP/2 bidirectional streams for `logs -f`, `exec -it`, and
+  port-forward
+- **Agent to control plane**: gRPC for registration, heartbeats, and command
+  polling, plus one persistent stream that multiplexes every live session
+- **Agent to Kubernetes**: kubectl, run locally with the agent's own
+  ServiceAccount
+
+Every command passes one authorization chokepoint: role rules decide first, then
+guardrails may refuse it, demand a reason, or require an approved grant. Nothing
+reaches a cluster without going through it.
+
+See **[docs/architecture.md](docs/architecture.md)** for the request lifecycle,
+the four command transports and their frame codecs, the authorization pipeline,
+the data model, and the trust model.
 
 ## Components
 
@@ -402,6 +455,7 @@ cluster, command, result, and duration. Query via `kb admin audit` or
 | [Installation](docs/installation.md) | Binary, Docker, and Helm installation |
 | [Configuration](docs/configuration.md) | All control plane / agent / CLI options, incl. TLS |
 | [CLI reference](docs/cli.md) | Every command with examples |
+| [Architecture](docs/architecture.md) | Request lifecycle, command transports, authorization pipeline, data and trust models |
 | [API reference](docs/api.md) | All HTTP endpoints |
 | [RBAC](docs/rbac.md) | Policy file format and examples |
 | [Admin guide](docs/admin.md) | Users, agent tokens, and audit logs |
