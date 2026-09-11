@@ -32,16 +32,15 @@ and its record trustworthy. Track 4 extends all of it to AI agents.
 
 The immediate queue, across tracks, in order.
 
-1. Release `v0.3.0-alpha.1`, covering everything currently in progress.
-2. Identity pass-through (impersonation) with delegation lineage. One piece of
+1. Identity pass-through (impersonation) with delegation lineage. One piece of
    work that serves both Track 1 and Track 3, which makes it the highest-leverage
    item on this list.
-3. The three small guardrail additions: mutation rate limiting, dry-run before
+2. The three small guardrail additions: mutation rate limiting, dry-run before
    change, and break-glass. Under two weeks together.
-4. `.gitattributes`. The repo has mixed line endings and it has cost time twice.
-5. Grant retention, folded into the existing audit cleanup job.
-6. Fleet-wide operations.
-7. MCP server with scoped agent identities, then AI-assisted troubleshooting on
+3. `.gitattributes`. The repo has mixed line endings and it has cost time twice.
+4. Grant retention, folded into the existing audit cleanup job.
+5. Fleet-wide operations.
+6. MCP server with scoped agent identities, then AI-assisted troubleshooting on
    top of it.
 
 ---
