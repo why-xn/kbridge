@@ -1,151 +1,223 @@
 # kbridge Roadmap
 
-_Last updated 2026-09-11. This is the one place for what is done, what is being
-built, and what comes next. History of how each shipped feature was built lives
-in the git log and `CHANGELOG.md`._
+_Last updated 2026-09-11. The one place for what is done, what is being built,
+and what is planned. How each shipped feature was built lives in the git log and
+`CHANGELOG.md`._
+
+kbridge is open source at **https://github.com/why-xn/kbridge** under the
+Elastic License 2.0.
 
 ## The idea in one paragraph
 
-kbridge is a **front door** to infrastructure. Every command goes through it:
+kbridge is a **front door** to infrastructure. Every command passes through it:
 it checks who you are, decides whether you are allowed, asks someone else when
 the rules say so, and writes down what happened. Kubernetes is the first room
-behind that door. The plan is to add more rooms — cloud CLIs, databases, AI
-agents — that all share the same login, policy, approvals, audit log, and
-notifications. A customer who adopts one room is already set up for the next.
+behind that door. Later rooms, cloud CLIs and databases and AI agents, share the
+same login, policy, approvals, audit log, and notifications, so a team that
+adopts one is already set up for the next.
 
 ## Status legend
 
 | Mark | Meaning |
 |---|---|
 | **Shipped** | In a tagged release |
-| **In progress** | Merged to `master`, not yet in a release |
-| **Next** | Committed to, not started |
-| **Later** | Direction, not commitment |
+| **In progress** | Merged to `master`, not yet released |
+| **Planned** | Intended; not started |
 
-## Shipped
+Work is organized into four tracks. Track 1 is the access path itself. Track 2
+decides whether an operation should run. Track 3 makes every action attributable
+and its record trustworthy. Track 4 extends all of it to AI agents.
 
-Everything in the current release, `v0.2.0-alpha.1`.
+## Next up
+
+The immediate queue, across tracks, in order.
+
+1. Release `v0.3.0-alpha.1`, covering everything currently in progress.
+2. Identity pass-through (impersonation) with delegation lineage. One piece of
+   work that serves both Track 1 and Track 3, which makes it the highest-leverage
+   item on this list.
+3. The three small guardrail additions: mutation rate limiting, dry-run before
+   change, and break-glass. Under two weeks together.
+4. `.gitattributes`. The repo has mixed line endings and it has cost time twice.
+5. Grant retention, folded into the existing audit cleanup job.
+6. Fleet-wide operations.
+7. MCP server with scoped agent identities, then AI-assisted troubleshooting on
+   top of it.
+
+---
+
+## Track 1: Credential-free, identity-based access
+
+Conventional Kubernetes access means handing out kubeconfig files or exposing the
+API server. Both create credentials to steal and surface to attack. In kbridge
+the user holds nothing: a central control plane checks permissions and forwards
+the command to a lightweight agent inside the target cluster, the agent connects
+outbound so no inbound port is needed, and access is revoked in one place.
+
+**Shipped**
 
 | Area | What it does |
 |---|---|
-| Core | CLI, control plane, and per-cluster agent. Agent connects outbound over gRPC; no inbound ports, no kubeconfig distribution |
+| Core | CLI, control plane, and per-cluster agent over outbound gRPC. No inbound ports, no kubeconfig distribution |
 | Auth | JWT login with refresh tokens, bcrypt passwords, admin bootstrap |
 | Agent tokens | Hashed at rest with a server-side pepper, one token per cluster, revocable |
-| RBAC | Declarative YAML policy, hot-reloaded, glob-matched on cluster / namespace / resource / verb |
-| Commands | One-shot kubectl, streaming (`logs -f`, `get -w`), interactive `exec -it` with a real PTY, and multi-port port-forward |
-| Audit | Every command recorded with user, cluster, exit code, duration, client IP; retention cleanup |
-| Ops | Helm charts, Dockerfiles, goreleaser, checksum-verified installer, CI and nightly e2e on Kind |
+| Commands | One-shot kubectl, streaming (`logs -f`, `get -w`), interactive `exec -it` with a real PTY, multi-port port-forward |
+| Ops | Helm charts, Dockerfiles, goreleaser, checksum-verified installer, CI and nightly end-to-end tests on Kind |
 
-## In progress
+**Planned**
 
-Built, tested at every layer, merged to `master`. Waiting on the `v0.3.0-alpha.1`
-release cut.
+- **Identity pass-through.** The agent runs each command *as the requesting
+  user* inside Kubernetes, so the cluster's own audit log names the real person
+  rather than the agent's service account. The user signs each command with a key
+  only they hold and the agent verifies it, which means a compromised control
+  plane can refuse a command but cannot forge one or act as anyone. This is what
+  makes a hosted control plane trustworthy: even if the control plane is
+  breached, it cannot run a command as your users.
+- **Fleet-wide operations.** Run one read across every cluster a user may
+  access, with results aggregated and labelled by cluster, plus inventory and
+  drift reports over the fleet.
+- **Agent-side hard denies.** A small policy the agent enforces itself, owned by
+  the cluster operator and invisible to the control plane, so a compromised
+  control plane cannot lift it.
+- **Road to stable.** The alpha series is explicit that interfaces may change.
+  Reaching a stable release means freezing the config schema, the policy schema,
+  and the REST paths, and shipping mutual TLS and a PostgreSQL store option so
+  the deployment story fits regulated environments. Conditions, not a date.
 
-### Command guardrails
+## Track 2: Just-in-time authorization and preventive guardrails
 
-Rules that run *after* RBAC and can only take access away. Because kbridge sees
-the command, not just the API call, a guardrail can tell `delete pod api-0` from
-`delete pod --all`, and `apply` from `apply --dry-run`. Actions: `deny`,
-`require-reason` (the `--reason` flag, stored on the audit entry), and
-`require-approval`. Plus `kb policy validate` / `kb policy test` for checking a
-policy file offline, in CI, before it ships.
+Standing production access plus no pre-execution checks means one mistaken
+command can cause an outage. Because kbridge evaluates the *requested operation*
+before it reaches the cluster, rather than only proxying API calls, it can
+prevent incidents instead of merely recording them. This is security-as-code
+applied to operations.
 
-### Just-in-time access
+**In progress**
 
-A `require-approval` guardrail is satisfied only by a time-boxed grant one
-person requests and another approves. `kb request`, `kb grants`,
-`kb admin grants approve|deny|revoke`. A pending request grants nothing; the
-clock starts at approval; grants expire on their own. Self-approval is refused
-by default. Every step is audited and tied to the commands it admitted.
+- **Command guardrails.** Rules that run after RBAC and can only take access
+  away. Because kbridge sees the command, a guardrail can tell `delete pod api-0`
+  from `delete pod --all`, and `apply` from `apply --dry-run`. Actions today:
+  `deny`, `require-reason` (a ticket reference recorded on the audit entry), and
+  `require-approval`.
+- **Just-in-time access.** A `require-approval` guardrail is satisfied only by a
+  time-boxed grant one person requests and another approves. A pending request
+  grants nothing, the clock starts at approval, grants expire on their own, and
+  self-approval is refused by default.
+- **Policy test tooling.** `kb policy validate` and `kb policy test` check a
+  policy file offline and in CI, before it reaches a cluster.
+- **Grant notifications.** Every grant event to Slack, Google Chat, or a signed
+  JSON webhook, with the approve command in the message.
 
-### Grant notifications
+**Planned**
 
-`grants.notify` sends every grant event to Slack, Google Chat, or a signed JSON
-webhook, with the approve command in the message. URL and secret can be mounted
-from files or env, since a chat webhook URL is itself a credential.
+- **Mutation rate limiting.** A guardrail action capping how many changes one
+  person may make in a window, so a runaway script or a bad loop is stopped
+  rather than logged.
+- **Dry run before change.** Require a server-side dry run, then admit the real
+  operation within a short window. The first stateful guardrail.
+- **Break-glass.** A `require-approval` guardrail with no approver awake locks
+  the on-call engineer out during the incident the access is for. Break-glass is
+  a self-approved grant with a short window, a loud audit status, and a mandatory
+  notification. Access first, review after.
+- **Grant retention**, folded into the audit cleanup job.
+- **Documented policy templates** for common shapes: protect production, require
+  a ticket for mutations, guard a PCI namespace.
+- **Approve from the chat message**, which needs interactive components and a
+  signed callback rather than a one-way webhook.
+- **Per-cluster notification routing**, so production requests reach the on-call
+  channel and development requests do not.
 
-## Next
+## Track 3: Verifiable attribution and tamper-evident audit
 
-Roughly the next quarter, in order.
+When humans and increasingly autonomous agents both perform privileged actions,
+an organization has to be able to say who or what did something, under whose
+authority, and whether the record can be trusted. Regulated sectors need this
+first, but the need is general.
 
-1. **Release `v0.3.0-alpha.1`.** The three features above are a coherent story:
-   who can change production, and how. Ship them.
-2. **`.gitattributes`.** The repo has mixed line endings and it has cost time
-   twice. One file, one commit.
-3. **Break-glass.** A `require-approval` guardrail with no approver awake locks
-   the on-call engineer out of production during the incident the access is
-   for. Break-glass is a self-approved grant with a short window, a loud audit
-   status, and a mandatory notification. Access first, review after.
-4. **Grant retention.** Decided grants accumulate forever in a table that is
-   read on every guarded command. Fold them into the audit cleanup job.
-5. **Agent-side hard denies.** A small policy the agent enforces itself
-   ("never delete a namespace, never touch kube-system"), owned by the cluster
-   operator and invisible to the control plane. A compromised control plane
-   cannot lift it.
-6. **Signed commands and impersonation.** The user signs each command with a
-   key only they hold; the agent verifies it and runs the command *as that user*
-   inside Kubernetes. Approvals are signed by the approver the same way. After
-   this, a compromised control plane can refuse commands but cannot forge one or
-   act as anyone. This is the property that makes a hosted control plane
-   trustworthy: *even if we are hacked, we cannot run a command as your users.*
-7. **Approve from the chat message.** Incoming webhooks are one-way; this needs
-   a Slack app with interactive components and a signed callback into the
-   approve endpoint.
-8. **Per-cluster notification routing.** Production requests to the SRE
-   channel, dev requests elsewhere. A `clusters` filter on each hook.
+**Shipped**
 
-## Later
+- **Audit log.** Every command recorded with user, cluster, exit code, duration,
+  and client IP, with retention cleanup. Guardrail refusals are recorded as
+  `blocked` and approvals carry the grant that admitted them.
 
-Direction for the year. Order will be set by what paying users ask for.
+**Planned**
 
-**New rooms behind the same door**
+- **Delegation lineage.** Record the acting identity and the authority it acts
+  under, so an action taken by an agent carries the human who delegated to it.
+  Answering "who authorized this" is as important as "who ran it."
+- **Tamper-evident session recording.** Interactive sessions already stream
+  through the control plane. Persist them as replayable recordings, searchable by
+  user, cluster, and command, hash-chained so a later edit is detectable.
+- **Audit console.** A web view that answers who touched which system and when,
+  with session replay, for the security and compliance people who do not live in
+  a terminal.
+- **Access reviews with attestation.** Periodic "here is everyone who can reach
+  production, please confirm" reports with one-click revoke and a signed record
+  of the confirmation.
+- **Enterprise identity integration.** SSO via OIDC and SAML, plus SCIM
+  provisioning, so policy binds to organizational roles and access ends when the
+  role does.
+- **Structured audit export** to Splunk, Datadog, Elastic, or syslog.
+- **Anomaly detection on the audit stream.** Off-hours access, a first-time
+  namespace, mass reads of secrets, a sudden spike in mutations. Alerts reuse the
+  notification path already built for grants.
+- **Evidence vault.** One tamper-proof store for sessions, commands, approvals,
+  and agent actions across every room, with audit-pack exports.
 
-- **AI agent gateway.** Every AI agent goes through kbridge: its own identity,
-  reads allowed, writes need a human approval, every action logged with the
-  prompt that caused it. Starts as an MCP server mode of the control plane that
-  reuses the existing authorization path rather than adding a second one. This
-  is the sentence that gets meetings in 2026.
-- **Cloud CLI broker.** `kb aws …`, `kb gcloud …` through short-lived
-  credentials the broker holds, with command-level rules. No cloud keys on
-  laptops.
-- **Database broker.** Port-forward already exists; add credential injection so
-  nobody sees a database password, query rules ("no `DROP` in prod"), and
-  session recording.
+## Track 4: Governed access for AI agents
 
-**Compliance and visibility**
+Engineering teams are already letting AI agents inspect and change
+infrastructure, often by handing them long-lived credentials. That recreates the
+credential, accountability, and over-privilege problems kbridge exists to solve,
+at machine speed. The governance layer is the point; AI-assisted troubleshooting
+is the use case that demonstrates it.
 
-- **Session recording.** Interactive sessions already stream through the
-  control plane; persist them, searchable and tamper-evident.
-- **Evidence vault.** Every session, command, approval, and agent action from
-  every room in one tamper-proof store, with audit-pack exports.
-- **Access inventory.** One picture of who can reach what across clusters,
-  clouds, databases, and GitHub, with quarterly reviews and one-click revoke.
-- **SIEM export** to Splunk, Datadog, Elastic, or syslog.
+**Planned**
 
-**Platform**
+- **MCP server.** Expose kbridge's operations as Model Context Protocol tools so
+  agents reach clusters through the same gateway as people. It runs as a mode of
+  the control plane and reuses the existing authorization path rather than adding
+  a second one, so a guardrail written for humans applies to agents unchanged.
+- **Scoped agent identity.** Each agent gets its own identity with a short-lived
+  credential and its own policy bindings. Read-only by default; any mutation goes
+  through the Track 2 approval path to a human.
+- **Containment by construction.** Because authority comes from the agent's
+  identity and not from anything the agent says, a compromised agent or a prompt
+  injection does not by itself grant authority beyond that identity's
+  permissions, approval requirements, and guardrails.
+- **Audit with context.** Every agent action recorded with the prompt context
+  that triggered it and the human authority it acts under, via Track 3.
+- **AI-assisted troubleshooting.** The demonstration capability: an agent
+  inspects Kubernetes resources and telemetry through kbridge, identifies likely
+  causes, and proposes corrective actions. Any privileged change is evaluated by
+  the policy engine and routed for human authorization where the policy requires
+  it. Faster diagnosis without relaxing least privilege.
 
-- **SSO (OIDC/SAML) and SCIM.** Bindings by IdP group instead of email.
-  Deprovisioning in the IdP kills access instantly.
-- **Web console** for audit search, session replay, and access reviews.
-- **PostgreSQL store**, mutual TLS, Prometheus metrics, port-forward idle
-  timeout, stateful guardrails (dry-run-then-apply within a window).
-- **Incident copilot with guardrails.** An AI proposes the fix, a human
-  approves, the fix runs through the door.
+---
+
+## How we will know it is working
+
+| Track | Evidence |
+|---|---|
+| 1 | Tagged releases, external testers and adopters, issues and contributions from outside the project |
+| 2 | Policies adopted in pilots, and a count of destructive operations actually blocked. This is already queryable: guardrail refusals are audit entries with status `blocked`, so a pilot produces the evidence as a side effect of normal use |
+| 3 | Adoption in environments that require verifiable records, including regulated sectors; audit exports accepted by an existing security platform |
+| 4 | Pilot teams measuring time-to-diagnosis with agents operating under enforced least privilege, and zero privileged agent actions without an approval record |
 
 ## What we will not build
 
-- **Dashboards.** Monitoring, observability, and cost *dashboards* are crowded
-  and cheap. kbridge acts and decides; it does not draw graphs.
-- **Our own SSO or secrets manager.** Integrate with Okta, Entra, Vault. Those
-  markets are won.
+- **Dashboards.** Monitoring, observability, and cost dashboards are crowded and
+  cheap. kbridge acts and decides; it does not draw graphs.
+- **Our own SSO or secrets manager.** Integrate with Okta, Entra, and Vault.
+  Those markets are won.
 - **A control plane that holds customer credentials.** Credentials stay on the
-  agent, inside the customer's network. The hosted service knows who asked,
-  whether the answer was yes, and what they did — nothing else.
-- **Rooms nobody asked for.** Build the next room when a paying user names it.
+  agent, inside the customer's network. A hosted control plane knows who asked,
+  whether the answer was yes, and what they did. Nothing else.
+- **Rooms nobody asked for.** Build the next room when a user names it.
 
 ## How it becomes a business
 
 Free for small teams with one room. Paid when they want a second room,
 approvals, notifications, or the evidence vault. The same binary runs
 self-hosted or cloud-managed, so regulated buyers who must self-host are sold
-support and enterprise features, not a different product.
+support and enterprise features rather than a different product.
