@@ -3,7 +3,7 @@
 ![CI](https://github.com/why-xn/kbridge/actions/workflows/ci.yml/badge.svg)
 ![Release](https://img.shields.io/github/v/release/why-xn/kbridge?include_prereleases)
 ![Go](https://img.shields.io/github/go-mod/go-version/why-xn/kbridge)
-![License](https://img.shields.io/badge/license-Elastic%20License%202.0-blue)
+![License](https://img.shields.io/badge/license-Apache%202.0-blue)
 
 > **Status: alpha** (`v0.2.0-alpha.1`). Config keys, the RBAC policy schema,
 > and REST API paths may change between releases, and it is not yet recommended
@@ -464,4 +464,4 @@ cluster, command, result, and duration. Query via `kb admin audit` or
 
 ## License
 
-[Elastic License 2.0 (ELv2)](LICENSE) — free to use and modify. Commercial distribution and offering as a hosted/managed service are not permitted.
+[Apache License 2.0](LICENSE)
