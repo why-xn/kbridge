@@ -4,9 +4,8 @@ Thank you for your interest in contributing. Please read this guide before
 opening a pull request.
 
 > **License note:** Contributions are accepted under the
-> [Elastic License 2.0](LICENSE). kbridge is source-available, not an
-> OSI-approved license. By submitting a pull request you agree that your
-> contribution will be licensed under ELv2.
+> [Apache License 2.0](LICENSE). By submitting a pull request you agree that
+> your contribution will be licensed under Apache-2.0.
 
 ## Prerequisites
 
