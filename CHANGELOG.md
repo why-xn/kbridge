@@ -128,6 +128,13 @@ Existing databases gain the `audit_logs.reason` column automatically on startup.
 Policy files without a `guardrails:` section keep working unchanged — guardrails
 are opt-in, and a policy with none behaves exactly as before.
 
+## [0.2.1-alpha.1] - 2026-10-07
+
+### Changed
+
+- **Relicensed from Elastic License 2.0 to Apache License 2.0.** Releases up to
+  and including `v0.2.0-alpha.1` remain under ELv2.
+
 ## [0.2.0-alpha.1] - 2026-08-24
 
 ### Changed
@@ -205,6 +212,7 @@ paths — may still change between alpha releases.
 - **Agent token storage** — tokens are stored only as HMAC-SHA256 digests keyed by a server-side pepper; a stolen database alone cannot be used to verify guessed tokens.
 - mTLS between agents and control plane is planned but deferred; the channel is currently protected by server-authenticated TLS only.
 
-[Unreleased]: https://github.com/why-xn/kbridge/compare/v0.2.0-alpha.1...HEAD
+[Unreleased]: https://github.com/why-xn/kbridge/compare/v0.2.1-alpha.1...HEAD
+[0.2.1-alpha.1]: https://github.com/why-xn/kbridge/compare/v0.2.0-alpha.1...v0.2.1-alpha.1
 [0.2.0-alpha.1]: https://github.com/why-xn/kbridge/compare/v0.1.0-alpha.1...v0.2.0-alpha.1
 [0.1.0-alpha.1]: https://github.com/why-xn/kbridge/releases/tag/v0.1.0-alpha.1
