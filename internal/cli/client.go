@@ -9,6 +9,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strconv"
 	"time"
 
 	"github.com/spf13/viper"
@@ -628,9 +629,35 @@ func (c *ControlPlaneClient) ExecCommandWithStdin(clusterName string, command []
 	return c.parseExecResponse(resp, clusterName)
 }
 
+// exitCodeTrailer carries the remote kubectl exit code at the end of a stream.
+const exitCodeTrailer = "X-Kbridge-Exit-Code"
+
 // StreamCommand runs a streaming kubectl command, copying the chunked response
-// body to out until the stream ends or ctx is cancelled.
-func (c *ControlPlaneClient) StreamCommand(ctx context.Context, clusterName string, command []string, namespace string, out io.Writer) error {
+// body to out until the stream ends or ctx is cancelled. It returns the remote
+// exit code (0 when the user cancels or the server does not report one).
+func (c *ControlPlaneClient) StreamCommand(ctx context.Context, clusterName string, command []string, namespace string, out io.Writer) (int, error) {
+	resp, err := c.openStream(ctx, clusterName, command, namespace)
+	if err != nil || resp == nil {
+		return 0, err
+	}
+	defer resp.Body.Close()
+	if err := streamStatusError(resp, clusterName); err != nil {
+		return 0, err
+	}
+	_, err = io.Copy(out, resp.Body)
+	if ctx.Err() != nil {
+		return 0, nil
+	}
+	if err != nil {
+		return 0, err
+	}
+	code, _ := strconv.Atoi(resp.Trailer.Get(exitCodeTrailer))
+	return code, nil
+}
+
+// openStream starts the stream request, refreshing the access token once on
+// 401. A nil response with nil error means the user cancelled.
+func (c *ControlPlaneClient) openStream(ctx context.Context, clusterName string, command []string, namespace string) (*http.Response, error) {
 	reqBody, _ := json.Marshal(ExecRequest{Command: command, Namespace: namespace})
 	reqURL := fmt.Sprintf("%s/api/v1/clusters/%s/stream", c.baseURL, clusterName)
 
@@ -652,33 +679,32 @@ func (c *ControlPlaneClient) StreamCommand(ctx context.Context, clusterName stri
 	resp, err := doStream(c.token)
 	if err != nil {
 		if ctx.Err() != nil {
-			return nil // user cancelled
+			return nil, nil // user cancelled
 		}
-		return fmt.Errorf("request failed: %w", err)
+		return nil, fmt.Errorf("request failed: %w", err)
 	}
 
 	if resp.StatusCode == http.StatusUnauthorized && c.refreshToken != "" {
 		resp.Body.Close()
 		if rerr := c.Refresh(); rerr != nil {
-			return fmt.Errorf("authentication required: run 'kb login' first")
+			return nil, fmt.Errorf("authentication required: run 'kb login' first")
 		}
 		resp, err = doStream(c.token)
 		if err != nil {
 			if ctx.Err() != nil {
-				return nil
+				return nil, nil
 			}
-			return fmt.Errorf("request failed: %w", err)
+			return nil, fmt.Errorf("request failed: %w", err)
 		}
 	}
-	defer resp.Body.Close()
+	return resp, nil
+}
 
+// streamStatusError maps a non-200 stream response to a user-facing error.
+func streamStatusError(resp *http.Response, clusterName string) error {
 	switch resp.StatusCode {
 	case http.StatusOK:
-		_, err := io.Copy(out, resp.Body)
-		if ctx.Err() != nil {
-			return nil
-		}
-		return err
+		return nil
 	case http.StatusUnauthorized:
 		return fmt.Errorf("authentication required: run 'kb login' first")
 	case http.StatusForbidden:

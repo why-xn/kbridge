@@ -54,9 +54,23 @@ kb edit configmap app-config
 kb get nodes
 ```
 
+**Local manifests (`-f`).** kubectl runs on the agent, so the CLI reads local
+`-f` inputs — files, directories (`-R` to recurse) and `-` (stdin) — and sends
+their contents along. URLs are fetched by the agent. Local kustomize directories
+(`-k <dir>`) are not supported; pipe them instead:
+
+```bash
+kb apply -f app.yaml
+kb apply -R -f ./manifests
+kubectl kustomize ./overlay | kb apply -f -
+```
+
+**Default namespace.** Without `-n`, commands run in the `default` namespace, as
+with plain kubectl.
+
 **Streaming (`logs -f` / `get -w`).** When the command uses a follow/watch flag
-(`-f`, `--follow`, `-w`, `--watch`), the CLI streams output live until you stop
-it with Ctrl-C — no special syntax needed:
+(`logs -f`/`--follow`, or `-w`/`--watch` on any command), the CLI streams output
+live until you stop it with Ctrl-C and exits with kubectl's exit code:
 
 ```bash
 kb logs -f deploy/api -n prod    # tail logs live

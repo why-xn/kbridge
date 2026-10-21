@@ -159,7 +159,7 @@ func (e *KubectlExecutor) startKubectlPortForward(ctx context.Context, pod, name
 	for _, p := range ports {
 		args = append(args, fmt.Sprintf(":%d", p))
 	}
-	cmd := exec.CommandContext(ctx, e.kubectlPath, args...)
+	cmd := e.command(ctx, args...)
 	cmd.WaitDelay = 500 * time.Millisecond
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {

@@ -311,7 +311,7 @@ func (r *pfConnRegistry) shutdown() {
 func portForwardFromConfig(tgt pfTarget) error {
 	controlPlaneURL := viper.GetString(ConfigKeyControlPlaneURL)
 	if controlPlaneURL == "" {
-		return fmt.Errorf("control plane URL not configured, run 'kb login' first")
+		return errNoControlPlaneURL()
 	}
 	cluster := viper.GetString(ConfigKeyCurrentCluster)
 	if cluster == "" {

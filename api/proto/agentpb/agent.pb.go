@@ -1067,10 +1067,12 @@ func (x *CancelStream) GetSessionId() string {
 	return ""
 }
 
+// eof signals the client closed its stdin; the agent closes the process stdin.
 type StdinData struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	SessionId     string                 `protobuf:"bytes,1,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
 	Data          []byte                 `protobuf:"bytes,2,opt,name=data,proto3" json:"data,omitempty"`
+	Eof           bool                   `protobuf:"varint,3,opt,name=eof,proto3" json:"eof,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1117,6 +1119,13 @@ func (x *StdinData) GetData() []byte {
 		return x.Data
 	}
 	return nil
+}
+
+func (x *StdinData) GetEof() bool {
+	if x != nil {
+		return x.Eof
+	}
+	return false
 }
 
 type Resize struct {
@@ -1985,11 +1994,12 @@ const file_agent_proto_rawDesc = "" +
 	"\x04cols\x18\x06 \x01(\rR\x04cols\"-\n" +
 	"\fCancelStream\x12\x1d\n" +
 	"\n" +
-	"session_id\x18\x01 \x01(\tR\tsessionId\">\n" +
+	"session_id\x18\x01 \x01(\tR\tsessionId\"P\n" +
 	"\tStdinData\x12\x1d\n" +
 	"\n" +
 	"session_id\x18\x01 \x01(\tR\tsessionId\x12\x12\n" +
-	"\x04data\x18\x02 \x01(\fR\x04data\"O\n" +
+	"\x04data\x18\x02 \x01(\fR\x04data\x12\x10\n" +
+	"\x03eof\x18\x03 \x01(\bR\x03eof\"O\n" +
 	"\x06Resize\x12\x1d\n" +
 	"\n" +
 	"session_id\x18\x01 \x01(\tR\tsessionId\x12\x12\n" +

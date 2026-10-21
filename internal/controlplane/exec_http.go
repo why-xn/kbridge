@@ -18,13 +18,18 @@ import (
 // It returns (exitCode, errMsg) from the session so the caller does not need
 // to call sess.Wait() again — every return path closes the session exactly once.
 func runExecBridge(ctx context.Context, upstream io.Reader, downstream io.Writer, sess *Session, sm *SessionManager, flush func()) (int32, string) {
-	// The upstream goroutine only forwards stdin. On any read error (including
-	// io.EOF for a clean half-close and post-EXIT body-close errors) it simply
-	// stops forwarding. It must NOT call sm.Cancel: true client disconnect is
-	// detected by the downstream select's <-ctx.Done() branch.
+	// The upstream goroutine only forwards stdin. A clean half-close (io.EOF) is
+	// relayed so the remote process sees EOF on its stdin; any other read error
+	// (e.g. post-EXIT body close) just stops forwarding. It must NOT call
+	// sm.Cancel: true client disconnect is detected by the downstream select's
+	// <-ctx.Done() branch.
 	go func() {
 		for {
 			t, payload, err := execframe.Decode(upstream)
+			if err == io.EOF {
+				_ = sm.CloseStdin(sess.ID)
+				return
+			}
 			if err != nil {
 				return // stop forwarding on any error; cancel is handled downstream
 			}

@@ -82,6 +82,9 @@ func (a *Agent) openAndServeStream(ctx context.Context) error {
 			}
 		case *agentpb.ControlPlaneStreamMessage_Stdin:
 			sessions.stdinTo(v.Stdin.GetSessionId(), v.Stdin.GetData())
+			if v.Stdin.GetEof() {
+				sessions.closeStdin(v.Stdin.GetSessionId())
+			}
 		case *agentpb.ControlPlaneStreamMessage_Resize:
 			sessions.resizeTo(v.Resize.GetSessionId(), uint16(v.Resize.GetRows()), uint16(v.Resize.GetCols()))
 		case *agentpb.ControlPlaneStreamMessage_Cancel:
@@ -187,14 +190,32 @@ func (s *sessionCancels) cancelAll() {
 }
 
 func (s *sessionCancels) stdinTo(id string, data []byte) {
+	if len(data) == 0 {
+		return
+	}
 	s.mu.Lock()
-	sess := s.sessions[id]
+	var ch chan []byte
+	if sess := s.sessions[id]; sess != nil {
+		ch = sess.stdin
+	}
 	s.mu.Unlock()
-	if sess != nil && sess.stdin != nil {
+	if ch != nil {
 		select {
-		case sess.stdin <- data:
+		case ch <- data:
 		case <-time.After(time.Second): // drop if the session is wedged; never block recv loop
 		}
+	}
+}
+
+// closeStdin closes a session's stdin channel so the process sees EOF. Like
+// stdinTo it is only called from the stream receive loop, so it never races a
+// send on the same channel.
+func (s *sessionCancels) closeStdin(id string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if sess := s.sessions[id]; sess != nil && sess.stdin != nil {
+		close(sess.stdin)
+		sess.stdin = nil
 	}
 }
 

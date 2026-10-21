@@ -46,7 +46,7 @@ func init() {
 func runClustersList(cmd *cobra.Command, args []string) error {
 	controlPlaneURL := viper.GetString(ConfigKeyControlPlaneURL)
 	if controlPlaneURL == "" {
-		return fmt.Errorf("control plane URL not configured. Run 'kb login' first or set %s", ConfigKeyControlPlaneURL)
+		return errNoControlPlaneURL()
 	}
 
 	client := newAuthenticatedClient(controlPlaneURL)
@@ -84,7 +84,7 @@ func runClustersUse(cmd *cobra.Command, args []string) error {
 
 	controlPlaneURL := viper.GetString(ConfigKeyControlPlaneURL)
 	if controlPlaneURL == "" {
-		return fmt.Errorf("control plane URL not configured. Run 'kb login' first or set %s", ConfigKeyControlPlaneURL)
+		return errNoControlPlaneURL()
 	}
 
 	// Verify cluster exists and is connected

@@ -77,7 +77,7 @@ func runKubectl(cmd *cobra.Command, args []string) error {
 	// Check control plane URL
 	controlPlaneURL := viper.GetString(ConfigKeyControlPlaneURL)
 	if controlPlaneURL == "" {
-		return fmt.Errorf("control plane URL not configured. Run 'kb login' first")
+		return errNoControlPlaneURL()
 	}
 
 	// Check current cluster
@@ -97,20 +97,27 @@ func runKubectl(cmd *cobra.Command, args []string) error {
 
 	// Stream long-lived follow/watch commands via chunked HTTP.
 	if isStreamingCommand(args) {
-		ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
-		defer cancel()
-		streamClient := newAuthenticatedClient(controlPlaneURL)
-		if err := streamClient.StreamCommand(ctx, currentCluster, args, namespace, os.Stdout); err != nil {
-			return err
-		}
-		return nil
+		return runStreamingKubectl(controlPlaneURL, currentCluster, args, namespace)
+	}
+
+	// Local manifests (-f file/dir/-) are read here and sent as stdin.
+	args, manifests, hasManifests, err := localManifests(args, os.Stdin)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		return err
 	}
 
 	// Create client with longer timeout for command execution
 	client := newAuthenticatedClientWithTimeout(controlPlaneURL, defaultKubectlTimeout+10*time.Second)
 
 	// Execute the command
-	resp, err := client.ExecCommand(currentCluster, args, namespace, int(defaultKubectlTimeout.Seconds()))
+	timeout := int(defaultKubectlTimeout.Seconds())
+	var resp *ExecResponse
+	if hasManifests {
+		resp, err = client.ExecCommandWithStdin(currentCluster, args, namespace, timeout, string(manifests))
+	} else {
+		resp, err = client.ExecCommand(currentCluster, args, namespace, timeout)
+	}
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		return err
@@ -134,13 +141,37 @@ func runKubectl(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
+// runStreamingKubectl streams a follow/watch command and exits with the remote
+// kubectl's exit code, so failures are not reported as success.
+func runStreamingKubectl(controlPlaneURL, cluster string, args []string, namespace string) error {
+	if _, sources := splitFilenameFlags(args); len(sources) > 0 {
+		return fmt.Errorf("watching resources given with -f is not supported; name the resources instead")
+	}
+	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
+	defer cancel()
+	code, err := newAuthenticatedClient(controlPlaneURL).StreamCommand(ctx, cluster, args, namespace, os.Stdout)
+	if err != nil {
+		return err
+	}
+	if code != 0 {
+		os.Exit(code)
+	}
+	return nil
+}
+
 // isStreamingCommand reports whether args use a follow/watch flag and should be
-// streamed rather than run one-shot.
+// streamed rather than run one-shot. -f means --follow only for logs; for every
+// other verb it is --filename.
 func isStreamingCommand(args []string) bool {
+	follow := kubectlVerb(args) == "logs"
 	for _, a := range args {
 		switch a {
-		case "-f", "--follow", "-w", "--watch":
+		case "-w", "--watch", "--watch=true", "--watch-only", "--watch-only=true":
 			return true
+		case "-f", "--follow", "--follow=true":
+			if follow {
+				return true
+			}
 		}
 	}
 	return false

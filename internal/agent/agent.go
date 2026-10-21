@@ -55,7 +55,11 @@ func (a *Agent) Run(ctx context.Context) error {
 	a.touchHealthFile()
 
 	// Start command polling loop in goroutine
-	go a.runCommandPollLoop(ctx)
+	pollDone := make(chan struct{})
+	go func() {
+		defer close(pollDone)
+		a.runCommandPollLoop(ctx)
+	}()
 
 	// Start persistent stream client
 	go a.runStream(ctx)
@@ -63,6 +67,9 @@ func (a *Agent) Run(ctx context.Context) error {
 	// Run heartbeat loop (blocks until stopped)
 	a.runHeartbeatLoop(ctx)
 
+	// Let an in-flight command report its result before the connection closes,
+	// so its caller gets an answer instead of waiting for the command timeout.
+	<-pollDone
 	close(a.stoppedCh)
 	return nil
 }
@@ -337,13 +344,17 @@ func (a *Agent) executeAndSubmit(ctx context.Context, cmd *agentpb.CommandReques
 	if result.Error != nil {
 		submitReq.ErrorMessage = result.Error.Error()
 	}
+	if ctx.Err() != nil {
+		submitReq.ErrorMessage = "agent shut down while the command was running; retry it"
+	}
 
 	// Submit result to control plane
 	a.mu.RLock()
 	client := a.client
 	a.mu.RUnlock()
 
-	submitCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	// Not tied to ctx: a command interrupted by shutdown must still be reported.
+	submitCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
 	defer cancel()
 
 	_, err := client.SubmitCommandResult(submitCtx, submitReq)

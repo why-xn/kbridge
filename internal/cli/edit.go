@@ -29,7 +29,7 @@ type EditHandler struct {
 func NewEditHandler(args []string) (*EditHandler, error) {
 	controlPlaneURL := viper.GetString(ConfigKeyControlPlaneURL)
 	if controlPlaneURL == "" {
-		return nil, fmt.Errorf("control plane URL not configured. Run 'kb login' first")
+		return nil, errNoControlPlaneURL()
 	}
 
 	clusterName := viper.GetString(ConfigKeyCurrentCluster)

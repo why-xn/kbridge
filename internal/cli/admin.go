@@ -125,7 +125,7 @@ func init() {
 func adminClient() (*ControlPlaneClient, error) {
 	controlPlaneURL := viper.GetString(ConfigKeyControlPlaneURL)
 	if controlPlaneURL == "" {
-		return nil, fmt.Errorf("control plane URL not configured. Run 'kb login' first or set %s", ConfigKeyControlPlaneURL)
+		return nil, errNoControlPlaneURL()
 	}
 	return newAuthenticatedClient(controlPlaneURL), nil
 }

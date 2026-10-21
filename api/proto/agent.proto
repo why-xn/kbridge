@@ -196,7 +196,8 @@ message StartStream  {
   uint32 cols = 6;
 }
 message CancelStream { string session_id = 1; }
-message StdinData    { string session_id = 1; bytes  data = 2; }
+// eof signals the client closed its stdin; the agent closes the process stdin.
+message StdinData    { string session_id = 1; bytes  data = 2; bool eof = 3; }
 message Resize       { string session_id = 1; uint32 rows = 2; uint32 cols = 3; }
 
 message AgentStreamMessage {

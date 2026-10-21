@@ -14,6 +14,12 @@ func TestIsStreamingCommand(t *testing.T) {
 		{"get -w", []string{"get", "pods", "-w"}, true},
 		{"get --watch", []string{"get", "pods", "--watch"}, true},
 		{"plain get", []string{"get", "pods"}, false},
+		{"logs -f after -n", []string{"-n", "prod", "logs", "-f", "pod"}, true},
+		{"apply -f is a filename", []string{"apply", "-f", "app.yaml"}, false},
+		{"delete -f is a filename", []string{"delete", "-f", "app.yaml"}, false},
+		{"create -f stdin", []string{"create", "-f", "-"}, false},
+		{"get -f with -w watches", []string{"get", "-f", "app.yaml", "-w"}, true},
+		{"--watch-only", []string{"get", "pods", "--watch-only"}, true},
 		{"empty", []string{}, false},
 	}
 	for _, tt := range tests {

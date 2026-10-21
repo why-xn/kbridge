@@ -308,7 +308,7 @@ func http2Client(controlPlaneURL string, insecure bool) (*http.Client, error) {
 func execInteractiveFromConfig(tgt execTarget) error {
 	controlPlaneURL := viper.GetString(ConfigKeyControlPlaneURL)
 	if controlPlaneURL == "" {
-		return fmt.Errorf("control plane URL not configured. Run 'kb login' first")
+		return errNoControlPlaneURL()
 	}
 	currentCluster := viper.GetString(ConfigKeyCurrentCluster)
 	if currentCluster == "" {

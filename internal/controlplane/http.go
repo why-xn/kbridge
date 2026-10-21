@@ -5,6 +5,7 @@ import (
 	"log"
 	"log/slog"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -377,6 +378,7 @@ func (s *HTTPServer) handleStreamCommand(c *gin.Context) {
 	}
 
 	c.Header("Content-Type", "text/plain; charset=utf-8")
+	c.Header("Trailer", exitCodeTrailer)
 	c.Status(http.StatusOK)
 	flusher, _ := c.Writer.(http.Flusher)
 	start := time.Now()
@@ -384,6 +386,7 @@ func (s *HTTPServer) handleStreamCommand(c *gin.Context) {
 	s.streamSessionToClient(c, sess, flusher)
 
 	exitCode, errMsg := sess.Wait()
+	c.Writer.Header().Set(exitCodeTrailer, strconv.Itoa(int(exitCode)))
 	status := AuditStatusSuccess
 	if c.Request.Context().Err() != nil {
 		status = AuditStatusCanceled
@@ -394,6 +397,9 @@ func (s *HTTPServer) handleStreamCommand(c *gin.Context) {
 	ec := exitCode
 	s.recordExecAudit(c, clusterName, req, status, &ec, &dur, errMsg)
 }
+
+// exitCodeTrailer reports the remote kubectl exit code once a stream ends.
+const exitCodeTrailer = "X-Kbridge-Exit-Code"
 
 // streamSessionToClient copies session output to the response until the session
 // ends or the client disconnects (which cancels the session).

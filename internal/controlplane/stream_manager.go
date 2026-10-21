@@ -204,6 +204,17 @@ func (m *SessionManager) SendStdin(sessionID string, data []byte) error {
 	}})
 }
 
+// CloseStdin tells a session's agent that the client's stdin reached EOF.
+func (m *SessionManager) CloseStdin(sessionID string) error {
+	conn := m.connFor(sessionID)
+	if conn == nil {
+		return ErrNoAgentStream
+	}
+	return sendLocked(conn, &agentpb.ControlPlaneStreamMessage{Msg: &agentpb.ControlPlaneStreamMessage_Stdin{
+		Stdin: &agentpb.StdinData{SessionId: sessionID, Eof: true},
+	}})
+}
+
 // SendResize forwards a window-size change to a session's agent.
 func (m *SessionManager) SendResize(sessionID string, rows, cols uint32) error {
 	conn := m.connFor(sessionID)
