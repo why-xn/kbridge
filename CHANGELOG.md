@@ -7,6 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.2-alpha.1] - 2026-10-21
+
+### Fixed
+
+- **Restarting an agent no longer breaks its cluster.** A re-registered agent
+  (rollout, crash, reschedule) now replaces the previous registration for its
+  cluster. Before, the stale agent stayed registered and most requests failed
+  with `agent is disconnected`. Commands queued for the replaced agent move to
+  the new one, and an agent shutting down reports the command it was running
+  instead of leaving the caller waiting for the command timeout.
+- **In-cluster agents default to the `default` namespace.** Commands without
+  `-n` ran in the agent's own namespace (e.g. `kbridge`). An explicit
+  `POD_NAMESPACE` on the agent is still honoured.
+- **`kb apply -f` (and `create`/`delete`/`replace`/… `-f`) works with local
+  files.** Files, directories (`-R`) and `-f -` are read by the CLI and sent to
+  the agent. Before, `-f` was mistaken for `--follow`: the path was resolved on
+  the agent, failures exited 0, and `-f -` hung. Local `-k <dir>` now fails
+  with a hint instead.
+- **Streaming commands exit with kubectl's exit code.** `kb logs -f <missing>`
+  exited 0.
+- **`kb exec -i` forwards end of input.** Piping a script or file into
+  `kb exec -i … -- sh` hung after the input ended.
+- **First-run hint.** With no control plane URL configured, the CLI now names
+  the config file and key to set instead of a non-existent `kb config set`.
+
 ## [0.2.1-alpha.1] - 2026-10-07
 
 ### Changed
@@ -91,7 +116,8 @@ paths — may still change before 1.0.0.
 - **Agent token storage** — tokens are stored only as HMAC-SHA256 digests keyed by a server-side pepper; a stolen database alone cannot be used to verify guessed tokens.
 - mTLS between agents and control plane is planned but deferred; the channel is currently protected by server-authenticated TLS only.
 
-[Unreleased]: https://github.com/why-xn/kbridge/compare/v0.2.1-alpha.1...HEAD
+[Unreleased]: https://github.com/why-xn/kbridge/compare/v0.2.2-alpha.1...HEAD
+[0.2.2-alpha.1]: https://github.com/why-xn/kbridge/compare/v0.2.1-alpha.1...v0.2.2-alpha.1
 [0.2.1-alpha.1]: https://github.com/why-xn/kbridge/compare/v0.2.0-alpha.1...v0.2.1-alpha.1
 [0.2.0-alpha.1]: https://github.com/why-xn/kbridge/compare/v0.1.0-alpha.1...v0.2.0-alpha.1
 [0.1.0-alpha.1]: https://github.com/why-xn/kbridge/releases/tag/v0.1.0-alpha.1
