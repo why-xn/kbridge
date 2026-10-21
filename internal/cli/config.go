@@ -63,6 +63,12 @@ func initConfig() {
 	}
 }
 
+// errNoControlPlaneURL explains how to point the CLI at a control plane. There
+// is no CLI command for it, so it names the config file and key to set.
+func errNoControlPlaneURL() error {
+	return fmt.Errorf("control plane URL not configured: add '%s: <url>' to %s, then run 'kb login'", ConfigKeyControlPlaneURL, configFile())
+}
+
 // saveConfig writes the current configuration to the config file
 func saveConfig() error {
 	return viper.WriteConfigAs(configFile())

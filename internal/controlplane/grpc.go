@@ -84,8 +84,12 @@ func (s *GRPCServer) Register(ctx context.Context, req *agentpb.RegisterRequest)
 	// Persist the cluster's connected state, then track the agent in memory
 	// for live command routing.
 	s.markClusterConnected(ctx, cluster, agentID, info)
-	s.agents.Register(info)
+	replaced := s.agents.Register(info)
 	log.Printf("Agent registered: id=%s, cluster=%s", agentID, cluster.Name)
+	for _, old := range replaced {
+		moved := s.cmdQueue.Reassign(old, agentID)
+		log.Printf("Agent %s replaces previous agent %s for cluster=%s (%d queued command(s) moved)", agentID, old, cluster.Name, moved)
+	}
 
 	return &agentpb.RegisterResponse{
 		Success: true,

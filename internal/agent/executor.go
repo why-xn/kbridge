@@ -34,6 +34,21 @@ func NewKubectlExecutor() *KubectlExecutor {
 	}
 }
 
+// defaultNamespace is what kubectl uses when the user passes no -n. In-cluster,
+// kubectl would otherwise fall back to the agent pod's own namespace.
+const defaultNamespace = "default"
+
+// command builds a kubectl invocation. POD_NAMESPACE is the in-cluster
+// namespace override kubectl honours; it is ignored when a kubeconfig is used,
+// and an operator-set value is kept.
+func (e *KubectlExecutor) command(ctx context.Context, args ...string) *exec.Cmd {
+	cmd := exec.CommandContext(ctx, e.kubectlPath, args...)
+	if os.Getenv("POD_NAMESPACE") == "" {
+		cmd.Env = append(os.Environ(), "POD_NAMESPACE="+defaultNamespace)
+	}
+	return cmd
+}
+
 // Execute runs a kubectl command with the given arguments.
 func (e *KubectlExecutor) Execute(ctx context.Context, args []string, namespace string, timeout time.Duration) *CommandResult {
 	return e.ExecuteWithStdin(ctx, args, namespace, timeout, nil)
@@ -57,7 +72,7 @@ func (e *KubectlExecutor) ExecuteWithStdin(ctx context.Context, args []string, n
 		defer cancel()
 	}
 
-	cmd := exec.CommandContext(ctx, e.kubectlPath, cmdArgs...)
+	cmd := e.command(ctx, cmdArgs...)
 
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
@@ -102,7 +117,7 @@ func (e *KubectlExecutor) ExecuteStream(ctx context.Context, args []string, name
 	if namespace != "" {
 		cmdArgs = append([]string{"-n", namespace}, args...)
 	}
-	cmd := exec.CommandContext(ctx, e.kubectlPath, cmdArgs...)
+	cmd := e.command(ctx, cmdArgs...)
 	// WaitDelay bounds cancellation: if the process outlives the interrupt,
 	// os/exec force-kills it this long after ctx is done.
 	cmd.WaitDelay = 500 * time.Millisecond
@@ -213,7 +228,7 @@ func (e *KubectlExecutor) ExecuteStreaming(ctx context.Context, args []string, n
 		defer cancel()
 	}
 
-	cmd := exec.CommandContext(ctx, e.kubectlPath, cmdArgs...)
+	cmd := e.command(ctx, cmdArgs...)
 
 	// Get pipes for streaming
 	stdoutPipe, err := cmd.StdoutPipe()
@@ -311,7 +326,7 @@ func (e *KubectlExecutor) ExecuteInteractiveNoTTY(ctx context.Context, args []st
 	if namespace != "" {
 		cmdArgs = append([]string{"-n", namespace}, args...)
 	}
-	cmd := exec.CommandContext(ctx, e.kubectlPath, cmdArgs...)
+	cmd := e.command(ctx, cmdArgs...)
 	cmd.WaitDelay = 500 * time.Millisecond
 
 	stdinPr, stdinPw, err := os.Pipe()
@@ -390,7 +405,7 @@ func (e *KubectlExecutor) ExecuteInteractive(ctx context.Context, args []string,
 	if namespace != "" {
 		cmdArgs = append([]string{"-n", namespace}, args...)
 	}
-	cmd := exec.CommandContext(ctx, e.kubectlPath, cmdArgs...)
+	cmd := e.command(ctx, cmdArgs...)
 	cmd.WaitDelay = 500 * time.Millisecond
 
 	ptmx, err := pty.StartWithSize(cmd, &pty.Winsize{Rows: rows, Cols: cols})

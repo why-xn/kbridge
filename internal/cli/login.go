@@ -29,7 +29,7 @@ func init() {
 func runLogin(cmd *cobra.Command, args []string) error {
 	controlPlaneURL := viper.GetString(ConfigKeyControlPlaneURL)
 	if controlPlaneURL == "" {
-		return fmt.Errorf("control_plane_url not configured: run 'kb config set control_plane_url <url>'")
+		return errNoControlPlaneURL()
 	}
 
 	reader := bufio.NewReader(os.Stdin)

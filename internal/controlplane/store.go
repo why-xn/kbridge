@@ -55,14 +55,24 @@ func (s *AgentStore) ValidateToken(token string) bool {
 	return s.validTokens[token]
 }
 
-// Register adds or updates an agent in the store.
-func (s *AgentStore) Register(info *AgentInfo) {
+// Register adds or updates an agent in the store. A cluster is served by its
+// most recently registered agent: any other agent registered for the same
+// cluster (e.g. the pod a rollout just replaced) is dropped so requests are
+// never routed to it. Their IDs are returned for logging.
+func (s *AgentStore) Register(info *AgentInfo) (replaced []string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	for id, agent := range s.agents {
+		if id != info.ID && agent.ClusterName == info.ClusterName {
+			delete(s.agents, id)
+			replaced = append(replaced, id)
+		}
+	}
 	info.RegisteredAt = time.Now()
 	info.LastSeen = time.Now()
 	info.Status = AgentStatusConnected
 	s.agents[info.ID] = info
+	return replaced
 }
 
 // UpdateHeartbeat updates the last seen timestamp for an agent.

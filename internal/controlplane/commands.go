@@ -108,6 +108,22 @@ func (q *CommandQueue) GetPendingForAgent(agentID string) []*PendingCommand {
 	return pending
 }
 
+// Reassign moves commands still waiting for pickup from one agent to another,
+// so requests queued for an agent that was just replaced are not stranded.
+// Commands the old agent already picked up stay with it. Returns how many moved.
+func (q *CommandQueue) Reassign(fromAgentID, toAgentID string) int {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	moved := 0
+	for _, cmd := range q.commands {
+		if cmd.AgentID == fromAgentID && cmd.Status == CommandStatusPending {
+			cmd.AgentID = toAgentID
+			moved++
+		}
+	}
+	return moved
+}
+
 // MarkRunning marks a command as currently running.
 func (q *CommandQueue) MarkRunning(requestID string) bool {
 	q.mu.Lock()
