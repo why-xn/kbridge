@@ -244,7 +244,7 @@ func getEditor() string {
 	return "vi"
 }
 
-// applyChanges applies the modified YAML to the cluster.
+// applyChanges writes the modified YAML back to the cluster.
 func (h *EditHandler) applyChanges(content []byte) error {
 	// Create temp file for apply
 	tmpFile, err := os.CreateTemp("", "kbridge-apply-*.yaml")
@@ -265,9 +265,9 @@ func (h *EditHandler) applyChanges(content []byte) error {
 		return fmt.Errorf("failed to read temp file: %w", err)
 	}
 
-	// Use apply with stdin via --filename with the content
-	// We send the content as part of the command using apply -f -
-	args := []string{"apply", "-f", "-"}
+	// replace, like kubectl edit, writes the object as edited: unlike apply it adds no
+	// last-applied annotation, and the fetched resourceVersion makes a concurrent change a conflict
+	args := []string{"replace", "-f", "-"}
 
 	resp, err := h.client.ExecCommandWithStdin(h.clusterName, args, h.namespace, int(h.timeout.Seconds()), string(fileContent))
 	if err != nil {
@@ -283,7 +283,7 @@ func (h *EditHandler) applyChanges(content []byte) error {
 		if resp.Error != "" {
 			return fmt.Errorf("%s", resp.Error)
 		}
-		return fmt.Errorf("apply failed with exit code %d", resp.ExitCode)
+		return fmt.Errorf("replace failed with exit code %d", resp.ExitCode)
 	}
 
 	return nil
