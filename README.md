@@ -1,19 +1,67 @@
-# kbridge
+# kbridge: Kubernetes Access Gateway
 
 ![CI](https://github.com/why-xn/kbridge/actions/workflows/ci.yml/badge.svg)
 ![Release](https://img.shields.io/github/v/release/why-xn/kbridge?include_prereleases)
 ![Go](https://img.shields.io/github/go-mod/go-version/why-xn/kbridge)
 ![License](https://img.shields.io/badge/license-Apache%202.0-blue)
 
+A lightweight access gateway that lets you manage multiple Kubernetes clusters from a central control plane, without needing to distribute kubeconfig files, open inbound firewall rules, or set up VPN access.
+
+![Animated kbridge architecture: the CLI sends a command to the control plane, and the selected cluster agent runs kubectl with its ServiceAccount.](docs/assets/kbridge-architecture.gif)
+
 > **Status: alpha** (`v0.2.2-alpha.1`). Config keys, the RBAC policy schema,
 > and REST API paths may change between releases, and it is not yet recommended
 > for unattended production use.
 
-A lightweight, secure CLI tool for managing and accessing multiple Kubernetes clusters through a central control plane — without distributing kubeconfig files, opening inbound firewall rules, or requiring VPN access.
+## How it works
+
+1. **Each cluster agent connects outbound** to the control plane over gRPC. It runs as a Deployment inside its cluster.
+2. **You send a command with `kb`**, using familiar kubectl syntax. The CLI sends your login token and command to the control plane.
+3. **The control plane checks your access** against its role rules and command policies. A policy can deny a command, require a reason, or require an approved grant.
+4. **The selected agent runs kubectl** with its own Kubernetes ServiceAccount. For one-shot commands, the agent polls the control plane for queued work.
+5. **The result returns to your CLI.** The control plane records the user, cluster, command, and outcome in its audit log.
+
+Live logs, interactive sessions, and port-forward use a persistent stream between the agent and the control plane.
+The CLI uses HTTP/2 streams for these operations and REST for login, cluster selection, and one-shot commands.
+
+Kubernetes authorizes requests as the agent's ServiceAccount. Its audit logs identify that account, while kbridge's audit log records the requesting user.
+
+See the [architecture guide](docs/architecture.md) for the request lifecycle, transports, authorization pipeline, and trust model.
+
+## How to install it
+
+### Install the CLI
+
+On Linux or macOS, run:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/why-xn/kbridge/master/install.sh | sh
 ```
+
+The installer downloads the release for your platform, verifies its checksum, and installs `kb`.
+You can also download a binary from [GitHub Releases](https://github.com/why-xn/kbridge/releases).
+
+Set the control plane URL in `~/.kbridge/config.yaml`:
+
+```yaml
+control_plane_url: https://control-plane.example.com:8080
+```
+
+Then log in and select a registered cluster:
+
+```bash
+kb login
+kb clusters list
+kb clusters use <cluster>
+kb get pods
+```
+
+### Deploy the control plane and agents
+
+Deploy one control plane and an agent in each target cluster.
+The [installation guide](docs/installation.md) covers binaries, Docker images, and Helm charts.
+For a local development environment, see [Quick Start](#quick-start).
+For a production deployment, see the [production installation guide](docs/production-install.md).
 
 ## Problem
 
@@ -43,7 +91,7 @@ recreates every problem above at machine speed.
 
 ## Solution
 
-kbridge puts a **control plane** between people and clusters. Nobody holds
+kbridge puts a **control plane** between people and clusters. Users do not hold
 cluster credentials: the user runs a CLI, each cluster runs a small agent that
 dials *outbound*, and every command is checked before it is forwarded. No inbound
 ports, no kubeconfig distribution, no VPN.
@@ -74,59 +122,6 @@ Work is organized into five tracks: credential-free access, just-in-time
 authorization and guardrails, verifiable attribution and audit, governed access
 for AI agents, and extending the same door to systems beyond Kubernetes. See
 [ROADMAP.md](ROADMAP.md) for what is shipped, in progress, and planned.
-
-## Architecture
-
-```
-                                    +----------------------------------+
-                                    |         Kubernetes Cluster A     |
-                                    |  +-----------------------------+ |
-                                    |  |     kbridge-agent           | |
-+----------------+                  |  |  +---------+  +----------+  | |
-|                |                  |  |  |  gRPC   |  | K8s API  |  | |
-|  kbridge CLI   |                  |  |  | Client  |--| Client   |  | |
-|                |                  |  |  +---------+  +----------+  | |
-|  - login       |  +-----------+  |  +-------+---------------------+ |
-|  - clusters    |->|           |<-+----------+                       |
-|  - use         |  |  Control  |  +----------------------------------+
-|  - kubectl     |<-|   Plane   |
-|                |  |           |  +----------------------------------+
-+----------------+  |  - Auth   |  |         Kubernetes Cluster B     |
-                    |  - RBAC   |  |  +-----------------------------+ |
-                    |  - Proxy  |  |  |     kbridge-agent           | |
-                    |  - Audit  |<-+--|  +---------+  +----------+  | |
-                    |           |  |  |  |  gRPC   |  | K8s API  |  | |
-                    +-----+-----+  |  |  | Client  |--| Client   |  | |
-                          |        |  |  +---------+  +----------+  | |
-                          v        |  +-------+---------------------+ |
-                    +-----------+  |          |                       |
-                    | Database  |  +----------+-----------------------+
-                    | (SQLite)  |             |
-                    |           |<------------+
-                    +-----------+
-```
-
-### How It Works
-
-```
-CLI (kbridge) --HTTP REST--> Control Plane <--gRPC-- Agent (per cluster) --> kubectl
-```
-
-- **CLI to control plane**: REST for login, cluster listing, and one-shot
-  commands; HTTP/2 bidirectional streams for `logs -f`, `exec -it`, and
-  port-forward
-- **Agent to control plane**: gRPC for registration, heartbeats, and command
-  polling, plus one persistent stream that multiplexes every live session
-- **Agent to Kubernetes**: kubectl, run locally with the agent's own
-  ServiceAccount
-
-Every command passes one authorization chokepoint: role rules decide first, then
-guardrails may refuse it, demand a reason, or require an approved grant. Nothing
-reaches a cluster without going through it.
-
-See **[docs/architecture.md](docs/architecture.md)** for the request lifecycle,
-the four command transports and their frame codecs, the authorization pipeline,
-the data model, and the trust model.
 
 ## Components
 
@@ -198,6 +193,9 @@ export KBRIDGE_JWT_SECRET="$(openssl rand -hex 32)"
 ```
 
 **3. Log in and use the CLI:**
+
+Set `control_plane_url: http://localhost:8080` in `~/.kbridge/config.yaml` for this local environment.
+
 ```bash
 # Default admin is seeded from control-plane.yaml (admin@kbridge.local / admin123 in
 # the example config — change admin_password after first login for any real deployment).
