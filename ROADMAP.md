@@ -30,8 +30,8 @@ stop a mistake before it reaches the cluster.
 | **In progress** | Merged to `master`, not yet released |
 | **Planned** | Intended; not started |
 
-Work is organized into four tracks. Track 1 is the safety layer: deciding
-whether an operation should run. Track 2 is the access path itself. Track 3
+Work is organized into four tracks. Track 1 is the access path itself. Track 2
+is the safety layer: deciding whether an operation should run. Track 3
 makes every action attributable and its record trustworthy. Track 4 extends all
 of it to AI agents. A final section lists what is table stakes and what we will
 not build.
@@ -56,52 +56,7 @@ The immediate queue, across tracks, in order.
 
 ---
 
-## Track 1: Don't break things once you're in
-
-Standing production access plus no pre-execution checks means one mistaken
-command can cause an outage. Because kbridge evaluates the *requested operation*
-before it reaches the cluster, rather than only proxying API calls, it can tell
-`delete pod api-0` from `delete pod --all`, and `apply` from `apply --dry-run`.
-It prevents incidents instead of merely recording them. No access platform does
-this at the command level, and it is the reason kbridge exists.
-
-**In progress**
-
-- **Command guardrails.** Rules that run after RBAC and can only take access
-  away. Actions today: `deny`, `require-reason` (a ticket reference recorded on
-  the audit entry), and `require-approval`.
-- **Just-in-time access.** A `require-approval` guardrail is satisfied only by a
-  time-boxed grant one person requests and another approves. A pending request
-  grants nothing, the clock starts at approval, grants expire on their own, and
-  self-approval is refused by default.
-- **Policy test tooling.** `kb policy validate` and `kb policy test` check a
-  policy file offline and in CI, before it reaches a cluster.
-- **Grant notifications.** Every grant event to Slack, Google Chat, or a signed
-  JSON webhook, with the approve command in the message.
-
-**Planned**
-
-- **Mutation rate limiting.** A guardrail action capping how many changes one
-  person may make in a window, so a runaway script or a bad loop is stopped
-  rather than logged.
-- **Dry run before change.** Require a server-side dry run, then admit the real
-  operation within a short window. The first stateful guardrail.
-- **Break-glass.** A `require-approval` guardrail with no approver awake locks
-  the on-call engineer out during the incident the access is for. Break-glass is
-  a self-approved grant with a short window, a loud audit status, and a mandatory
-  notification. Access first, review after.
-- **Preview before mutation.** Before a change runs, show what it will touch:
-  "this will modify 14 objects in `prod`, continue?", built on the server-side
-  dry-run diff.
-- **Documented policy templates** for common shapes: protect production, require
-  a ticket for mutations, guard a PCI namespace.
-- **Approve from the chat message**, which needs interactive components and a
-  signed callback rather than a one-way webhook.
-- **Per-cluster notification routing**, so production requests reach the on-call
-  channel and development requests do not.
-- **Grant retention**, folded into the audit cleanup job.
-
-## Track 2: Access without credentials
+## Track 1: Access without credentials
 
 Conventional Kubernetes access means handing out kubeconfig files or exposing the
 API server. Both create credentials to steal and surface to attack. In kbridge
@@ -152,6 +107,51 @@ outbound so no inbound port is needed, and access is revoked in one place.
   and the REST paths, and shipping mutual TLS and a PostgreSQL store option so
   the deployment story fits regulated environments. Conditions, not a date.
 
+## Track 2: Don't break things once you're in
+
+Standing production access plus no pre-execution checks means one mistaken
+command can cause an outage. Because kbridge evaluates the *requested operation*
+before it reaches the cluster, rather than only proxying API calls, it can tell
+`delete pod api-0` from `delete pod --all`, and `apply` from `apply --dry-run`.
+It prevents incidents instead of merely recording them. No access platform does
+this at the command level, and it is the reason kbridge exists.
+
+**In progress**
+
+- **Command guardrails.** Rules that run after RBAC and can only take access
+  away. Actions today: `deny`, `require-reason` (a ticket reference recorded on
+  the audit entry), and `require-approval`.
+- **Just-in-time access.** A `require-approval` guardrail is satisfied only by a
+  time-boxed grant one person requests and another approves. A pending request
+  grants nothing, the clock starts at approval, grants expire on their own, and
+  self-approval is refused by default.
+- **Policy test tooling.** `kb policy validate` and `kb policy test` check a
+  policy file offline and in CI, before it reaches a cluster.
+- **Grant notifications.** Every grant event to Slack, Google Chat, or a signed
+  JSON webhook, with the approve command in the message.
+
+**Planned**
+
+- **Mutation rate limiting.** A guardrail action capping how many changes one
+  person may make in a window, so a runaway script or a bad loop is stopped
+  rather than logged.
+- **Dry run before change.** Require a server-side dry run, then admit the real
+  operation within a short window. The first stateful guardrail.
+- **Break-glass.** A `require-approval` guardrail with no approver awake locks
+  the on-call engineer out during the incident the access is for. Break-glass is
+  a self-approved grant with a short window, a loud audit status, and a mandatory
+  notification. Access first, review after.
+- **Preview before mutation.** Before a change runs, show what it will touch:
+  "this will modify 14 objects in `prod`, continue?", built on the server-side
+  dry-run diff.
+- **Documented policy templates** for common shapes: protect production, require
+  a ticket for mutations, guard a PCI namespace.
+- **Approve from the chat message**, which needs interactive components and a
+  signed callback rather than a one-way webhook.
+- **Per-cluster notification routing**, so production requests reach the on-call
+  channel and development requests do not.
+- **Grant retention**, folded into the audit cleanup job.
+
 ## Track 3: Who did what, under whose authority
 
 When humans and increasingly autonomous agents both perform privileged actions,
@@ -201,7 +201,7 @@ what the three tracks above already build for people, applied to agents.
 - **Scoped agent identity.** Each agent is a kbridge user of its own, with a
   short-lived credential and its own policy bindings, and therefore its own
   identity in the cluster's audit log. Read-only by default; any mutation goes
-  through the Track 1 approval path to a human.
+  through the Track 2 approval path to a human.
 - **Containment by construction.** Because authority comes from the agent's
   identity and not from anything the agent says, a compromised agent or a prompt
   injection does not by itself grant authority beyond that identity's
@@ -234,8 +234,8 @@ so each is built when a user asks for it, in roughly this order, and not before.
 
 | Track | Evidence |
 |---|---|
-| 1 | Policies adopted in pilots, and a count of destructive operations actually blocked. This is already queryable: guardrail refusals are audit entries with status `blocked`, so a pilot produces the evidence as a side effect of normal use |
-| 2 | Tagged releases, external testers and adopters, issues and contributions from outside the project, and installs that stay installed |
+| 1 | Tagged releases, external testers and adopters, issues and contributions from outside the project, and installs that stay installed |
+| 2 | Policies adopted in pilots, and a count of destructive operations actually blocked. This is already queryable: guardrail refusals are audit entries with status `blocked`, so a pilot produces the evidence as a side effect of normal use |
 | 3 | Adoption in environments that require verifiable records, including regulated sectors; audit exports accepted by an existing security platform |
 | 4 | Pilot teams measuring time-to-diagnosis with agents operating under enforced least privilege, and zero privileged agent actions without an approval record |
 
