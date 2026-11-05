@@ -47,8 +47,8 @@ func clusterStatus(t *testing.T, name string) (string, bool) {
 func startAgentWithToken(t *testing.T, cluster, token string) func() {
 	t.Helper()
 	cfgPath := filepath.Join(t.TempDir(), "agent.yaml")
-	cfg := fmt.Sprintf("control_plane:\n  url: %q\n  token: %q\ncluster:\n  name: %q\n",
-		*grpcAddr, token, cluster)
+	cfg := fmt.Sprintf("control_plane:\n  url: %q\n  token: %q\ncluster:\n  name: %q\nkubernetes:\n  kubeconfig: %q\n",
+		*grpcAddr, token, cluster, hostKubeconfig())
 	if err := os.WriteFile(cfgPath, []byte(cfg), 0o600); err != nil {
 		t.Fatalf("write agent config: %v", err)
 	}
@@ -65,6 +65,15 @@ func startAgentWithToken(t *testing.T, cluster, token string) func() {
 		_, _ = cmd.Process.Wait()
 		t.Logf("unauthorized agent output:\n%s", out.String())
 	}
+}
+
+// hostKubeconfig is the kubeconfig the host-process agent validates against.
+func hostKubeconfig() string {
+	if p := os.Getenv("KUBECONFIG"); p != "" {
+		return filepath.SplitList(p)[0]
+	}
+	home, _ := os.UserHomeDir()
+	return filepath.Join(home, ".kube", "config")
 }
 
 // assertNeverConnects polls the cluster's status for the given window and fails

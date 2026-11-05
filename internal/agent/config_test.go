@@ -157,8 +157,17 @@ func TestConfig_Validate(t *testing.T) {
 			config: &Config{
 				ControlPlane: ControlPlaneConfig{URL: "localhost:9090", Token: "token"},
 				Cluster: ClusterConfig{Name: "test"},
+				Kubernetes: KubernetesConfig{Server: "https://k", TokenFile: "/t"},
 			},
 			wantErr: false,
+		},
+		{
+			name: "kubeconfig needs no server or token file",
+			config: &Config{
+				ControlPlane: ControlPlaneConfig{URL: "localhost:9090", Token: "token"},
+				Cluster:      ClusterConfig{Name: "test"},
+				Kubernetes:   KubernetesConfig{Kubeconfig: "/kc"},
+			},
 		},
 		{
 			name: "missing URL",
@@ -295,5 +304,63 @@ cluster:
 	// KBRIDGE_AGENT_TOKEN should win
 	if cfg.ControlPlane.Token != "new-token" {
 		t.Errorf("expected token 'new-token', got %q", cfg.ControlPlane.Token)
+	}
+}
+
+func TestKubernetesConfig(t *testing.T) {
+	t.Setenv("KUBERNETES_SERVICE_HOST", "10.0.0.1")
+	t.Setenv("KUBERNETES_SERVICE_PORT", "443")
+	k := DefaultConfig().Kubernetes
+	want := KubernetesConfig{Server: "https://10.0.0.1:443", CAFile: "/var/run/kbridge/sa/ca.crt", TokenFile: "/var/run/kbridge/sa/token"}
+	if k != want {
+		t.Fatalf("defaults = %+v, want %+v", k, want)
+	}
+	t.Setenv("KUBERNETES_SERVICE_HOST", "fd00::1")
+	if got := DefaultConfig().Kubernetes.Server; got != "https://[fd00::1]:443" {
+		t.Fatalf("ipv6 server = %q", got)
+	}
+}
+
+func TestKubernetesConfig_YAMLAndEnv(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "a.yaml")
+	y := "control_plane:\n  token: t\nkubernetes:\n  server: https://yaml:1\n  ca_file: /yca\nprotected_namespaces: [a, b]\n"
+	if err := os.WriteFile(path, []byte(y), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := LoadConfig(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Kubernetes.Server != "https://yaml:1" || cfg.Kubernetes.CAFile != "/yca" || len(cfg.ProtectedNamespaces) != 2 {
+		t.Fatalf("yaml not applied: %+v %v", cfg.Kubernetes, cfg.ProtectedNamespaces)
+	}
+	t.Setenv("KBRIDGE_KUBERNETES_SERVER", "https://env:2")
+	t.Setenv("KBRIDGE_KUBERNETES_CA_FILE", "/eca")
+	t.Setenv("KBRIDGE_KUBERNETES_TOKEN_FILE", "/etok")
+	t.Setenv("KBRIDGE_KUBECONFIG", "/ekc")
+	t.Setenv("KBRIDGE_PROTECTED_NAMESPACES", "x,y,z")
+	cfg, _ = LoadConfig(path)
+	want := KubernetesConfig{Server: "https://env:2", CAFile: "/eca", TokenFile: "/etok", Kubeconfig: "/ekc"}
+	if cfg.Kubernetes != want || len(cfg.ProtectedNamespaces) != 3 {
+		t.Fatalf("env not applied: %+v %v", cfg.Kubernetes, cfg.ProtectedNamespaces)
+	}
+}
+
+func TestKubernetesConfig_Validate(t *testing.T) {
+	tests := []struct {
+		name string
+		k    KubernetesConfig
+		want string
+	}{
+		{"no server", KubernetesConfig{TokenFile: "/t"}, "kubernetes.server is required when no kubeconfig is set"},
+		{"no token file", KubernetesConfig{Server: "https://k"}, "kubernetes.token_file is required"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := &Config{ControlPlane: ControlPlaneConfig{URL: "u", Token: "t"}, Cluster: ClusterConfig{Name: "c"}, Kubernetes: tt.k}
+			if err := cfg.Validate(); err == nil || err.Error() != tt.want {
+				t.Fatalf("got %v, want %q", err, tt.want)
+			}
+		})
 	}
 }
