@@ -247,10 +247,12 @@ For a private CA add `--set controlPlane.tls.caCert="$(cat ca.crt)"`.
 
 Every command runs as `kbridge:<email>`, and Kubernetes RBAC bound to that
 user decides what it may do. The agent creates those bindings from the
-policy's `clusterAccess`, up to the chart's `accessCeiling` (default: `view`
-and `edit`, no ClusterRoleBindings). Raise the ceiling if your policy needs
-more, for example `--set 'accessCeiling.clusterRoles={view,edit,admin}'`, and
-check `kb admin rbac status` after install (see
+policy's `clusterAccess`, up to the chart's `accessCeiling` (default: `view`,
+`edit` and `cluster-admin`, ClusterRoleBindings allowed; the default policy maps
+`admin` to `cluster-admin` and `viewer` to `view`). To limit what any kbridge
+policy can grant in a cluster, lower the ceiling, for example
+`--set 'accessCeiling.clusterRoles={view,edit}' --set accessCeiling.clusterWide=false`,
+and check `kb admin rbac status` after install (see
 [security.md](security.md#binding-kbridge-users-in-the-cluster)).
 
 ## 8. Verify the Deployment

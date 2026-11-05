@@ -278,10 +278,15 @@ The agent chart's `accessCeiling` is the most the agent may hand out:
 
 ```yaml
 accessCeiling:
-  clusterRoles: [view, edit]   # ClusterRoles the agent may bind
+  clusterRoles: [view, edit, cluster-admin]  # ClusterRoles the agent may bind
   namespaces: []               # empty = any namespace except the protected ones
-  clusterWide: false           # allow ClusterRoleBindings
+  clusterWide: true            # allow ClusterRoleBindings
 ```
+
+These are the defaults, so a fresh install works with the default policy
+(`admin` is bound to `cluster-admin`, `viewer` to `view`, cluster-wide). A
+cluster owner can lower the ceiling, for example to `[view, edit]` with
+`clusterWide: false`, to limit what any kbridge policy can grant there.
 
 The agent's ServiceAccount gets `bind` on those ClusterRoles only, write
 access to RoleBindings (cluster-wide, or in the listed namespaces), write
@@ -319,7 +324,10 @@ match it to the Kubernetes audit event by email, cluster and time.
   namespace that is not protected: it decides who holds which role, and it
   can name any `kbridge:` user and send commands as that user. The agent only
   checks the shape of each binding (name, namespace, `kbridge:` users), and
-  `accessCeiling` caps what can be bound. Keep the ceiling small.
+  `accessCeiling` caps what can be bound. The ceiling scopes what kbridge may
+  hand out in a cluster; it is not a boundary against a compromised control
+  plane: once any user is bound to `cluster-admin` through kbridge, a
+  compromised control plane can act as that user by impersonation.
 - **A stolen agent token can impersonate any user name.** Kubernetes cannot
   limit `users impersonate` to the `kbridge:` prefix, so the agent's
   credential reaches every binding whose subject is a `User`, `kbridge:` or

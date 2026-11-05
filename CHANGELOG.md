@@ -18,8 +18,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   writes in its own or a protected namespace and only binds `kbridge:` users.
   See [docs/rbac.md](docs/rbac.md#cluster-bindings-clusteraccess).
 - **Agent chart `accessCeiling`** caps what the agent may bind: by default the
-  ClusterRoles `view` and `edit`, in any non-protected namespace, and no
-  ClusterRoleBindings. Kubernetes refuses anything above it.
+  ClusterRoles `view`, `edit` and `cluster-admin`, in any non-protected
+  namespace and cluster-wide. Kubernetes refuses anything above it. The default
+  policies map `admin` to `cluster-admin` and `viewer` to `view` cluster-wide,
+  and the agent ceiling defaults to `[view, edit, cluster-admin]`.
 - **`kb admin rbac status`** shows, per cluster, whether its bindings match the
   current policy (`in sync`, `drift`, `unreported`) and why not. See
   [docs/operations.md](docs/operations.md#rbac-sync).

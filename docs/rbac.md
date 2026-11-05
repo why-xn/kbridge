@@ -63,6 +63,10 @@ roles:
         namespaces: ["*"]
         resources: ["*"]
         verbs: ["*"]
+    clusterAccess:
+      - clusters: ["*"]
+        clusterRole: cluster-admin
+        clusterWide: true
 
   - name: developer
     rules:
@@ -77,6 +81,10 @@ roles:
         namespaces: ["*"]
         resources: ["*"]
         verbs: ["get", "list", "watch", "describe", "logs"]
+    clusterAccess:
+      - clusters: ["*"]
+        clusterRole: view
+        clusterWide: true
 
 bindings:
   - subject: admin@corp.com
@@ -87,7 +95,9 @@ bindings:
 
 With this policy: `admin@corp.com` can do anything; anyone at `dev.corp.com`
 gets developer access on dev/staging; everyone else falls back to read-only
-`viewer`.
+`viewer`. The chart's default policy and `configs/rbac.yaml` give `admin` a
+cluster-wide `cluster-admin` binding and `viewer` a cluster-wide `view` binding,
+so a fresh install works without edits.
 
 ## Cluster bindings (`clusterAccess`)
 

@@ -126,9 +126,9 @@ the pod's `fsGroup: 10001`, the agent user). Agent chart values for this:
 | Value | Default | Purpose |
 |---|---|---|
 | `protectedNamespaces` | `[]` | Namespaces users can never touch through kbridge. The release namespace is always added; add the control plane's namespace when it runs in the same cluster. |
-| `accessCeiling.clusterRoles` | `[view, edit]` | ClusterRoles the agent may bind for kbridge users. Must not be empty. |
+| `accessCeiling.clusterRoles` | `[view, edit, cluster-admin]` | ClusterRoles the agent may bind for kbridge users. Must not be empty. |
 | `accessCeiling.namespaces` | `[]` | Namespaces the agent may write RoleBindings in; empty means any. Must not include the release namespace. |
-| `accessCeiling.clusterWide` | `false` | Allow ClusterRoleBindings (`clusterWide: true` in policy). |
+| `accessCeiling.clusterWide` | `true` | Allow ClusterRoleBindings (`clusterWide: true` in policy). |
 | `serviceAccountToken.expirationSeconds` | `600` | Lifetime of the projected token; the kubelet rotates it. |
 | `networkPolicy.enabled` | `false` | Render an egress NetworkPolicy (recommended). Requires `apiServerCIDRs` and `controlPlaneTo`; rendering fails without them. |
 | `networkPolicy.apiServerCIDRs` | `[]` | API server endpoint IPs, e.g. `kubectl get endpoints kubernetes -o jsonpath='{.subsets[*].addresses[*].ip}'` as `/32`s. |
