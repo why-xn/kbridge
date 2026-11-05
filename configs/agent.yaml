@@ -11,3 +11,20 @@ control_plane:
 
 cluster:
   name: dev-cluster
+
+# kubernetes tells the agent how to reach its own API server. In a pod the
+# defaults below apply and nothing needs setting.
+#   server:     https://$KUBERNETES_SERVICE_HOST:$KUBERNETES_SERVICE_PORT
+#   ca_file:    /var/run/kbridge/sa/ca.crt
+#   token_file: /var/run/kbridge/sa/token
+# For local development only, use a kubeconfig instead (it overrides the three
+# keys above). Use an absolute path: "~" is not expanded. exec and
+# auth-provider users are not supported.
+# kubernetes:
+#   kubeconfig: /home/you/.kube/config   # your ~/.kube/config, written out in full
+
+# Namespaces kubectl through kbridge may not touch (the agent's own is always protected).
+protected_namespaces: []
+
+sync:
+  interval: 60s   # how often role bindings are re-checked against policy

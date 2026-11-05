@@ -42,19 +42,33 @@ Returns `{output, exit_code, error}`. Status codes:
 | Code | Meaning |
 |------|---------|
 | 200 | Command executed (check `exit_code`) |
-| 403 | Denied by RBAC policy |
+| 403 | Denied by RBAC policy, or an argument kbridge refuses (see below) |
 | 404 | Cluster not found |
-| 503 | Cluster agent disconnected |
+| 503 | Cluster agent disconnected, or the agent does not support impersonation |
 | 504 | Command timed out |
 
 Every call is recorded in the audit log.
+
+**Refused arguments.** Connection and file-reading flags and the verbs `cp`,
+`proxy`, `plugin`, `config`, and `kustomize` are refused with `403` and
+`{"error": "<message>"}`, for example
+`{"error": "flag --kubeconfig is not allowed: kbridge manages the cluster connection"}`
+or `{"error": "kubectl cp is not supported through kbridge"}`. The attempt is
+audited as `denied`. The same check, `/stream`, `/exec/attach`, and
+`/port-forward` included, runs before RBAC.
+
+**Impersonation.** Commands run in the cluster as `kbridge:<email>`. For a
+cluster whose agent lacks the capability the response is `503`
+`{"error": "agent does not support impersonation: upgrade the agent for cluster <name>"}`.
 
 ### `POST /api/v1/clusters/{name}/stream`
 Streams a follow/watch command (`logs -f`, `get -w`). Same request body as
 `exec`. RBAC is checked before the stream starts (403 on denial). On success
 returns `200` with a chunked response body that streams stdout/stderr until the
 command ends or the client disconnects (which cancels it). Status codes: `403`
-denied, `404` cluster not found, `503` agent disconnected or no open stream,
+denied by RBAC or a refused argument (see `/exec`), `404` cluster not found,
+`503` agent disconnected, no open stream, or agent without impersonation
+(`agent does not support impersonation: upgrade the agent for cluster <name>`),
 `429` over `streams.max_concurrent`. The outcome is audited as `success`,
 `failed`, or `canceled`.
 
@@ -88,10 +102,10 @@ The stream ends when the remote process exits or the client disconnects.
 | Code | Meaning |
 |------|---------|
 | 200 | Session established; frame stream follows |
-| 403 | Denied by RBAC policy |
+| 403 | Denied by RBAC policy, or a refused argument (see `/exec`) |
 | 404 | Cluster not found |
 | 429 | Over `streams.max_concurrent` limit |
-| 503 | Cluster agent disconnected |
+| 503 | Cluster agent disconnected, or agent without impersonation (`agent does not support impersonation: upgrade the agent for cluster <name>`) |
 
 Every session is recorded in the audit log with outcome `success`, `failed`,
 `denied`, or `canceled`.
@@ -130,10 +144,10 @@ identifies the individual TCP connection. Frame types:
 | Code | Meaning |
 |------|---------|
 | 200 | Session established; frame stream follows |
-| 403 | Denied by RBAC policy |
+| 403 | Denied by RBAC policy, or a refused argument (see `/exec`) |
 | 404 | Cluster not found |
 | 429 | Over `streams.max_concurrent` limit |
-| 503 | Cluster agent disconnected |
+| 503 | Cluster agent disconnected, or agent without impersonation (`agent does not support impersonation: upgrade the agent for cluster <name>`) |
 
 Every session is recorded in the audit log.
 
@@ -163,6 +177,25 @@ Body: any of `{"name","is_active","password"}`. `404` if not found.
 
 ### `DELETE /api/v1/admin/users/{id}`
 Deletes the user.
+
+## Admin — RBAC sync
+
+### `GET /api/v1/admin/rbac/status`
+Binding sync state of each connected cluster, sorted by cluster name. Returns:
+
+```json
+{ "clusters": [ {
+  "cluster": "prod",
+  "version": "<version the agent last applied; omitted before its first report>",
+  "desired_version": "<version policy asks for>",
+  "state": "in sync",
+  "errors": ["<per-binding errors; omitted when none>"],
+  "reported_at": "<RFC3339; omitted before the first report>"
+} ] }
+```
+
+`state` is `in sync` (agent reports in sync at `desired_version`), `drift`, or
+`unreported` (no report yet). Same data as `kb admin rbac status`.
 
 ## Admin — audit
 

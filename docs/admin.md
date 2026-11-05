@@ -86,4 +86,6 @@ Edit the policy file referenced by `rbac.policy_file`. The control plane reloads
 automatically (file watch) or on demand via `SIGHUP`
 (`kill -HUP <control-plane-pid>`) — use the latter where the filesystem doesn't
 deliver change events. A policy that fails to parse is rejected and the previous
-one stays active (the error is logged). See the [RBAC reference](rbac.md#reloading).
+one stays active (the error is logged). See the [RBAC reference](rbac.md#reloading). Run
+`kb admin rbac status` to see whether each cluster's RoleBindings match the policy
+(see [operations](operations.md)).

@@ -67,7 +67,30 @@ control_plane:
 
 cluster:
   name: dev-cluster        # unique cluster identifier (must match the token)
+
+kubernetes:                # how the agent reaches its own API server (in-cluster defaults shown)
+  server: ""               # https://$KUBERNETES_SERVICE_HOST:$KUBERNETES_SERVICE_PORT when set in the pod
+  ca_file: /var/run/kbridge/sa/ca.crt
+  token_file: /var/run/kbridge/sa/token
+  kubeconfig: ""           # dev/e2e only; overrides the three keys above
+
+protected_namespaces: []   # namespaces kubectl through kbridge may not touch
+
+sync:
+  interval: 60s            # how often role bindings are re-checked against policy
 ```
+
+| Key | Env var | Default | Meaning |
+|-----|---------|---------|---------|
+| `kubernetes.server` | `KBRIDGE_KUBERNETES_SERVER` | `https://$KUBERNETES_SERVICE_HOST:$KUBERNETES_SERVICE_PORT` (port `443` if unset; empty outside a pod) | API server the agent's kubectl is pointed at |
+| `kubernetes.ca_file` | `KBRIDGE_KUBERNETES_CA_FILE` | `/var/run/kbridge/sa/ca.crt` | CA that verifies the API server |
+| `kubernetes.token_file` | `KBRIDGE_KUBERNETES_TOKEN_FILE` | `/var/run/kbridge/sa/token` | ServiceAccount token the agent uses for impersonation and binding sync |
+| `kubernetes.kubeconfig` | `KBRIDGE_KUBECONFIG` | empty | Kubeconfig to use instead of the three keys above. Development and e2e only: reads the current context, with a token or client certificate; `exec` and `auth-provider` users are not supported. `~` is not expanded, so use an absolute path |
+| `protected_namespaces` | `KBRIDGE_PROTECTED_NAMESPACES` (comma-separated) | empty | Namespaces the agent refuses to run commands in, in addition to its own |
+| `sync.interval` | `KBRIDGE_SYNC_INTERVAL` | `60s` | Full re-check period for RoleBinding sync (Go duration); must be positive, an unparsable env value fails validation |
+
+Validation: `kubernetes.server` and `kubernetes.token_file` are required unless
+`kubernetes.kubeconfig` is set.
 
 ### Agent environment variables
 
@@ -77,6 +100,7 @@ cluster:
 | `KBRIDGE_CONTROL_PLANE_URL` | `control_plane.url` | `localhost:9090` |
 | `KBRIDGE_AGENT_TOKEN` / `AGENT_TOKEN` | `control_plane.token` | — |
 | `KBRIDGE_CLUSTER_NAME` | `cluster.name` | `default` |
+| `KBRIDGE_KUBERNETES_SERVER`, `KBRIDGE_KUBERNETES_CA_FILE`, `KBRIDGE_KUBERNETES_TOKEN_FILE`, `KBRIDGE_KUBECONFIG`, `KBRIDGE_PROTECTED_NAMESPACES`, `KBRIDGE_SYNC_INTERVAL` | see the table above | see the table above |
 
 ## CLI (`~/.kbridge/config.yaml`)
 

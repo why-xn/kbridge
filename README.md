@@ -31,7 +31,7 @@ These problems get worse with every new cluster, team, and environment.
 kbridge eliminates direct cluster access by placing a control plane between users and clusters. Users interact with a single CLI tool; clusters run a lightweight agent that connects outbound to the gateway. No inbound ports, no kubeconfig distribution, no VPN required.
 
 1. **Control Plane (`kbridge-control-plane`)** — API gateway that authenticates users, enforces access policies, queues commands, and collects results. The single point of control for all cluster access.
-2. **Cluster Agent (`kbridge-agent`)** — A small daemon deployed in each cluster that initiates an outbound gRPC connection to the control plane. It polls for pending commands, executes them via kubectl locally, and returns results. Since connections are outbound-only, no firewall changes or public endpoints are needed.
+2. **Cluster Agent (`kbridge-agent`)** — A small daemon deployed in each cluster that initiates an outbound gRPC connection to the control plane. It polls for pending commands, executes them via kubectl locally as the requesting user (by impersonation), and returns results. Since connections are outbound-only, no firewall changes or public endpoints are needed.
 3. **CLI (`kb`)** — A user-friendly command-line tool that talks to the control plane over REST. Developers use familiar kubectl syntax (`kb get pods`) without needing direct cluster credentials or network access. (Installed as `kb`, with a `kbridge` symlink for back-compat.)
 
 ## Architecture
@@ -73,7 +73,8 @@ CLI (kbridge) --HTTP REST--> Control Plane <--gRPC-- Agent (per cluster) --> kub
 
 - **CLI to control plane**: REST API for login, cluster listing, and kubectl execution
 - **Agent to control plane**: gRPC for registration, heartbeats, command polling, and result submission
-- **Agent to K8s**: kubectl for local command execution
+- **Agent to K8s**: kubectl with no credentials of its own, through a loopback proxy in the agent that adds impersonation of `kbridge:<email>`. Arguments that change the connection or read local files are refused. The cluster's own audit log therefore names the user, and the agent holds only impersonation and RoleBinding-sync permissions
+- **RBAC sync**: the agent keeps RoleBindings in step with the policy's `clusterAccess`; `kb admin rbac status` shows whether each cluster matches
 
 ## Components
 
@@ -101,6 +102,7 @@ kb admin users list                          # List users
 kb admin users create --email dev@corp.com --name Dev
 kb admin agent-tokens create --cluster prod  # Generate an agent token
 kb admin audit --user dev@corp.com           # View the command audit log
+kb admin rbac status                         # Show RoleBinding sync state per cluster
 ```
 
 ### Control Plane (`kbridge-control-plane`)
@@ -109,7 +111,7 @@ API gateway and control plane. Handles user authentication, cluster registry, RB
 
 ### Agent (`kbridge-agent`)
 
-Lightweight daemon running in each Kubernetes cluster. Connects outbound to the control plane, registers cluster metadata, polls for commands, executes kubectl locally, and submits results back.
+Lightweight daemon running in each Kubernetes cluster. Connects outbound to the control plane, registers cluster metadata, polls for commands, executes kubectl locally as the requesting user (impersonation), keeps cluster RoleBindings in step with kbridge policy, and submits results back. It holds only impersonation and binding-sync permissions.
 
 ## Quick Start
 
@@ -139,7 +141,7 @@ export KBRIDGE_JWT_SECRET="$(openssl rand -hex 32)"
 ./bin/kbridge-control-plane --config configs/control-plane.yaml
 ```
 
-**2. Start an agent (in a cluster with kubectl access):**
+**2. Start an agent (locally, set `kubernetes.kubeconfig` in `configs/agent.yaml` to an absolute path; in a pod the in-cluster defaults apply):**
 ```bash
 ./bin/kbridge-agent --config configs/agent.yaml
 ```
