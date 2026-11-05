@@ -47,9 +47,20 @@ serviceAccount:
   name: ""
 
 rbac:
-  # The agent's ClusterRole grants impersonation only: every command runs as
-  # kbridge:<email>, so bind those users to roles in the cluster.
+  # The agent's ClusterRole grants impersonation, plus what it needs to keep
+  # kbridge:<email> users bound as kbridge policy (clusterAccess) says, within
+  # accessCeiling below.
   create: true
+
+# The agent creates the bindings kbridge policy clusterAccess asks for.
+# Kubernetes refuses (403) any binding to a ClusterRole not listed here, in a
+# namespace not listed here, or cluster-wide unless clusterWide is true; see
+# `kb admin rbac status`. The agent itself never writes in the release
+# namespace or protectedNamespaces.
+accessCeiling:
+  clusterRoles: [view, edit]   # the most kbridge may hand out in this cluster
+  namespaces: []               # empty = any namespace except the protected ones
+  clusterWide: false           # allow ClusterRoleBindings
 
 # Namespaces the agent refuses to touch. The release namespace is always
 # protected; add the control plane's namespace when it runs in this cluster.

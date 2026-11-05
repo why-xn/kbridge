@@ -8,6 +8,13 @@ metadata:
 automountServiceAccountToken: false
 {{- end }}
 {{- if .Values.rbac.create }}
+{{- $ceiling := .Values.accessCeiling }}
+{{- if not $ceiling.clusterRoles }}
+{{- fail "accessCeiling.clusterRoles must not be empty" }}
+{{- end }}
+{{- if has .Release.Namespace $ceiling.namespaces }}
+{{- fail "accessCeiling.namespaces must not include the release namespace" }}
+{{- end }}
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
@@ -17,6 +24,8 @@ metadata:
     {{- include "agent.labels" . | nindent 4 }}
 # The agent runs every command as the requesting user via impersonation;
 # Kubernetes RBAC bound to kbridge:<email> decides what that user may do.
+# The agent itself keeps those bindings in step with kbridge policy, within
+# accessCeiling.
 rules:
   - apiGroups: [""]
     resources: ["users"]
@@ -24,6 +33,25 @@ rules:
   - apiGroups: ["authentication.k8s.io"]
     resources: ["userextras/kbridge-request-id"]
     verbs: ["impersonate"]
+  # The drift watch lists both kinds cluster-wide, whatever the ceiling.
+  - apiGroups: ["rbac.authorization.k8s.io"]
+    resources: ["rolebindings", "clusterrolebindings"]
+    verbs: ["list", "watch"]
+  - apiGroups: ["rbac.authorization.k8s.io"]
+    resources: ["clusterroles"]
+    verbs: ["bind"]
+    resourceNames:
+      {{- toYaml $ceiling.clusterRoles | nindent 6 }}
+  {{- if not $ceiling.namespaces }}
+  - apiGroups: ["rbac.authorization.k8s.io"]
+    resources: ["rolebindings"]
+    verbs: ["get", "create", "update", "delete"]
+  {{- end }}
+  {{- if $ceiling.clusterWide }}
+  - apiGroups: ["rbac.authorization.k8s.io"]
+    resources: ["clusterrolebindings"]
+    verbs: ["get", "create", "update", "delete"]
+  {{- end }}
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
@@ -39,4 +67,34 @@ subjects:
   - kind: ServiceAccount
     name: {{ include "agent.serviceAccountName" . }}
     namespace: {{ .Release.Namespace }}
+{{- range $ceiling.namespaces }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ include "agent.fullname" $ }}
+  namespace: {{ . }}
+  labels:
+    {{- include "agent.labels" $ | nindent 4 }}
+rules:
+  - apiGroups: ["rbac.authorization.k8s.io"]
+    resources: ["rolebindings"]
+    verbs: ["get", "create", "update", "delete"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ include "agent.fullname" $ }}
+  namespace: {{ . }}
+  labels:
+    {{- include "agent.labels" $ | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ include "agent.fullname" $ }}
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "agent.serviceAccountName" $ }}
+    namespace: {{ $.Release.Namespace }}
+{{- end }}
 {{- end }}
