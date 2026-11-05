@@ -113,9 +113,10 @@ Generate an agent token first with
 by seeding one through the control plane's `bootstrap` config.
 
 Key chart values are documented in each chart's `values.yaml`. The agent chart
-creates a ServiceAccount + ClusterRole that grants impersonation only; every
-command runs as `kbridge:<email>`, so bind those users to roles in the cluster
-(see [security.md](security.md#binding-kbridge-users-in-the-cluster)).
+creates a ServiceAccount + ClusterRole that grants impersonation and binding
+management; every command runs as `kbridge:<email>`, and the agent binds those
+users as the policy's `clusterAccess` says, up to `accessCeiling` (see
+[security.md](security.md#binding-kbridge-users-in-the-cluster)).
 
 The agent never hands its ServiceAccount token to kubectl. The chart turns off
 the default token mount and projects the token, CA and namespace read-only
@@ -125,6 +126,9 @@ the pod's `fsGroup: 10001`, the agent user). Agent chart values for this:
 | Value | Default | Purpose |
 |---|---|---|
 | `protectedNamespaces` | `[]` | Namespaces users can never touch through kbridge. The release namespace is always added; add the control plane's namespace when it runs in the same cluster. |
+| `accessCeiling.clusterRoles` | `[view, edit]` | ClusterRoles the agent may bind for kbridge users. Must not be empty. |
+| `accessCeiling.namespaces` | `[]` | Namespaces the agent may write RoleBindings in; empty means any. Must not include the release namespace. |
+| `accessCeiling.clusterWide` | `false` | Allow ClusterRoleBindings (`clusterWide: true` in policy). |
 | `serviceAccountToken.expirationSeconds` | `600` | Lifetime of the projected token; the kubelet rotates it. |
 | `networkPolicy.enabled` | `false` | Render an egress NetworkPolicy (recommended). Requires `apiServerCIDRs` and `controlPlaneTo`; rendering fails without them. |
 | `networkPolicy.apiServerCIDRs` | `[]` | API server endpoint IPs, e.g. `kubectl get endpoints kubernetes -o jsonpath='{.subsets[*].addresses[*].ip}'` as `/32`s. |

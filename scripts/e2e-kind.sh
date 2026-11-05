@@ -140,7 +140,8 @@ rbac:
 EOF
 
     # Create RBAC policy: the e2e admin gets full access; the developer may do
-    # anything in e2e-dev; everyone else is a viewer.
+    # anything in e2e-dev; everyone else is a viewer. clusterAccess is what the
+    # agent binds in the cluster for each role's kbridge:<email> users.
     cat > "${CONFIG_DIR}/rbac.yaml" <<EOF
 default: viewer
 roles:
@@ -150,18 +151,30 @@ roles:
         namespaces: ["*"]
         resources: ["*"]
         verbs: ["*"]
+    clusterAccess:
+      - clusters: ["*"]
+        clusterRole: cluster-admin
+        clusterWide: true
   - name: viewer
     rules:
       - clusters: ["*"]
         namespaces: ["*"]
         resources: ["*"]
         verbs: ["get", "list", "watch", "describe", "logs"]
+    clusterAccess:
+      - clusters: ["*"]
+        clusterRole: view
+        clusterWide: true
   - name: developer
     rules:
       - clusters: ["*"]
         namespaces: ["e2e-dev"]
         resources: ["*"]
         verbs: ["*"]
+    clusterAccess:
+      - clusters: ["*"]
+        clusterRole: edit
+        namespaces: ["e2e-dev"]
 bindings:
   - subject: admin@e2e.test
     roles: ["admin"]
@@ -237,7 +250,8 @@ start_agent() {
     helm upgrade --install kbridge-agent charts/agent -n kbridge --create-namespace --wait --timeout 120s \
         --set image.repository=kbridge-agent --set image.tag=e2e --set image.pullPolicy=Never \
         --set controlPlane.url="$(kind_gateway):${GRPC_PORT}" --set controlPlane.token=dev-token \
-        --set cluster.name="${CLUSTER_NAME}"
+        --set cluster.name="${CLUSTER_NAME}" \
+        --set 'accessCeiling.clusterRoles={view,edit,cluster-admin}' --set accessCeiling.clusterWide=true
 
     # Wait for agent to register
     log_info "Waiting for agent to register..."
@@ -255,18 +269,28 @@ start_agent() {
     exit 1
 }
 
-# The agent impersonates kbridge:<email>, so those users need cluster RBAC.
-# shortcut: bound by hand until the agent syncs RBAC from the policy (Part C).
-bind_e2e_users() {
-    log_info "Binding e2e users in cluster RBAC..."
+# Namespaces the policy and tests refer to; the agent binds users from policy.
+create_e2e_namespaces() {
+    log_info "Creating e2e namespaces..."
     kubectl create namespace e2e-dev
     kubectl create namespace e2e-nobind
     kubectl label namespace e2e-dev pod-security.kubernetes.io/enforce=baseline
-    kubectl create clusterrolebinding e2e-admin --clusterrole=cluster-admin --user=kbridge:admin@e2e.test
-    kubectl create rolebinding e2e-developer -n e2e-dev --clusterrole=edit --user=kbridge:developer@e2e.test
-    kubectl create clusterrolebinding e2e-viewers --clusterrole=view \
-        --user=kbridge:viewer@e2e.test --user=kbridge:edge-verbs@e2e.test \
-        --user=kbridge:edge-reload@e2e.test --user=kbridge:edge-audit@e2e.test
+}
+
+# Tests must not race the agent's first reconcile.
+wait_rbac_sync() {
+    log_info "Waiting for the agent to sync cluster RBAC..."
+    for i in {1..60}; do
+        if "${BIN_DIR}/kb" admin rbac status 2>/dev/null | grep "^${CLUSTER_NAME} " | grep -q "in sync"; then
+            log_info "Cluster RBAC in sync."
+            return 0
+        fi
+        sleep 1
+    done
+    log_error "Cluster RBAC did not sync:"
+    "${BIN_DIR}/kb" admin rbac status || true
+    kubectl -n kbridge logs deploy/kbridge-agent-agent --tail=50
+    exit 1
 }
 
 stop_agent() {
@@ -339,9 +363,10 @@ main() {
             build_binaries
             start_control_plane
             login_control_plane
+            create_e2e_namespaces
             start_agent
-            bind_e2e_users
             setup_cli_config
+            wait_rbac_sync
             log_info "E2E environment is ready!"
             log_info "Control plane: http://localhost:${CONTROL_PLANE_PORT}"
             log_info "Cluster: ${CLUSTER_NAME}"
@@ -371,9 +396,10 @@ main() {
             build_binaries
             start_control_plane
             login_control_plane
+            create_e2e_namespaces
             start_agent
-            bind_e2e_users
             setup_cli_config
+            wait_rbac_sync
             run_tests
             # cleanup happens via trap
             ;;

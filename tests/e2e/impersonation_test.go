@@ -19,13 +19,14 @@ const (
 	devNamespace   = "e2e-dev"
 )
 
-// TestImpersonation runs kb as the developer, whom the harness binds to `edit`
-// in e2e-dev only, and checks the cluster sees and authorizes that user.
+// TestImpersonation runs kb as the developer, whom the agent binds (from the
+// harness policy) to `view` cluster-wide and `edit` in e2e-dev, and checks the
+// cluster sees and authorizes that user.
 func TestImpersonation(t *testing.T) {
 	useDeveloperConfig(t)
 	ensureDevPod(t, "imp-web")
 	t.Run("reads where bound", testImpersonationReadsBound)
-	t.Run("forbidden where not bound", testImpersonationForbiddenUnbound)
+	t.Run("forbidden beyond the bound role", testImpersonationForbiddenUnbound)
 	t.Run("exec", testImpersonationExec)
 	t.Run("port-forward", testImpersonationPortForward)
 	t.Run("edit", testImpersonationEdit)
@@ -38,6 +39,7 @@ func TestImpersonation(t *testing.T) {
 func useDeveloperConfig(t *testing.T) {
 	t.Helper()
 	ensureUser(t, developerEmail)
+	waitDeveloperBound(t)
 	token := loginAs(t, developerEmail, edgePassword)
 	home := t.TempDir()
 	cfg := fmt.Sprintf("control_plane_url: %q\ncurrent_cluster: %q\ntoken: %q\n", *controlPlaneURL, *clusterName, token)
@@ -71,9 +73,10 @@ func testImpersonationReadsBound(t *testing.T) {
 	}
 }
 
+// kbridge policy lets the developer read secrets here; `view` does not.
 func testImpersonationForbiddenUnbound(t *testing.T) {
-	stdout, stderr, code := runCLI(t, "get", "pods", "-n", "e2e-nobind")
-	assertRefused(t, stdout+stderr, code, fmt.Sprintf(`User %q cannot list resource "pods"`, developerUser))
+	stdout, stderr, code := runCLI(t, "get", "secrets", "-n", "e2e-nobind")
+	assertRefused(t, stdout+stderr, code, fmt.Sprintf(`User %q cannot list resource "secrets"`, developerUser))
 }
 
 func testImpersonationExec(t *testing.T) {

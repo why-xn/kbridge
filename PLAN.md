@@ -372,3 +372,16 @@ a length-prefixed frame protocol with OPEN/DATA/CLOSE/CONN_ERROR per connection
 bounds concurrent sessions (429 when exceeded). Verified by unit tests (pfframe
 codec, port-spec parser, bridge, session manager, agent fan-out) and e2e
 (`TestPortForwardHTTP`, `TestPortForwardMultiConn`, negative cases).
+
+## Phase 10: Credential-less kubectl, impersonation, RBAC sync — DONE (except signed commands and delegation lineage)
+
+The agent's kubectl holds no credential and goes through a loopback proxy that
+refuses the agent's own and protected namespaces; every command runs as
+`kbridge:<email>`; the agent keeps RoleBindings in step with policy
+`clusterAccess`, up to the chart's `accessCeiling`, and reports to
+`kb admin rbac status`. Verified by unit tests and e2e (`TestWindow*`,
+`TestImpersonation`, `TestRBACSync_*`).
+
+**Not done:**
+- Signed commands and delegation lineage.
+- Run kubectl as a second uid, so it cannot read the agent's token file.

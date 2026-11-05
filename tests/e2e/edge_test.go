@@ -310,11 +310,13 @@ func TestRBACPolicyHotReload(t *testing.T) {
 	viewer := loginAs(t, email, edgePassword)
 	writeCmd := []string{"delete", "pods", "edge-nonexistent", "-n", "default"}
 
-	// Restore the original policy and wait for the agent to lose write access.
+	// Restore the original policy and wait for the user to lose write access
+	// and for the cluster's bindings to match the restored policy.
 	defer func() {
 		os.WriteFile(*rbacPolicyPath, original, 0o644)
 		signalControlPlaneReload()
 		pollExec(t, viewer, writeCmd, func(c int) bool { return c == http.StatusForbidden }, 8*time.Second)
+		waitInSync(t)
 	}()
 
 	// Precondition: writes denied under the default viewer role.

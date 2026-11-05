@@ -118,6 +118,52 @@ agent tokens become invalid and must be re-issued.
 
 ---
 
+## RBAC sync
+
+Each agent keeps its cluster's RoleBindings for `kbridge:<email>` users in
+step with the policy's `clusterAccess` (see
+[rbac.md](rbac.md#cluster-bindings-clusteraccess)). It reconciles when it
+starts, when a heartbeat (every 30s) brings a new policy version, about 2s
+after any `kbridge`-labelled binding changes in the cluster, and every
+`sync.interval` (default `60s`, env `KBRIDGE_SYNC_INTERVAL`). A policy edit or
+a new, disabled or deleted user therefore reaches each cluster within about
+30s.
+
+```bash
+kb admin rbac status
+# CLUSTER   VERSION   STATE    ERRORS  REPORTED
+# prod      426e2298  in sync  0       2026-11-05T20:09:44Z
+# staging   1c9b07aa  drift    1       2026-11-05T20:09:41Z
+#     binding kbridge-developer-admin: POST /apis/rbac.authorization.k8s.io/v1/namespaces/team-a/rolebindings: 403 ...
+```
+
+| State | Meaning |
+|-------|---------|
+| `in sync` | The agent's last report is for the current policy and every binding applied |
+| `drift` | The last report is for an older policy version (wait one heartbeat), or some bindings could not be applied; the errors say which |
+| `unreported` | The agent has not reported yet, or is older than this feature |
+
+Someone editing a managed binding by hand is not drift for long: the agent
+puts it back within a few seconds. Common errors:
+
+- `403` on create or update: the binding needs more than the agent chart's
+  `accessCeiling` allows. Either raise the ceiling (`accessCeiling.clusterRoles`,
+  `accessCeiling.namespaces`, `accessCeiling.clusterWide`) with
+  `helm upgrade`, or change the policy.
+- `namespace "<ns>" is reserved for the kbridge agent`: policy names the
+  agent's own namespace or a `protectedNamespaces` entry. Remove it from the
+  policy; the agent never writes there.
+- `exists and is not managed by kbridge`: a binding with the same name was
+  made by hand. Delete it and the agent creates its own.
+- `name is not a valid kubernetes name`: the role or ClusterRole name cannot
+  form a binding name (capitals, `_`, `:`). Rename the role.
+
+The ceiling is the agent chart's `accessCeiling`; see
+[security.md](security.md#binding-kbridge-users-in-the-cluster) for the
+permissions it renders.
+
+---
+
 ## Troubleshooting Runbook
 
 | Symptom | Check | Resolution |

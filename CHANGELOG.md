@@ -7,6 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **The agent keeps cluster RBAC in step with kbridge policy.** A role's new
+  `clusterAccess` list names the ClusterRole its users get, in which
+  namespaces or cluster-wide. Each agent creates the `kbridge-<role>-<clusterRole>`
+  bindings for the role's `kbridge:<email>` users, labelled
+  `app.kubernetes.io/managed-by=kbridge`, puts them back within seconds when
+  edited by hand, and deletes them when policy or the user goes away. It never
+  writes in its own or a protected namespace and only binds `kbridge:` users.
+  See [docs/rbac.md](docs/rbac.md#cluster-bindings-clusteraccess).
+- **Agent chart `accessCeiling`** caps what the agent may bind: by default the
+  ClusterRoles `view` and `edit`, in any non-protected namespace, and no
+  ClusterRoleBindings. Kubernetes refuses anything above it.
+- **`kb admin rbac status`** shows, per cluster, whether its bindings match the
+  current policy (`in sync`, `drift`, `unreported`) and why not. See
+  [docs/operations.md](docs/operations.md#rbac-sync).
+
+**Upgrading:** add `clusterAccess` to your policy roles and set
+`accessCeiling` to cover it (for example `clusterRoles: [view, edit, admin]`
+or `clusterWide: true`), then upgrade the agents. Run `kb admin rbac status`
+until every cluster is `in sync`. Then delete any `kbridge:` bindings you
+made by hand (the agent ignores bindings without its label, so they keep
+granting access until removed), e.g.
+`kubectl get rolebindings,clusterrolebindings -A -o wide | grep kbridge:`.
+
 ### Security
 
 - **kubectl on the agent no longer holds the agent's credentials.** Before,
@@ -48,19 +73,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   agent impersonates `kbridge:<email>` on every request to the API server, so
   Kubernetes RBAC bound to that user now decides what a command may do, after
   the kbridge policy allows it. Admission (PodSecurity and the like) applies as
-  that user too. The agent chart's ClusterRole grants impersonation only; the
-  `rbac.rules` value is removed. Each request carries the extra
+  that user too. The agent chart's ClusterRole grants impersonation and the
+  binding sync above; the `rbac.rules` value is removed. Each request carries the extra
   `kbridge-request-id`, visible in the Kubernetes audit log under
   `impersonatedUser`. See
   [docs/security.md](docs/security.md#binding-kbridge-users-in-the-cluster).
 
 **Upgrading:** upgrade the control plane and all agents together. A new
 agent refuses commands from an old control plane (no identity), and a new
-control plane answers `503` for an old agent. Before users run commands, bind
-each `kbridge:<email>` user in each cluster by hand, for example
-`kubectl create rolebinding dev-alice -n team-a --clusterrole=edit --user=kbridge:alice@corp.com`;
-without a binding every request is `Forbidden`. A later release syncs these
-bindings from the kbridge policy.
+control plane answers `503` for an old agent. Without a binding for its
+`kbridge:<email>` user every request is `Forbidden`; the agent creates those
+bindings from policy `clusterAccess` (see [Added](#added)).
 
 ## [0.2.2-alpha.1] - 2026-10-21
 

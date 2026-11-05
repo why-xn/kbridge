@@ -245,11 +245,13 @@ namespace too: `--set 'protectedNamespaces={kbridge-system}'`.
 
 For a private CA add `--set controlPlane.tls.caCert="$(cat ca.crt)"`.
 
-The agent's ClusterRole grants impersonation only: every command runs as
-`kbridge:<email>`, and Kubernetes RBAC bound to that user decides what it may
-do. Bind your users in this cluster before they use it, for example
-`kubectl create rolebinding dev-alice -n team-a --clusterrole=edit --user=kbridge:alice@corp.com`
-(see [security.md](security.md#binding-kbridge-users-in-the-cluster)).
+Every command runs as `kbridge:<email>`, and Kubernetes RBAC bound to that
+user decides what it may do. The agent creates those bindings from the
+policy's `clusterAccess`, up to the chart's `accessCeiling` (default: `view`
+and `edit`, no ClusterRoleBindings). Raise the ceiling if your policy needs
+more, for example `--set 'accessCeiling.clusterRoles={view,edit,admin}'`, and
+check `kb admin rbac status` after install (see
+[security.md](security.md#binding-kbridge-users-in-the-cluster)).
 
 ## 8. Verify the Deployment
 
