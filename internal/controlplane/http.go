@@ -11,6 +11,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/why-xn/kbridge/internal/auth"
+	"github.com/why-xn/kbridge/internal/kubeargs"
 )
 
 // ClusterResponse represents a cluster in API responses.
@@ -285,6 +286,11 @@ func (s *HTTPServer) handleExecCommand(c *gin.Context) {
 // It writes the appropriate error response and returns false when the request
 // must be rejected. When no authorizer is configured it allows the request.
 func (s *HTTPServer) authorizeExec(c *gin.Context, clusterName string, req ExecRequest) bool {
+	if err := kubeargs.Check(req.Command); err != nil {
+		s.recordExecAudit(c, clusterName, req, AuditStatusDenied, nil, nil, err.Error())
+		c.JSON(http.StatusForbidden, gin.H{"error": err.Error()})
+		return false
+	}
 	if s.policy == nil {
 		return true
 	}

@@ -1,9 +1,11 @@
 package controlplane
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"net/http"
+	"net/http/httptest"
 	"testing"
 	"time"
 
@@ -128,5 +130,71 @@ roles:
 	}
 	if logs[0].Status != AuditStatusDenied || logs[0].UserEmail != "dev@x.com" || logs[0].Command != "delete pods x" {
 		t.Errorf("unexpected denied audit entry: %+v", logs[0])
+	}
+}
+
+func TestAuthorizeExec_RefusesUnsafeArgs(t *testing.T) {
+	const want = "flag --server is not allowed: kbridge manages the cluster connection"
+	denyAll := `
+default: viewer
+roles:
+  - name: viewer
+    rules:
+      - clusters: ["*"]
+        namespaces: ["*"]
+        resources: ["*"]
+        verbs: ["*"]
+`
+	tests := []struct {
+		name, path string
+		policy     bool
+	}{
+		{"exec with policy", "exec", true},
+		{"exec nil policy", "exec", false},
+		{"stream with policy", "stream", true},
+		{"stream nil policy", "stream", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			store := newTestStore(t)
+			jm := auth.NewJWTManager("test-secret-at-least-32-chars!!", time.Hour)
+			var eng *PolicyEngine
+			if tt.policy {
+				eng = &PolicyEngine{}
+				eng.current.Store(mustParse(t, denyAll))
+			}
+			agents := NewAgentStore()
+			agents.Register(&AgentInfo{ID: "a1", ClusterName: "prod"})
+			queue := NewCommandQueue()
+			srv := NewHTTPServer(agents, queue, NewAuthHandlers(store, jm, time.Hour),
+				NewAdminHandlers(store, testPepper), eng, NewAuditRecorder(store), NewSessionManager(10), jm)
+			user := &User{Email: "dev@x.com", Name: "Dev", PasswordHash: "h", IsActive: true}
+			if err := store.CreateUser(context.Background(), user); err != nil {
+				t.Fatal(err)
+			}
+			token, _ := jm.GenerateAccessToken(&auth.UserClaims{UserID: user.ID, Email: user.Email})
+			body, _ := json.Marshal(ExecRequest{Command: []string{"--server=x", "get", "pods"}})
+			req, _ := http.NewRequest("POST", "/api/v1/clusters/prod/"+tt.path, bytes.NewReader(body))
+			req.Header.Set("Content-Type", "application/json")
+			req.Header.Set("Authorization", "Bearer "+token)
+			w := httptest.NewRecorder()
+			srv.Handler().ServeHTTP(w, req)
+
+			if w.Code != http.StatusForbidden {
+				t.Fatalf("want 403, got %d: %s", w.Code, w.Body.String())
+			}
+			var got map[string]string
+			json.Unmarshal(w.Body.Bytes(), &got)
+			if got["error"] != want {
+				t.Errorf("error = %q, want %q", got["error"], want)
+			}
+			logs, total, _ := store.ListAuditLogs(context.Background(), AuditLogFilter{})
+			if total != 1 || logs[0].Status != AuditStatusDenied {
+				t.Errorf("want 1 denied audit row, got %d: %+v", total, logs)
+			}
+			if n := len(queue.GetPendingForAgent("a1")); n != 0 {
+				t.Errorf("want nothing enqueued, got %d", n)
+			}
+		})
 	}
 }
