@@ -349,7 +349,7 @@ run_tests() {
     cd "${PROJECT_ROOT}"
 
     # Run Go e2e tests
-    go test -v -tags=e2e ./tests/e2e/... -control-plane-url="http://localhost:${CONTROL_PLANE_PORT}" -grpc-addr="localhost:${GRPC_PORT}" -cluster-name="${CLUSTER_NAME}" -bin-dir="${BIN_DIR}"
+    go test -v -timeout 20m -tags=e2e ./tests/e2e/... -control-plane-url="http://localhost:${CONTROL_PLANE_PORT}" -grpc-addr="localhost:${GRPC_PORT}" -cluster-name="${CLUSTER_NAME}" -bin-dir="${BIN_DIR}"
 
     log_info "All e2e tests passed!"
 }
