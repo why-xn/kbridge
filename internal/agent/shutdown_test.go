@@ -71,8 +71,9 @@ func TestAgent_ShutdownReportsInFlightCommand(t *testing.T) {
 	a := New(&Config{
 		ControlPlane: ControlPlaneConfig{URL: addr, Token: "token"},
 		Cluster:      ClusterConfig{Name: "test"},
+		Kubernetes:   kubeFixture(t),
 	})
-	a.executor = &KubectlExecutor{kubectlPath: "sleep"} // "kubectl 30" -> sleep 30
+	a.executor = windowedExecutor(t, "sleep") // "kubectl 30" -> sleep 30; Run swaps in the agent's window
 
 	ctx, cancel := context.WithCancel(context.Background())
 	runDone := make(chan error, 1)

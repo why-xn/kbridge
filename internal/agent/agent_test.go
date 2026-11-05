@@ -2,9 +2,12 @@ package agent
 
 import (
 	"context"
+	"encoding/pem"
 	"net"
 	"os"
 	"path/filepath"
+	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -74,6 +77,21 @@ func startMockServer(t *testing.T, svc *mockAgentService) (string, func()) {
 	return lis.Addr().String(), func() {
 		srv.GracefulStop()
 	}
+}
+
+// kubeFixture points the agent's window at a TLS test upstream.
+func kubeFixture(t *testing.T) KubernetesConfig {
+	t.Helper()
+	srv := newEchoUpstream(t)
+	dir := t.TempDir()
+	ca := filepath.Join(dir, "ca.crt")
+	caPEM := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: srv.Certificate().Raw})
+	if err := os.WriteFile(ca, caPEM, 0o644); err != nil {
+		t.Fatalf("writing ca: %v", err)
+	}
+	token := filepath.Join(dir, "token")
+	writeToken(t, token, "agent-token")
+	return KubernetesConfig{Server: srv.URL, CAFile: ca, TokenFile: token}
 }
 
 func TestNew(t *testing.T) {
@@ -237,6 +255,7 @@ func TestAgent_Run_StopSignal(t *testing.T) {
 	cfg := &Config{
 		ControlPlane: ControlPlaneConfig{URL: addr, Token: "token"},
 		Cluster: ClusterConfig{Name: "test"},
+		Kubernetes: kubeFixture(t),
 	}
 
 	a := New(cfg)
@@ -273,6 +292,7 @@ func TestAgent_Run_ContextCancel(t *testing.T) {
 	cfg := &Config{
 		ControlPlane: ControlPlaneConfig{URL: addr, Token: "token"},
 		Cluster: ClusterConfig{Name: "test"},
+		Kubernetes: kubeFixture(t),
 	}
 
 	a := New(cfg)
@@ -349,6 +369,7 @@ func TestAgent_Run_ConnectionError(t *testing.T) {
 	cfg := &Config{
 		ControlPlane: ControlPlaneConfig{URL: "localhost:59999", Token: "token"},
 		Cluster: ClusterConfig{Name: "test"},
+		Kubernetes: kubeFixture(t),
 	}
 
 	a := New(cfg)
@@ -369,6 +390,7 @@ func TestAgent_Run_RegistrationError(t *testing.T) {
 	cfg := &Config{
 		ControlPlane: ControlPlaneConfig{URL: addr, Token: "bad-token"},
 		Cluster: ClusterConfig{Name: "test"},
+		Kubernetes: kubeFixture(t),
 	}
 
 	a := New(cfg)
@@ -389,5 +411,64 @@ func TestTouchHealthFile(t *testing.T) {
 	a.touchHealthFile()
 	if _, err := os.Stat(path); err != nil {
 		t.Fatalf("health file not written: %v", err)
+	}
+}
+
+// Without a usable cluster connection the agent must not start, rather than
+// let kubectl fall back to ambient credentials.
+func TestAgent_Run_WindowError(t *testing.T) {
+	a := New(&Config{
+		ControlPlane: ControlPlaneConfig{URL: "localhost:59999", Token: "token"},
+		Cluster:      ClusterConfig{Name: "test"},
+		Kubernetes:   KubernetesConfig{Server: "https://127.0.0.1:1", CAFile: filepath.Join(t.TempDir(), "missing")},
+	})
+	err := a.Run(context.Background())
+	if err == nil || !strings.HasPrefix(err.Error(), "starting window: ") {
+		t.Fatalf("err = %v, want a starting window error", err)
+	}
+}
+
+func TestWindowProtected(t *testing.T) {
+	saDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(saDir, "namespace"), []byte("kbridge\n"), 0o644); err != nil {
+		t.Fatalf("writing namespace: %v", err)
+	}
+	tests := []struct {
+		name      string
+		protected []string
+		tokenFile string
+		want      []string
+	}{
+		{"configured plus own", []string{"ops", ""}, filepath.Join(saDir, "token"), []string{"ops", "kbridge"}},
+		{"no namespace file", []string{"ops"}, filepath.Join(t.TempDir(), "token"), []string{"ops"}},
+		{"nothing", nil, "", nil},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := &Config{ProtectedNamespaces: tt.protected, Kubernetes: KubernetesConfig{TokenFile: tt.tokenFile}}
+			if got := windowProtected(cfg); !slices.Equal(got, tt.want) {
+				t.Errorf("windowProtected = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+// Shutdown removes the window CA dir and a token file written from a kubeconfig.
+func TestAgent_CloseWindowCleansUp(t *testing.T) {
+	a := New(&Config{Kubernetes: kubeFixture(t)})
+	if err := a.openWindow(); err != nil {
+		t.Fatalf("openWindow: %v", err)
+	}
+	tmp, err := os.CreateTemp("", "kbridge-token-*")
+	if err != nil {
+		t.Fatalf("creating temp token: %v", err)
+	}
+	tmp.Close()
+	a.tempToken = tmp.Name()
+	a.closeWindow()
+	for _, p := range []string{a.windowDir, a.tempToken} {
+		if _, err := os.Stat(p); !os.IsNotExist(err) {
+			t.Errorf("%s still exists after closeWindow", p)
+		}
 	}
 }

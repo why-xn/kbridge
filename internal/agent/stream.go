@@ -120,13 +120,15 @@ func (a *Agent) runPortForwardSession(ctx context.Context, mu *sync.Mutex, strea
 		defer mu.Unlock()
 		_ = stream.Send(m)
 	}
-	m, cmd, err := a.executor.startKubectlPortForward(ctx, start.GetPod(), start.GetNamespace(), start.GetPorts())
+	id := Identity{RequestID: sid}
+	m, cmd, release, err := a.executor.startKubectlPortForward(ctx, id, start.GetPod(), start.GetNamespace(), start.GetPorts())
 	if err != nil {
 		send(&agentpb.AgentStreamMessage{Msg: &agentpb.AgentStreamMessage_PfSessionError{
 			PfSessionError: &agentpb.PfSessionError{SessionId: sid, Error: err.Error()},
 		}})
 		return
 	}
+	defer release() // runs last: after pf.shutdown and once kubectl has exited
 	pf := newPfSession(sid, m, send)
 	sessions.setPf(sid, pf)
 	defer pf.shutdown()
@@ -139,6 +141,7 @@ func (a *Agent) runPortForwardSession(ctx context.Context, mu *sync.Mutex, strea
 	select {
 	case <-ctx.Done():
 		_ = cmd.Process.Kill()
+		<-waitCh
 	case <-waitCh:
 	}
 }
@@ -261,7 +264,7 @@ func (a *Agent) runStreamSession(ctx context.Context, mu *sync.Mutex, stream age
 		defer mu.Unlock()
 		_ = stream.Send(m)
 	}
-	code, err := a.executor.ExecuteInteractiveNoTTY(ctx, start.GetCommand(), start.GetNamespace(), stdin,
+	code, err := a.executor.ExecuteInteractiveNoTTY(ctx, Identity{RequestID: sid}, start.GetCommand(), start.GetNamespace(), stdin,
 		func(stdout bool, data []byte) {
 			send(&agentpb.AgentStreamMessage{Msg: &agentpb.AgentStreamMessage_Output{
 				Output: &agentpb.StreamOutput{SessionId: sid, Type: outputTypeFor(stdout), Data: data},
@@ -284,7 +287,7 @@ func (a *Agent) runInteractiveSession(ctx context.Context, mu *sync.Mutex, strea
 		defer mu.Unlock()
 		_ = stream.Send(m)
 	}
-	code, err := a.executor.ExecuteInteractive(ctx, start.GetCommand(), start.GetNamespace(),
+	code, err := a.executor.ExecuteInteractive(ctx, Identity{RequestID: sid}, start.GetCommand(), start.GetNamespace(),
 		uint16(start.GetRows()), uint16(start.GetCols()), stdin, resize,
 		func(data []byte) {
 			send(&agentpb.AgentStreamMessage{Msg: &agentpb.AgentStreamMessage_Output{

@@ -149,8 +149,9 @@ func (s *pfSession) shutdown() {
 
 // startKubectlPortForward spawns kubectl, parses the Forwarding lines into a
 // remote->local map, and returns it once all ports are mapped. The caller emits
-// PfReady. On early kubectl failure it returns an error (-> PfSessionError).
-func (e *KubectlExecutor) startKubectlPortForward(ctx context.Context, pod, namespace string, ports []uint32) (map[uint16]uint16, *exec.Cmd, error) {
+// PfReady, waits for cmd, then calls release. On early kubectl failure it
+// returns an error (-> PfSessionError).
+func (e *KubectlExecutor) startKubectlPortForward(ctx context.Context, id Identity, pod, namespace string, ports []uint32) (map[uint16]uint16, *exec.Cmd, func(), error) {
 	args := []string{"port-forward"}
 	if namespace != "" {
 		args = append(args, "-n", namespace)
@@ -159,15 +160,29 @@ func (e *KubectlExecutor) startKubectlPortForward(ctx context.Context, pod, name
 	for _, p := range ports {
 		args = append(args, fmt.Sprintf(":%d", p))
 	}
-	cmd := e.command(ctx, args...)
+	cmd, release, err := e.command(ctx, id, args...)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	m, err := establishForward(ctx, cmd, len(ports))
+	if err != nil {
+		release()
+		return nil, nil, nil, err
+	}
+	return m, cmd, release, nil
+}
+
+// establishForward starts cmd and waits for all n ports to be mapped. On
+// failure the process has exited by the time it returns.
+func establishForward(ctx context.Context, cmd *exec.Cmd, n int) (map[uint16]uint16, error) {
 	cmd.WaitDelay = 500 * time.Millisecond
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
-		return nil, nil, fmt.Errorf("stdout pipe: %w", err)
+		return nil, fmt.Errorf("stdout pipe: %w", err)
 	}
 	cmd.Stderr = io.Discard
 	if err := cmd.Start(); err != nil {
-		return nil, nil, fmt.Errorf("starting kubectl port-forward: %w", err)
+		return nil, fmt.Errorf("starting kubectl port-forward: %w", err)
 	}
 
 	type scanResult struct {
@@ -178,12 +193,12 @@ func (e *KubectlExecutor) startKubectlPortForward(ctx context.Context, pod, name
 	go func() {
 		m := make(map[uint16]uint16)
 		scanner := bufio.NewScanner(stdout)
-		for scanner.Scan() && len(m) < len(ports) {
+		for scanner.Scan() && len(m) < n {
 			if remote, local, ok := parseForwardLine(scanner.Text()); ok {
 				m[remote] = local
 			}
 		}
-		if len(m) < len(ports) {
+		if len(m) < n {
 			scanDone <- scanResult{err: fmt.Errorf("kubectl port-forward did not establish all ports")}
 			return
 		}
@@ -195,16 +210,16 @@ func (e *KubectlExecutor) startKubectlPortForward(ctx context.Context, pod, name
 		if res.err != nil {
 			_ = cmd.Process.Kill()
 			_ = cmd.Wait()
-			return nil, nil, res.err
+			return nil, res.err
 		}
-		return res.m, cmd, nil
+		return res.m, nil
 	case <-time.After(15 * time.Second):
 		_ = cmd.Process.Kill()
 		_ = cmd.Wait()
-		return nil, nil, fmt.Errorf("kubectl port-forward establishment timed out")
+		return nil, fmt.Errorf("kubectl port-forward establishment timed out")
 	case <-ctx.Done():
 		_ = cmd.Process.Kill()
 		_ = cmd.Wait()
-		return nil, nil, fmt.Errorf("kubectl port-forward canceled during establishment")
+		return nil, fmt.Errorf("kubectl port-forward canceled during establishment")
 	}
 }

@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -21,6 +23,9 @@ type Agent struct {
 	conn      *grpc.ClientConn
 	client    agentpb.AgentServiceClient
 	executor  *KubectlExecutor
+	window    *Window
+	windowDir string // holds the window CA; removed on shutdown
+	tempToken string // token file LoadUpstream wrote from a kubeconfig; removed on shutdown
 	agentID   string
 	mu        sync.RWMutex
 	stopCh    chan struct{}
@@ -31,7 +36,7 @@ type Agent struct {
 func New(cfg *Config) *Agent {
 	return &Agent{
 		config:    cfg,
-		executor:  NewKubectlExecutor(),
+		executor:  NewKubectlExecutor(nil), // Run opens the window
 		stopCh:    make(chan struct{}),
 		stoppedCh: make(chan struct{}),
 	}
@@ -40,6 +45,12 @@ func New(cfg *Config) *Agent {
 // Run starts the agent, connecting to control plane and maintaining the connection.
 func (a *Agent) Run(ctx context.Context) error {
 	log.Printf("Agent starting for cluster: %s", a.config.Cluster.Name)
+	defer close(a.stoppedCh)
+
+	defer a.closeWindow()
+	if err := a.openWindow(); err != nil {
+		return fmt.Errorf("starting window: %w", err)
+	}
 
 	if err := a.connect(ctx); err != nil {
 		return fmt.Errorf("connecting to control plane: %w", err)
@@ -70,8 +81,52 @@ func (a *Agent) Run(ctx context.Context) error {
 	// Let an in-flight command report its result before the connection closes,
 	// so its caller gets an answer instead of waiting for the command timeout.
 	<-pollDone
-	close(a.stoppedCh)
 	return nil
+}
+
+// openWindow builds the window from config and hands it to the executor;
+// kubectl never runs with the agent's own credentials.
+func (a *Agent) openWindow() error {
+	up, err := LoadUpstream(a.config.Kubernetes)
+	if err != nil {
+		return err
+	}
+	if a.config.Kubernetes.Kubeconfig != "" && strings.HasPrefix(filepath.Base(up.TokenFile), "kbridge-token-") {
+		a.tempToken = up.TokenFile
+	}
+	if a.windowDir, err = os.MkdirTemp("", "kbridge-window-"); err != nil {
+		return fmt.Errorf("creating window dir: %w", err)
+	}
+	if a.window, err = NewWindow(up, windowProtected(a.config), a.windowDir); err != nil {
+		return err
+	}
+	a.executor.window = a.window
+	return nil
+}
+
+// closeWindow releases whatever openWindow managed to set up.
+func (a *Agent) closeWindow() {
+	if a.window != nil {
+		_ = a.window.Close()
+	}
+	if a.windowDir != "" {
+		_ = os.RemoveAll(a.windowDir)
+	}
+	if a.tempToken != "" {
+		_ = os.Remove(a.tempToken)
+	}
+}
+
+// windowProtected lists the namespaces the window refuses: the configured ones
+// and the agent's own.
+func windowProtected(cfg *Config) []string {
+	var out []string
+	for _, ns := range append(append([]string{}, cfg.ProtectedNamespaces...), ownNamespace(cfg.Kubernetes.TokenFile)) {
+		if ns != "" {
+			out = append(out, ns)
+		}
+	}
+	return out
 }
 
 // Stop signals the agent to stop and waits for it to finish.
@@ -332,7 +387,7 @@ func (a *Agent) executeAndSubmit(ctx context.Context, cmd *agentpb.CommandReques
 	}
 
 	// Execute the kubectl command with optional stdin
-	result := a.executor.ExecuteWithStdin(ctx, cmd.Command, cmd.Namespace, timeout, cmd.Stdin)
+	result := a.executor.ExecuteWithStdin(ctx, Identity{RequestID: cmd.GetRequestId()}, cmd.Command, cmd.Namespace, timeout, cmd.Stdin)
 
 	// Build result request
 	submitReq := &agentpb.SubmitCommandResultRequest{

@@ -3,7 +3,6 @@ package agent
 import (
 	"context"
 	"os/exec"
-	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -64,13 +63,13 @@ func TestExecuteInteractiveNoTTY_ExitsOnStdinEOF(t *testing.T) {
 	if _, err := exec.LookPath("cat"); err != nil {
 		t.Skip("cat not available")
 	}
-	e := &KubectlExecutor{kubectlPath: "cat"}
+	e := windowedExecutor(t, "cat")
 	stdin := make(chan []byte, 1)
 	var mu sync.Mutex
 	var out []byte
 	done := make(chan int, 1)
 	go func() {
-		code, _ := e.ExecuteInteractiveNoTTY(context.Background(), nil, "", stdin,
+		code, _ := e.ExecuteInteractiveNoTTY(context.Background(), testID, nil, "", stdin,
 			func(_ bool, b []byte) { mu.Lock(); out = append(out, b...); mu.Unlock() })
 		done <- code
 	}()
@@ -89,29 +88,5 @@ func TestExecuteInteractiveNoTTY_ExitsOnStdinEOF(t *testing.T) {
 	defer mu.Unlock()
 	if !strings.Contains(string(out), "piped") {
 		t.Fatalf("output %q missing piped input", out)
-	}
-}
-
-func TestKubectlExecutor_CommandDefaultNamespace(t *testing.T) {
-	tests := []struct {
-		name    string
-		podNS   string // POD_NAMESPACE in the agent's own environment
-		wantEnv bool   // command sets POD_NAMESPACE=default explicitly
-	}{
-		{"unset defaults to default", "", true},
-		{"operator value is kept", "team-a", false},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Setenv("POD_NAMESPACE", tt.podNS)
-			cmd := NewKubectlExecutor().command(context.Background(), "get", "pods")
-			got := slices.Contains(cmd.Env, "POD_NAMESPACE=default")
-			if got != tt.wantEnv {
-				t.Fatalf("POD_NAMESPACE=default in env = %v, want %v (env=%v)", got, tt.wantEnv, cmd.Env)
-			}
-			if !tt.wantEnv && cmd.Env != nil {
-				t.Fatalf("env should be inherited unchanged, got %v", cmd.Env)
-			}
-		})
 	}
 }

@@ -4,14 +4,17 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"sync"
 	"time"
 
 	"github.com/creack/pty"
+	"github.com/why-xn/kbridge/internal/kubeargs"
 )
 
 // CommandResult holds the result of a kubectl command execution.
@@ -22,40 +25,62 @@ type CommandResult struct {
 	Error    error
 }
 
-// KubectlExecutor executes kubectl commands on the local cluster.
+// KubectlExecutor executes kubectl commands on the local cluster, always
+// through the window: kubectl itself holds no cluster credentials.
 type KubectlExecutor struct {
 	kubectlPath string
+	window      *Window
 }
 
-// NewKubectlExecutor creates a new kubectl executor.
-func NewKubectlExecutor() *KubectlExecutor {
-	return &KubectlExecutor{
-		kubectlPath: "kubectl",
-	}
+// NewKubectlExecutor creates a kubectl executor that connects through w.
+func NewKubectlExecutor(w *Window) *KubectlExecutor {
+	return &KubectlExecutor{kubectlPath: "kubectl", window: w}
 }
 
-// defaultNamespace is what kubectl uses when the user passes no -n. In-cluster,
-// kubectl would otherwise fall back to the agent pod's own namespace.
-const defaultNamespace = "default"
-
-// command builds a kubectl invocation. POD_NAMESPACE is the in-cluster
-// namespace override kubectl honours; it is ignored when a kubeconfig is used,
-// and an operator-set value is kept.
-func (e *KubectlExecutor) command(ctx context.Context, args ...string) *exec.Cmd {
-	cmd := exec.CommandContext(ctx, e.kubectlPath, args...)
-	if os.Getenv("POD_NAMESPACE") == "" {
-		cmd.Env = append(os.Environ(), "POD_NAMESPACE="+defaultNamespace)
+// command registers a nonce for id, refuses unsafe args, and builds the kubectl
+// process with the window's leading args and a scrubbed environment. release
+// must be called when the process has exited.
+func (e *KubectlExecutor) command(ctx context.Context, id Identity, args ...string) (*exec.Cmd, func(), error) {
+	if err := kubeargs.Check(args); err != nil {
+		return nil, nil, err
 	}
-	return cmd
+	if e.window == nil {
+		return nil, nil, errors.New("kubectl window is not open")
+	}
+	home, err := scratchHome()
+	if err != nil {
+		return nil, nil, err
+	}
+	nonce, releaseNonce := e.window.Register(id)
+	cmd := exec.CommandContext(ctx, e.kubectlPath, append(e.window.KubectlArgs(nonce), args...)...)
+	// No ambient config reaches kubectl: an explicit --server and an empty
+	// kubeconfig make its default namespace "default", not the agent's.
+	cmd.Env = []string{"PATH=" + os.Getenv("PATH"), "HOME=" + home, "KUBECONFIG=" + filepath.Join(home, "empty")}
+	var once sync.Once
+	release := func() { once.Do(func() { releaseNonce(); _ = os.RemoveAll(home) }) }
+	return cmd, release, nil
+}
+
+// scratchHome creates a per-command HOME holding an empty kubeconfig.
+func scratchHome() (string, error) {
+	home, err := os.MkdirTemp("", "kbridge-kubectl-")
+	if err != nil {
+		return "", fmt.Errorf("creating kubectl home: %w", err)
+	}
+	if err := os.WriteFile(filepath.Join(home, "empty"), nil, 0o600); err != nil {
+		_ = os.RemoveAll(home)
+		return "", fmt.Errorf("creating empty kubeconfig: %w", err)
+	}
+	return home, nil
 }
 
 // Execute runs a kubectl command with the given arguments.
-func (e *KubectlExecutor) Execute(ctx context.Context, args []string, namespace string, timeout time.Duration) *CommandResult {
-	return e.ExecuteWithStdin(ctx, args, namespace, timeout, nil)
+func (e *KubectlExecutor) Execute(ctx context.Context, id Identity, args []string, namespace string, timeout time.Duration) *CommandResult {
+	return e.ExecuteWithStdin(ctx, id, args, namespace, timeout, nil)
 }
 
 // ExecuteWithStdin runs a kubectl command with optional stdin input.
-func (e *KubectlExecutor) ExecuteWithStdin(ctx context.Context, args []string, namespace string, timeout time.Duration, stdin []byte) *CommandResult {
+func (e *KubectlExecutor) ExecuteWithStdin(ctx context.Context, id Identity, args []string, namespace string, timeout time.Duration, stdin []byte) *CommandResult {
 	result := &CommandResult{}
 
 	// Build command arguments
@@ -72,7 +97,11 @@ func (e *KubectlExecutor) ExecuteWithStdin(ctx context.Context, args []string, n
 		defer cancel()
 	}
 
-	cmd := e.command(ctx, cmdArgs...)
+	cmd, release, err := e.command(ctx, id, cmdArgs...)
+	if err != nil {
+		return &CommandResult{ExitCode: 1, Error: err}
+	}
+	defer release()
 
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
@@ -84,7 +113,7 @@ func (e *KubectlExecutor) ExecuteWithStdin(ctx context.Context, args []string, n
 	}
 
 	// Run the command
-	err := cmd.Run()
+	err = cmd.Run()
 
 	result.Stdout = stdout.Bytes()
 	result.Stderr = stderr.Bytes()
@@ -112,12 +141,16 @@ const streamDrainGrace = 500 * time.Millisecond
 // output as it is produced. Cancelling ctx kills the process.
 // onChunk may be called concurrently from the stdout and stderr readers;
 // callers must synchronize access to any shared state touched inside onChunk.
-func (e *KubectlExecutor) ExecuteStream(ctx context.Context, args []string, namespace string, onChunk func(stdout bool, data []byte)) (int, error) {
+func (e *KubectlExecutor) ExecuteStream(ctx context.Context, id Identity, args []string, namespace string, onChunk func(stdout bool, data []byte)) (int, error) {
 	cmdArgs := args
 	if namespace != "" {
 		cmdArgs = append([]string{"-n", namespace}, args...)
 	}
-	cmd := e.command(ctx, cmdArgs...)
+	cmd, release, err := e.command(ctx, id, cmdArgs...)
+	if err != nil {
+		return 1, err
+	}
+	defer release()
 	// WaitDelay bounds cancellation: if the process outlives the interrupt,
 	// os/exec force-kills it this long after ctx is done.
 	cmd.WaitDelay = 500 * time.Millisecond
@@ -211,7 +244,7 @@ func pumpStream(wg *sync.WaitGroup, r io.Reader, stdout bool, onChunk func(bool,
 }
 
 // ExecuteStreaming runs a kubectl command and streams output via callbacks.
-func (e *KubectlExecutor) ExecuteStreaming(ctx context.Context, args []string, namespace string, timeout time.Duration, onStdout, onStderr func([]byte)) *CommandResult {
+func (e *KubectlExecutor) ExecuteStreaming(ctx context.Context, id Identity, args []string, namespace string, timeout time.Duration, onStdout, onStderr func([]byte)) *CommandResult {
 	result := &CommandResult{}
 
 	// Build command arguments
@@ -228,7 +261,11 @@ func (e *KubectlExecutor) ExecuteStreaming(ctx context.Context, args []string, n
 		defer cancel()
 	}
 
-	cmd := e.command(ctx, cmdArgs...)
+	cmd, release, err := e.command(ctx, id, cmdArgs...)
+	if err != nil {
+		return &CommandResult{ExitCode: 1, Error: err}
+	}
+	defer release()
 
 	// Get pipes for streaming
 	stdoutPipe, err := cmd.StdoutPipe()
@@ -316,7 +353,7 @@ func (e *KubectlExecutor) ExecuteStreaming(ctx context.Context, args []string, n
 // ExecuteInteractiveNoTTY runs a kubectl command with piped stdin (no PTY), pumping
 // stdin from the channel and streaming stdout/stderr to onOutput. It returns the
 // exit code when the process exits or ctx is cancelled.
-func (e *KubectlExecutor) ExecuteInteractiveNoTTY(ctx context.Context, args []string, namespace string, stdin <-chan []byte, onOutput func(bool, []byte)) (int, error) {
+func (e *KubectlExecutor) ExecuteInteractiveNoTTY(ctx context.Context, id Identity, args []string, namespace string, stdin <-chan []byte, onOutput func(bool, []byte)) (int, error) {
 	// Derive a child context so stdin pump goroutines are guaranteed to exit
 	// before the function returns, independent of the caller's cancel timing.
 	ctx, cancel := context.WithCancel(ctx)
@@ -326,7 +363,11 @@ func (e *KubectlExecutor) ExecuteInteractiveNoTTY(ctx context.Context, args []st
 	if namespace != "" {
 		cmdArgs = append([]string{"-n", namespace}, args...)
 	}
-	cmd := e.command(ctx, cmdArgs...)
+	cmd, release, err := e.command(ctx, id, cmdArgs...)
+	if err != nil {
+		return 1, err
+	}
+	defer release()
 	cmd.WaitDelay = 500 * time.Millisecond
 
 	stdinPr, stdinPw, err := os.Pipe()
@@ -395,7 +436,7 @@ func (e *KubectlExecutor) ExecuteInteractiveNoTTY(ctx context.Context, args []st
 // window-resize events in and output out, until the process exits or ctx is
 // cancelled (which kills the child). onOutput is called only from the single
 // read-loop goroutine, so it is never called concurrently.
-func (e *KubectlExecutor) ExecuteInteractive(ctx context.Context, args []string, namespace string, rows, cols uint16, stdin <-chan []byte, resize <-chan [2]uint16, onOutput func([]byte)) (int, error) {
+func (e *KubectlExecutor) ExecuteInteractive(ctx context.Context, id Identity, args []string, namespace string, rows, cols uint16, stdin <-chan []byte, resize <-chan [2]uint16, onOutput func([]byte)) (int, error) {
 	// Derive a child context so stdin/resize pump goroutines are guaranteed to
 	// exit before the function returns, independent of the caller's cancel timing.
 	ctx, cancel := context.WithCancel(ctx)
@@ -405,7 +446,11 @@ func (e *KubectlExecutor) ExecuteInteractive(ctx context.Context, args []string,
 	if namespace != "" {
 		cmdArgs = append([]string{"-n", namespace}, args...)
 	}
-	cmd := e.command(ctx, cmdArgs...)
+	cmd, release, err := e.command(ctx, id, cmdArgs...)
+	if err != nil {
+		return 1, err
+	}
+	defer release()
 	cmd.WaitDelay = 500 * time.Millisecond
 
 	ptmx, err := pty.StartWithSize(cmd, &pty.Winsize{Rows: rows, Cols: cols})
