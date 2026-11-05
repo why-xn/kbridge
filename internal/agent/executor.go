@@ -37,10 +37,15 @@ func NewKubectlExecutor(w *Window) *KubectlExecutor {
 	return &KubectlExecutor{kubectlPath: "kubectl", window: w}
 }
 
+var errNoIdentity = errors.New("command has no identity: refusing to run as the agent")
+
 // command registers a nonce for id, refuses unsafe args, and builds the kubectl
 // process with the window's leading args and a scrubbed environment. release
 // must be called when the process has exited.
 func (e *KubectlExecutor) command(ctx context.Context, id Identity, args ...string) (*exec.Cmd, func(), error) {
+	if id.User == "" {
+		return nil, nil, errNoIdentity
+	}
 	if err := kubeargs.Check(args); err != nil {
 		return nil, nil, err
 	}

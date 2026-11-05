@@ -120,7 +120,7 @@ func (a *Agent) runPortForwardSession(ctx context.Context, mu *sync.Mutex, strea
 		defer mu.Unlock()
 		_ = stream.Send(m)
 	}
-	id := Identity{RequestID: sid}
+	id := Identity{User: start.GetIdentity().GetUser(), RequestID: sid}
 	m, cmd, release, err := a.executor.startKubectlPortForward(ctx, id, start.GetPod(), start.GetNamespace(), start.GetPorts())
 	if err != nil {
 		send(&agentpb.AgentStreamMessage{Msg: &agentpb.AgentStreamMessage_PfSessionError{
@@ -264,7 +264,7 @@ func (a *Agent) runStreamSession(ctx context.Context, mu *sync.Mutex, stream age
 		defer mu.Unlock()
 		_ = stream.Send(m)
 	}
-	code, err := a.executor.ExecuteInteractiveNoTTY(ctx, Identity{RequestID: sid}, start.GetCommand(), start.GetNamespace(), stdin,
+	code, err := a.executor.ExecuteInteractiveNoTTY(ctx, Identity{User: start.GetIdentity().GetUser(), RequestID: sid}, start.GetCommand(), start.GetNamespace(), stdin,
 		func(stdout bool, data []byte) {
 			send(&agentpb.AgentStreamMessage{Msg: &agentpb.AgentStreamMessage_Output{
 				Output: &agentpb.StreamOutput{SessionId: sid, Type: outputTypeFor(stdout), Data: data},
@@ -287,7 +287,7 @@ func (a *Agent) runInteractiveSession(ctx context.Context, mu *sync.Mutex, strea
 		defer mu.Unlock()
 		_ = stream.Send(m)
 	}
-	code, err := a.executor.ExecuteInteractive(ctx, Identity{RequestID: sid}, start.GetCommand(), start.GetNamespace(),
+	code, err := a.executor.ExecuteInteractive(ctx, Identity{User: start.GetIdentity().GetUser(), RequestID: sid}, start.GetCommand(), start.GetNamespace(),
 		uint16(start.GetRows()), uint16(start.GetCols()), stdin, resize,
 		func(data []byte) {
 			send(&agentpb.AgentStreamMessage{Msg: &agentpb.AgentStreamMessage_Output{

@@ -26,12 +26,14 @@ type mockAgentService struct {
 	rejectHeartbeat  bool
 	lastClusterName  string
 	lastAgentToken   string
+	lastCapabilities []string
 }
 
 func (m *mockAgentService) Register(ctx context.Context, req *agentpb.RegisterRequest) (*agentpb.RegisterResponse, error) {
 	m.registerCalled++
 	m.lastClusterName = req.GetClusterName()
 	m.lastAgentToken = req.GetAgentToken()
+	m.lastCapabilities = req.GetCapabilities()
 
 	if m.rejectRegister {
 		return &agentpb.RegisterResponse{
@@ -152,6 +154,10 @@ func TestAgent_Register(t *testing.T) {
 	// Verify
 	if mock.registerCalled != 1 {
 		t.Errorf("expected 1 register call, got %d", mock.registerCalled)
+	}
+
+	if len(mock.lastCapabilities) != 1 || mock.lastCapabilities[0] != "impersonation" {
+		t.Errorf("capabilities = %v, want [impersonation]", mock.lastCapabilities)
 	}
 
 	if mock.lastClusterName != "test-cluster" {

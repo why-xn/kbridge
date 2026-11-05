@@ -180,8 +180,9 @@ func (a *Agent) register(ctx context.Context) error {
 	log.Printf("Registering with control plane")
 
 	req := &agentpb.RegisterRequest{
-		AgentToken:  a.config.ControlPlane.Token,
-		ClusterName: a.config.Cluster.Name,
+		AgentToken:   a.config.ControlPlane.Token,
+		ClusterName:  a.config.Cluster.Name,
+		Capabilities: []string{"impersonation"},
 	}
 
 	// Add timeout for registration
@@ -387,7 +388,7 @@ func (a *Agent) executeAndSubmit(ctx context.Context, cmd *agentpb.CommandReques
 	}
 
 	// Execute the kubectl command with optional stdin
-	result := a.executor.ExecuteWithStdin(ctx, Identity{RequestID: cmd.GetRequestId()}, cmd.Command, cmd.Namespace, timeout, cmd.Stdin)
+	result := a.executor.ExecuteWithStdin(ctx, Identity{User: cmd.GetIdentity().GetUser(), RequestID: cmd.GetRequestId()}, cmd.Command, cmd.Namespace, timeout, cmd.Stdin)
 
 	// Build result request
 	submitReq := &agentpb.SubmitCommandResultRequest{

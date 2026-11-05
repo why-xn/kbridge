@@ -29,7 +29,7 @@ func (c *commandService) GetPendingCommands(ctx context.Context, req *agentpb.Ge
 	}
 	c.handed = true
 	return &agentpb.GetPendingCommandsResponse{Commands: []*agentpb.CommandRequest{
-		{RequestId: "req-1", Command: []string{"30"}, TimeoutSeconds: 60},
+		{RequestId: "req-1", Command: []string{"30"}, TimeoutSeconds: 60, Identity: &agentpb.Identity{User: "kbridge:alice@example.com"}},
 	}}, nil
 }
 

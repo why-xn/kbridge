@@ -299,7 +299,7 @@ func TestExecuteInteractive_EchoAndExit(t *testing.T) {
 	}
 }
 
-var testID = Identity{RequestID: "req-test"}
+var testID = Identity{User: "kbridge:alice@example.com", RequestID: "req-test"}
 
 // windowedExecutor runs prog as kubectl behind a live window, dropping the
 // window's three leading args so stand-ins like echo and cat see only theirs.
@@ -334,31 +334,31 @@ func recorder(t *testing.T, dir string) string {
 // returns the error it reported.
 var entryPoints = []struct {
 	name string
-	run  func(e *KubectlExecutor, args []string) error
+	run  func(e *KubectlExecutor, id Identity, args []string) error
 }{
-	{"Execute", func(e *KubectlExecutor, args []string) error {
-		return e.Execute(context.Background(), testID, args, "", 5*time.Second).Error
+	{"Execute", func(e *KubectlExecutor, id Identity, args []string) error {
+		return e.Execute(context.Background(), id, args, "", 5*time.Second).Error
 	}},
-	{"ExecuteWithStdin", func(e *KubectlExecutor, args []string) error {
-		return e.ExecuteWithStdin(context.Background(), testID, args, "", 5*time.Second, []byte("in")).Error
+	{"ExecuteWithStdin", func(e *KubectlExecutor, id Identity, args []string) error {
+		return e.ExecuteWithStdin(context.Background(), id, args, "", 5*time.Second, []byte("in")).Error
 	}},
-	{"ExecuteStream", func(e *KubectlExecutor, args []string) error {
-		_, err := e.ExecuteStream(context.Background(), testID, args, "", func(bool, []byte) {})
+	{"ExecuteStream", func(e *KubectlExecutor, id Identity, args []string) error {
+		_, err := e.ExecuteStream(context.Background(), id, args, "", func(bool, []byte) {})
 		return err
 	}},
-	{"ExecuteStreaming", func(e *KubectlExecutor, args []string) error {
-		return e.ExecuteStreaming(context.Background(), testID, args, "", 5*time.Second, nil, nil).Error
+	{"ExecuteStreaming", func(e *KubectlExecutor, id Identity, args []string) error {
+		return e.ExecuteStreaming(context.Background(), id, args, "", 5*time.Second, nil, nil).Error
 	}},
-	{"ExecuteInteractiveNoTTY", func(e *KubectlExecutor, args []string) error {
-		_, err := e.ExecuteInteractiveNoTTY(context.Background(), testID, args, "", nil, func(bool, []byte) {})
+	{"ExecuteInteractiveNoTTY", func(e *KubectlExecutor, id Identity, args []string) error {
+		_, err := e.ExecuteInteractiveNoTTY(context.Background(), id, args, "", nil, func(bool, []byte) {})
 		return err
 	}},
-	{"ExecuteInteractive", func(e *KubectlExecutor, args []string) error {
-		_, err := e.ExecuteInteractive(context.Background(), testID, args, "", 24, 80, nil, nil, func([]byte) {})
+	{"ExecuteInteractive", func(e *KubectlExecutor, id Identity, args []string) error {
+		_, err := e.ExecuteInteractive(context.Background(), id, args, "", 24, 80, nil, nil, func([]byte) {})
 		return err
 	}},
-	{"startKubectlPortForward", func(e *KubectlExecutor, args []string) error {
-		_, cmd, release, err := e.startKubectlPortForward(context.Background(), testID, args[0], "", []uint32{80})
+	{"startKubectlPortForward", func(e *KubectlExecutor, id Identity, args []string) error {
+		_, cmd, release, err := e.startKubectlPortForward(context.Background(), id, args[0], "", []uint32{80})
 		if err != nil {
 			return err
 		}
@@ -385,7 +385,7 @@ func TestExecutor_LeadsWithWindowArgs(t *testing.T) {
 			dir := t.TempDir()
 			e := windowedExecutor(t, "true")
 			e.kubectlPath = recorder(t, dir)
-			if err := ep.run(e, []string{"get", "pods"}); err != nil {
+			if err := ep.run(e, testID, []string{"get", "pods"}); err != nil {
 				t.Fatalf("run: %v", err)
 			}
 			argv := readLines(t, filepath.Join(dir, "argv"))
@@ -432,12 +432,35 @@ func TestExecutor_RefusesUnsafeArgs(t *testing.T) {
 			dir := t.TempDir()
 			e := windowedExecutor(t, "true")
 			e.kubectlPath = recorder(t, dir)
-			err := ep.run(e, []string{"--server=x", "get", "pods"})
+			err := ep.run(e, testID, []string{"--server=x", "get", "pods"})
 			if err == nil || err.Error() != "flag --server is not allowed: kbridge manages the cluster connection" {
 				t.Fatalf("err = %v, want the kubeargs refusal", err)
 			}
 			if _, err := os.Stat(filepath.Join(dir, "argv")); !os.IsNotExist(err) {
 				t.Error("kubectl was started for refused args")
+			}
+			e.window.mu.Lock()
+			defer e.window.mu.Unlock()
+			if n := len(e.window.nonces); n != 0 {
+				t.Errorf("%d nonces registered after a refusal", n)
+			}
+		})
+	}
+}
+
+func TestExecutor_RefusesEmptyIdentity(t *testing.T) {
+	const want = "command has no identity: refusing to run as the agent"
+	for _, ep := range entryPoints {
+		t.Run(ep.name, func(t *testing.T) {
+			dir := t.TempDir()
+			e := windowedExecutor(t, "true")
+			e.kubectlPath = recorder(t, dir)
+			err := ep.run(e, Identity{RequestID: "req-test"}, []string{"get", "pods"})
+			if err == nil || err.Error() != want {
+				t.Fatalf("err = %v, want %q", err, want)
+			}
+			if _, err := os.Stat(filepath.Join(dir, "argv")); !os.IsNotExist(err) {
+				t.Error("kubectl was started without an identity")
 			}
 			e.window.mu.Lock()
 			defer e.window.mu.Unlock()
@@ -461,7 +484,7 @@ func TestExecutor_ReleasesNonce(t *testing.T) {
 		t.Run(ep.name, func(t *testing.T) {
 			dir := t.TempDir()
 			e := &KubectlExecutor{kubectlPath: recorder(t, dir), window: w}
-			if err := ep.run(e, []string{"get", "pods"}); err != nil {
+			if err := ep.run(e, testID, []string{"get", "pods"}); err != nil {
 				t.Fatalf("run: %v", err)
 			}
 			nonce := strings.TrimPrefix(readLines(t, filepath.Join(dir, "argv"))[2], "--token=")
