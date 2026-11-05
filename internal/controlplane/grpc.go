@@ -79,13 +79,14 @@ func (s *GRPCServer) Register(ctx context.Context, req *agentpb.RegisterRequest)
 		ID:          agentID,
 		ClusterName: cluster.Name,
 		Token:       req.GetAgentToken(),
+		Capabilities: req.GetCapabilities(),
 	}
 
 	// Persist the cluster's connected state, then track the agent in memory
 	// for live command routing.
 	s.markClusterConnected(ctx, cluster, agentID, info)
 	replaced := s.agents.Register(info)
-	log.Printf("Agent registered: id=%s, cluster=%s", agentID, cluster.Name)
+	log.Printf("Agent registered: id=%s, cluster=%s, capabilities=%v", agentID, cluster.Name, info.Capabilities)
 	for _, old := range replaced {
 		moved := s.cmdQueue.Reassign(old, agentID)
 		log.Printf("Agent %s replaces previous agent %s for cluster=%s (%d queued command(s) moved)", agentID, old, cluster.Name, moved)
@@ -175,6 +176,7 @@ func (s *GRPCServer) GetPendingCommands(ctx context.Context, req *agentpb.GetPen
 			Namespace:      cmd.Namespace,
 			TimeoutSeconds: cmd.TimeoutSeconds,
 			Stdin:          cmd.Stdin,
+			Identity:       identityFor(cmd.User),
 		})
 	}
 

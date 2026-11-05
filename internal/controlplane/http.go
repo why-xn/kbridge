@@ -26,6 +26,7 @@ type ExecRequest struct {
 	Namespace string   `json:"namespace,omitempty"`
 	Timeout   int      `json:"timeout,omitempty"` // seconds, default 30
 	Stdin     string   `json:"stdin,omitempty"`   // optional stdin input for the command
+	User      string   `json:"-"`                 // set from verified JWT claims by authorizeExec, never from the body
 }
 
 // ExecResponse represents a command execution response.
@@ -205,7 +206,7 @@ func (s *HTTPServer) handleExecCommand(c *gin.Context) {
 	}
 
 	// Enforce RBAC before routing the command to the agent.
-	if !s.authorizeExec(c, clusterName, req) {
+	if !requireImpersonation(c, agent) || !s.authorizeExec(c, clusterName, &req) {
 		return
 	}
 
@@ -222,6 +223,7 @@ func (s *HTTPServer) handleExecCommand(c *gin.Context) {
 	requestID, err := s.commandQueue.Enqueue(
 		agent.ID,
 		clusterName,
+		req.User,
 		req.Command,
 		req.Namespace,
 		int32(timeout.Seconds()),
@@ -285,22 +287,31 @@ func (s *HTTPServer) handleExecCommand(c *gin.Context) {
 // authorizeExec checks the requesting user's RBAC permissions for the command.
 // It writes the appropriate error response and returns false when the request
 // must be rejected. When no authorizer is configured it allows the request.
-func (s *HTTPServer) authorizeExec(c *gin.Context, clusterName string, req ExecRequest) bool {
+// On success it sets req.User from the verified claims, so the agent runs the
+// command as that user.
+func (s *HTTPServer) authorizeExec(c *gin.Context, clusterName string, req *ExecRequest) bool {
 	if err := kubeargs.Check(req.Command); err != nil {
-		s.recordExecAudit(c, clusterName, req, AuditStatusDenied, nil, nil, err.Error())
+		s.recordExecAudit(c, clusterName, *req, AuditStatusDenied, nil, nil, err.Error())
 		c.JSON(http.StatusForbidden, gin.H{"error": err.Error()})
 		return false
 	}
-	if s.policy == nil {
-		return true
-	}
-
 	claims := auth.GetUserFromContext(c)
+	if s.policy != nil && !s.policyAllows(c, clusterName, *req, claims) {
+		return false
+	}
+	if claims != nil {
+		req.User = claims.Email
+	}
+	return true
+}
+
+// policyAllows enforces the RBAC policy for an authenticated caller, writing the
+// 401/403 response and the denied audit entry when it refuses.
+func (s *HTTPServer) policyAllows(c *gin.Context, clusterName string, req ExecRequest, claims *auth.UserClaims) bool {
 	if claims == nil {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "not authenticated"})
 		return false
 	}
-
 	access := parseAccessRequest(clusterName, req.Command, req.Namespace)
 	if !s.policy.Allows(claims.Email, access) {
 		log.Printf("RBAC denied: user=%s cluster=%s verb=%s resource=%s namespace=%s",
@@ -369,11 +380,11 @@ func (s *HTTPServer) handleStreamCommand(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "command is required"})
 		return
 	}
-	if !s.authorizeExec(c, clusterName, req) {
+	if !requireImpersonation(c, agent) || !s.authorizeExec(c, clusterName, &req) {
 		return
 	}
 
-	sess, err := s.sessions.Start(agent.ID, req.Command, req.Namespace)
+	sess, err := s.sessions.Start(agent.ID, req.User, req.Command, req.Namespace)
 	if err != nil {
 		if err == ErrTooManyStreams {
 			c.JSON(http.StatusTooManyRequests, gin.H{"error": "too many concurrent streams"})

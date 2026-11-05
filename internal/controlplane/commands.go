@@ -29,6 +29,7 @@ type PendingCommand struct {
 	Namespace      string
 	TimeoutSeconds int32
 	Stdin          []byte
+	User           string // email of the requesting user; the agent runs the command as them
 	CreatedAt      time.Time
 	Status         CommandStatus
 
@@ -60,7 +61,7 @@ func NewCommandQueue() *CommandQueue {
 }
 
 // Enqueue adds a new command to the queue and returns its request ID.
-func (q *CommandQueue) Enqueue(agentID, clusterName string, command []string, namespace string, timeoutSeconds int32, stdin []byte) (string, error) {
+func (q *CommandQueue) Enqueue(agentID, clusterName, user string, command []string, namespace string, timeoutSeconds int32, stdin []byte) (string, error) {
 	requestID, err := generateRequestID()
 	if err != nil {
 		return "", fmt.Errorf("generating request ID: %w", err)
@@ -74,6 +75,7 @@ func (q *CommandQueue) Enqueue(agentID, clusterName string, command []string, na
 		Namespace:      namespace,
 		TimeoutSeconds: timeoutSeconds,
 		Stdin:          stdin,
+		User:           user,
 		CreatedAt:      time.Now(),
 		Status:         CommandStatusPending,
 		resultCh:       make(chan *CommandResult, 1),

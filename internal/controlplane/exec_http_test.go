@@ -15,7 +15,7 @@ func TestRunExecBridge_RelaysBothDirections(t *testing.T) {
 	m := NewSessionManager(10)
 	rs := &recordingSender{}
 	m.RegisterAgentStream("a1", rs)
-	sess, _ := m.StartInteractive("a1", []string{"exec", "-i", "-t", "p", "--", "sh"}, "ns", 24, 80)
+	sess, _ := m.StartInteractive("a1", "", []string{"exec", "-i", "-t", "p", "--", "sh"}, "ns", 24, 80)
 
 	upR, upW := io.Pipe()       // CLI -> control plane (stdin frames)
 	var down bytes.Buffer       // control plane -> CLI (output frames)

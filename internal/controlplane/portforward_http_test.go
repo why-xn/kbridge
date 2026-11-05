@@ -15,7 +15,7 @@ func TestRunPortForwardBridge_RelaysBothDirections(t *testing.T) {
 	m := NewSessionManager(10)
 	rs := &recordingSender{}
 	m.RegisterAgentStream("a1", rs)
-	sess, _ := m.StartPortForward("a1", "pod", "ns", []uint32{5432})
+	sess, _ := m.StartPortForward("a1", "", "pod", "ns", []uint32{5432})
 
 	upR, upW := io.Pipe()
 	var down bytes.Buffer

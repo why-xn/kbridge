@@ -110,7 +110,7 @@ roles:
         verbs: ["get"]
 `))
 	agents := NewAgentStore()
-	agents.Register(&AgentInfo{ID: "a1", ClusterName: "prod"})
+	agents.Register(&AgentInfo{ID: "a1", ClusterName: "prod", Capabilities: []string{capImpersonation}})
 	srv := NewHTTPServer(agents, NewCommandQueue(),
 		NewAuthHandlers(store, jm, time.Hour), NewAdminHandlers(store, testPepper), eng, NewAuditRecorder(store), nil, jm)
 
@@ -164,7 +164,7 @@ roles:
 				eng.current.Store(mustParse(t, denyAll))
 			}
 			agents := NewAgentStore()
-			agents.Register(&AgentInfo{ID: "a1", ClusterName: "prod"})
+			agents.Register(&AgentInfo{ID: "a1", ClusterName: "prod", Capabilities: []string{capImpersonation}})
 			queue := NewCommandQueue()
 			srv := NewHTTPServer(agents, queue, NewAuthHandlers(store, jm, time.Hour),
 				NewAdminHandlers(store, testPepper), eng, NewAuditRecorder(store), NewSessionManager(10), jm)

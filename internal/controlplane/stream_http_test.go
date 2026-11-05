@@ -17,7 +17,7 @@ func TestHandleStreamCommand_StreamsOutput(t *testing.T) {
 	jm := auth.NewJWTManager("test-secret-at-least-32-chars!!", time.Hour)
 	sm := NewSessionManager(10)
 	agents := NewAgentStore()
-	agents.Register(&AgentInfo{ID: "a1", ClusterName: "prod"})
+	agents.Register(&AgentInfo{ID: "a1", ClusterName: "prod", Capabilities: []string{capImpersonation}})
 	snd := &fakeSender{}
 	sm.RegisterAgentStream("a1", snd)
 
@@ -71,7 +71,7 @@ func TestHandleStreamCommand_NoAgentStream(t *testing.T) {
 	store := newTestStore(t)
 	jm := auth.NewJWTManager("test-secret-at-least-32-chars!!", time.Hour)
 	agents := NewAgentStore()
-	agents.Register(&AgentInfo{ID: "a1", ClusterName: "prod"}) // connected but no OpenStream
+	agents.Register(&AgentInfo{ID: "a1", ClusterName: "prod", Capabilities: []string{capImpersonation}}) // connected but no OpenStream
 	srv := NewHTTPServer(agents, NewCommandQueue(), NewAuthHandlers(store, jm, time.Hour),
 		NewAdminHandlers(store, testPepper), nil, NewAuditRecorder(store), NewSessionManager(10), jm)
 

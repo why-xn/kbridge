@@ -126,16 +126,16 @@ func (s *HTTPServer) handleExecAttach(c *gin.Context) {
 
 	args := buildExecArgs(pod, container, command, tty)
 	req := ExecRequest{Command: args, Namespace: namespace}
-	if !s.authorizeExec(c, clusterName, req) {
-		return // 403 + denied audit already written
+	if !requireImpersonation(c, agent) || !s.authorizeExec(c, clusterName, &req) {
+		return // 503/403 + denied audit already written
 	}
 
 	var sess *Session
 	var err error
 	if tty {
-		sess, err = s.sessions.StartInteractive(agent.ID, args, namespace, clampDim(rows), clampDim(cols))
+		sess, err = s.sessions.StartInteractive(agent.ID, req.User, args, namespace, clampDim(rows), clampDim(cols))
 	} else {
-		sess, err = s.sessions.StartWithStdin(agent.ID, args, namespace)
+		sess, err = s.sessions.StartWithStdin(agent.ID, req.User, args, namespace)
 	}
 	if err != nil {
 		if err == ErrTooManyStreams {

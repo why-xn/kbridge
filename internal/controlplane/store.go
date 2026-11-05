@@ -13,6 +13,8 @@ type AgentInfo struct {
 	Status      string
 	RegisteredAt time.Time
 	LastSeen    time.Time
+	// Capabilities the agent advertised at registration, e.g. "impersonation".
+	Capabilities []string
 }
 
 // AgentStatus constants for agent connection state.

@@ -106,11 +106,11 @@ func (s *HTTPServer) handlePortForward(c *gin.Context) {
 	}
 
 	req := ExecRequest{Command: []string{"port-forward", pod}, Namespace: namespace}
-	if !s.authorizeExec(c, clusterName, req) {
+	if !requireImpersonation(c, agent) || !s.authorizeExec(c, clusterName, &req) {
 		return
 	}
 
-	sess, err := s.sessions.StartPortForward(agent.ID, pod, namespace, ports)
+	sess, err := s.sessions.StartPortForward(agent.ID, req.User, pod, namespace, ports)
 	if err != nil {
 		if err == ErrTooManyStreams {
 			c.JSON(http.StatusTooManyRequests, gin.H{"error": "too many concurrent streams"})
