@@ -280,6 +280,33 @@ func TestControlPlaneClient_ExecCommand_Timeout(t *testing.T) {
 	}
 }
 
+func TestControlPlaneClient_ExecCommand_Refused(t *testing.T) {
+	tests := []struct {
+		name    string
+		status  int
+		body    string
+		wantErr string
+	}{
+		{"argument check", http.StatusForbidden, `{"error":"kubectl cp is not supported through kbridge"}`, "kubectl cp is not supported through kbridge"},
+		{"rbac", http.StatusForbidden, `{"error":"permission denied"}`, "permission denied"},
+		{"bad request without message", http.StatusBadRequest, `{}`, "server returned 400"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.WriteHeader(tt.status)
+				w.Write([]byte(tt.body))
+			}))
+			defer server.Close()
+
+			_, err := NewControlPlaneClient(server.URL).ExecCommand("prod", []string{"get", "pods"}, "", 30)
+			if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
+				t.Fatalf("err = %v, want it to contain %q", err, tt.wantErr)
+			}
+		})
+	}
+}
+
 func TestControlPlaneClient_ExecCommand_WithNamespace(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var req ExecRequest
