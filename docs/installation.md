@@ -94,28 +94,54 @@ release, so no `helm repo add` is needed; Helm 3.8+ installs them straight from
 the URL. Pin `--version` to the release you want (the chart version is the
 release tag without the `v`).
 
+The agent authenticates to the control plane with an **agent token**. There is
+one per cluster, and the agent will not register without it, so the order is:
+install the control plane, create the token, then install the agent with it.
+
+### Step 1: Install the control plane
+
 ```bash
-# Control Plane — change the secrets for any real deployment
+# Change the secrets for any real deployment
 helm install kbridge-control-plane oci://ghcr.io/why-xn/charts/kbridge-control-plane \
   --version 0.2.2-alpha.1 \
   --set auth.jwtSecret="$(openssl rand -hex 32)" \
   --set auth.adminPassword="$(openssl rand -hex 12)"
+```
 
-# Agent — deployed into each target cluster, in its own namespace
+### Step 2: Create the agent token
+
+Log in as the seeded admin (`auth.adminEmail`, default `admin@kbridge.local`,
+with the `auth.adminPassword` you set), then create one token per cluster:
+
+```bash
+kb login                      # prompts for the control plane URL, email and password
+kb admin agent-tokens create --cluster prod-us-east
+# Agent token: kba_xxxxxxxxxxxxxxxxxxxx   <- shown once; copy it now
+```
+
+The secret is shown only at creation. `kb admin agent-tokens list` shows
+prefixes, never the secret; if it is lost, revoke it and create another. The
+same token can also be created through `POST /api/v1/admin/agent-tokens` or
+seeded through the control plane's `bootstrap` config (see the
+[admin guide](admin.md)).
+
+### Step 3: Install the agent in each target cluster
+
+```bash
 kubectl create namespace kbridge
 kubectl label namespace kbridge pod-security.kubernetes.io/enforce=restricted
 helm install kbridge-agent oci://ghcr.io/why-xn/charts/kbridge-agent -n kbridge \
   --version 0.2.2-alpha.1 \
   --set controlPlane.url=kbridge-control-plane-control-plane.default.svc:9090 \
-  --set controlPlane.token=<agent-token> \
+  --set controlPlane.token=kba_xxxxxxxxxxxxxxxxxxxx \
   --set cluster.name=prod-us-east \
   --set 'protectedNamespaces={default}'   # the control plane's namespace, when co-located
 ```
 
-Generate an agent token first with
-`kb admin agent-tokens create --cluster <name>` (see the
-[admin guide](admin.md)) — or via the `POST /api/v1/admin/agent-tokens` API, or
-by seeding one through the control plane's `bootstrap` config.
+`cluster.name` must match the `--cluster` the token was created for. For a
+production install, keep the token in a Kubernetes Secret and point the chart at
+it with `controlPlane.existingSecret` instead of `--set controlPlane.token`; the
+[production guide](production-install.md) shows that flow.
 
 From a clone of this repository, the same commands work with the local charts:
 replace the `oci://…` reference with `./charts/control-plane` or `./charts/agent`

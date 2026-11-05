@@ -182,7 +182,8 @@ verification and exposes agent tokens to interception.
 Log in as the admin user that was seeded from the `admin_password` secret:
 
 ```bash
-kb login --server https://control-plane.example.com
+kb login
+# Control plane URL: https://control-plane.example.com
 # Username: admin@example.com
 # Password: <value of admin_password key from kbridge-control-plane-secrets>
 ```
