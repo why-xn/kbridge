@@ -196,10 +196,22 @@ func (w *Window) refusal(r *http.Request) string {
 			}
 		}
 	}
-	if r.Method == http.MethodGet && path.Clean(r.URL.Path) == "/api/v1/secrets" {
+	if r.Method == http.MethodGet && clusterSecretsPath(paths) {
 		return "reading secrets across all namespaces is not allowed through kbridge"
 	}
 	return ""
+}
+
+// clusterSecretsPath reports whether any form of the path lists or watches
+// secrets across all namespaces, including the legacy /api/v1/watch/secrets.
+func clusterSecretsPath(paths []string) bool {
+	for _, p := range paths {
+		c := path.Clean(p)
+		if c == "/api/v1/secrets" || c == "/api/v1/watch/secrets" || strings.HasPrefix(c, "/api/v1/watch/secrets/") {
+			return true
+		}
+	}
+	return false
 }
 
 // protectedPath reports whether a request reaches into a protected namespace:

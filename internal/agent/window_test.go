@@ -215,6 +215,8 @@ func TestProtectedPath(t *testing.T) {
 		{"POST", "/api/v1/namespaces/kbridge/serviceaccounts/agent/token", true},
 		{"GET", "/api/v1/namespaces/kbridge/", true},
 		{"GET", "/api/v1/watch/namespaces/kbridge/pods", true},
+		{"GET", "/api/v1/watch/namespaces/kbridge/secrets/x", true},
+		{"GET", "/apis/apps/v1/watch/namespaces/kbridge/deployments", true},
 		{"GET", "/api/v1/namespaces", false},
 	}
 	for _, tt := range tests {
@@ -246,9 +248,19 @@ func TestWindow_ClusterWideSecrets(t *testing.T) {
 	defer release()
 	base := serverOf(t, w, nonce)
 	want := "reading secrets across all namespaces is not allowed through kbridge"
-	r := do(t, c, "GET", base+"/api/v1/secrets", nonce, nil)
-	if r.status != http.StatusForbidden || r.body != want {
-		t.Fatalf("got %d %q, want 403 %q", r.status, r.body, want)
+	for _, p := range []string{
+		"/api/v1/secrets",
+		"/api/v1/secrets?watch=true",
+		"/api/v1/watch/secrets",
+		"/api/v1/watch/secrets/",
+		"/api/v1/watch/secrets/x",
+		"/api/v1/watch/s%65crets",
+		"/api/v1/watch/dev/../secrets",
+		"/api/v1/dev/../secrets",
+	} {
+		if r := do(t, c, "GET", base+p, nonce, nil); r.status != http.StatusForbidden || r.body != want {
+			t.Errorf("%s: got %d %q, want 403 %q", p, r.status, r.body, want)
+		}
 	}
 	if e := upstreamSaw(t, do(t, c, "GET", base+"/api/v1/namespaces/dev/secrets", nonce, nil)); e.Path != "/api/v1/namespaces/dev/secrets" {
 		t.Errorf("upstream path = %q", e.Path)
