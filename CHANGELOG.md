@@ -47,7 +47,10 @@ granting access until removed), e.g.
   headers, and refuses the agent's namespace, any `protectedNamespaces`, and
   the cluster-wide secrets list and watch. Connection flags, file flags and
   the verbs `cp`, `proxy`, `plugin`, `config` and `kustomize` are refused by
-  the control plane (`403`, audited as `denied`) and again by the agent. See
+  the control plane (`403`, audited as `denied`) and again by the agent.
+  Arguments after `--` are checked too, except a container command after
+  `exec`, `attach`, `run` or `debug`; there a value flag just before `--` must
+  be written `--flag=value`. See
   [docs/security.md](docs/security.md#layer-2--the-agent-what-kubectl-can-actually-do)
   for what this does and does not cover.
 - **The agent chart mounts its token at `/var/run/kbridge/sa`** as a projected
