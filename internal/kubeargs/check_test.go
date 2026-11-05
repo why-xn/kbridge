@@ -29,6 +29,8 @@ func TestCheck(t *testing.T) {
 		{"get pods --kubeconfig /k", sprintf(connMsg, "--kubeconfig")},
 		{"get pods --as=admin", sprintf(connMsg, "--as")},
 		{"--namespace x cp /a b:/c", sprintf(verbMsg, "cp")},
+		{"-v 4 cp /var/run/kbridge/sa/token default/x:/tmp/t", sprintf(verbMsg, "cp")},
+		{"--request-timeout 5s config view", sprintf(verbMsg, "config")},
 		{"apply -f /etc/passwd", fMsg},
 		{"apply -f https://x/y.yaml", fMsg},
 		{"apply -Rf /dir", fMsg},
@@ -56,6 +58,7 @@ func TestCheck(t *testing.T) {
 		"exec -n dev web -- curl --server x -f /x",
 		"get pods -o wide", "get pods -o jsonpath={.items[0]}",
 		"get pods -l app=x -nfoo", "-n dev get pods",
+		"-v 4 get pods", "--request-timeout=5s get pods",
 	}
 	for _, a := range allowed {
 		if err := Check(strings.Fields(a)); err != nil {
@@ -76,6 +79,9 @@ func TestCheck_KnowsPinnedKubectlFlags(t *testing.T) {
 		if err != nil {
 			t.Fatalf("kubectl %v: %v", sub, err)
 		}
+		if sub[0] == "options" {
+			assertValueOptionsSkipped(t, string(out))
+		}
 		for _, f := range re.FindAllString(string(out), -1) {
 			if mentionsRisk(f) && !slices.Contains(known, f) {
 				t.Errorf("kubectl %v: flag %s is not in the check tables", sub, f)
@@ -94,4 +100,21 @@ func mentionsRisk(flag string) bool {
 		}
 	}
 	return false
+}
+
+var optionLine = regexp.MustCompile(`(?m)^\s+(?:(-\w), )?(--[\w-]+)=(.*?):`)
+
+// assertValueOptionsSkipped fails when a value-taking global option does not hide its value from verbOf.
+func assertValueOptionsSkipped(t *testing.T, options string) {
+	t.Helper()
+	for _, m := range optionLine.FindAllStringSubmatch(options, -1) {
+		if m[3] == "true" || m[3] == "false" {
+			continue
+		}
+		for _, name := range []string{m[1], m[2]} {
+			if name != "" && verbOf([]string{name, "VALUE", "get"}) != "get" {
+				t.Errorf("verbOf does not skip the value of %s", name)
+			}
+		}
+	}
 }

@@ -16,8 +16,9 @@ var fileFlags = []string{"-k", "--kustomize", "--from-file", "--from-env-file", 
 var refusedVerbs = map[string]bool{"cp": true, "proxy": true, "plugin": true, "config": true, "kustomize": true}
 var shortValueFlags = map[byte]bool{'n': true, 'o': true, 'l': true, 'c': true, 'L': true}
 
-// longValueFlags are the long spellings of shortValueFlags; they take the next token as value.
-var longValueFlags = []string{"--namespace", "--output", "--selector", "--container", "--label-columns"}
+// valueFlags are global and shared options that take a separate value, which verbOf must skip.
+var valueFlags = []string{"-v", "--v", "--vmodule", "--request-timeout", "--log-flush-frequency",
+	"--namespace", "--output", "--selector", "--container", "--label-columns"}
 
 func connErr(flag string) error {
 	return fmt.Errorf("flag %s is not allowed: kbridge manages the cluster connection", flag)
@@ -68,7 +69,7 @@ func verbOf(args []string) string {
 func takesNext(tok string) bool {
 	return (len(tok) == 2 && shortValueFlags[tok[1]]) || tok == "-f" || tok == "--filename" ||
 		slices.Contains(connectionFlags, tok) || slices.Contains(fileFlags, tok) ||
-		slices.Contains(longValueFlags, tok)
+		slices.Contains(valueFlags, tok)
 }
 
 func checkToken(tok, next, verb string) error {
