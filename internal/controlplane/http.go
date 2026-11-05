@@ -139,6 +139,8 @@ func (s *HTTPServer) setupRoutes() {
 				admin.DELETE("/users/:id", s.adminHandlers.HandleDeleteUser)
 
 				admin.GET("/audit", s.adminHandlers.HandleListAuditLogs)
+
+				admin.GET("/rbac/status", s.handleRBACStatus)
 			}
 		}
 	}

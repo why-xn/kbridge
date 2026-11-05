@@ -15,6 +15,8 @@ type AgentInfo struct {
 	LastSeen    time.Time
 	// Capabilities the agent advertised at registration, e.g. "impersonation".
 	Capabilities []string
+	// SyncStatus is the agent's last binding sync report; nil until it reports.
+	SyncStatus *SyncStatus
 }
 
 // AgentStatus constants for agent connection state.

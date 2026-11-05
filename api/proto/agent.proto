@@ -27,6 +27,13 @@ service AgentService {
   // SubmitCommandResult is called by the agent after executing a command.
   // Submits the command output and exit code back to control plane.
   rpc SubmitCommandResult(SubmitCommandResultRequest) returns (SubmitCommandResultResponse);
+
+  // GetDesiredBindings returns the bindings the calling agent's own cluster
+  // should carry. An agent can never read another cluster's bindings.
+  rpc GetDesiredBindings(GetDesiredBindingsRequest) returns (GetDesiredBindingsResponse);
+
+  // ReportBindingSync records the outcome of the agent's last reconcile.
+  rpc ReportBindingSync(ReportBindingSyncRequest) returns (ReportBindingSyncResponse);
 }
 
 // RegisterRequest is sent by the agent to register with control plane.
@@ -87,6 +94,11 @@ message HeartbeatResponse {
 
   // next_heartbeat_seconds indicates how long to wait before the next heartbeat.
   int64 next_heartbeat_seconds = 2;
+
+  // desired_bindings_version is the version of the bindings this agent's
+  // cluster should carry; "none" when no policy is loaded, empty when the
+  // control plane could not compute it (the agent keeps its current state).
+  string desired_bindings_version = 3;
 }
 
 // CommandRequest represents a kubectl command to execute on the agent.
@@ -233,3 +245,10 @@ message PfClose          { string session_id = 1; uint32 conn_id = 2; }
 message PfConnError      { string session_id = 1; uint32 conn_id = 2; string error = 3; }
 message PfReady          { string session_id = 1; }
 message PfSessionError   { string session_id = 1; string error = 2; }
+
+message GetDesiredBindingsRequest  { string agent_id = 1; }
+// DesiredBinding is a RoleBinding, or a ClusterRoleBinding when namespace is empty.
+message DesiredBinding { string name = 1; string namespace = 2; string cluster_role = 3; repeated string users = 4; }
+message GetDesiredBindingsResponse { string version = 1; repeated DesiredBinding bindings = 2; }
+message ReportBindingSyncRequest   { string agent_id = 1; string version = 2; bool in_sync = 3; repeated string errors = 4; }
+message ReportBindingSyncResponse  {}

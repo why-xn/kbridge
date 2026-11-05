@@ -25,6 +25,8 @@ type GRPCServer struct {
 	cmdQueue *CommandQueue
 	authn    *AgentAuthenticator
 	sessions *SessionManager
+	// policy computes desired cluster bindings; nil means no policy is loaded.
+	policy *PolicyEngine
 }
 
 // NewGRPCServer creates a new gRPC server. agents tracks live agent state for
@@ -143,8 +145,9 @@ func (s *GRPCServer) Heartbeat(ctx context.Context, req *agentpb.HeartbeatReques
 	}
 
 	return &agentpb.HeartbeatResponse{
-		Acknowledged:         true,
-		NextHeartbeatSeconds: DefaultHeartbeatInterval,
+		Acknowledged:           true,
+		NextHeartbeatSeconds:   DefaultHeartbeatInterval,
+		DesiredBindingsVersion: s.heartbeatVersion(ctx, req.GetAgentId()),
 	}, nil
 }
 

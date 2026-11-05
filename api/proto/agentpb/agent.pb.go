@@ -363,8 +363,12 @@ type HeartbeatResponse struct {
 	Acknowledged bool `protobuf:"varint,1,opt,name=acknowledged,proto3" json:"acknowledged,omitempty"`
 	// next_heartbeat_seconds indicates how long to wait before the next heartbeat.
 	NextHeartbeatSeconds int64 `protobuf:"varint,2,opt,name=next_heartbeat_seconds,json=nextHeartbeatSeconds,proto3" json:"next_heartbeat_seconds,omitempty"`
-	unknownFields        protoimpl.UnknownFields
-	sizeCache            protoimpl.SizeCache
+	// desired_bindings_version is the version of the bindings this agent's
+	// cluster should carry; "none" when no policy is loaded, empty when the
+	// control plane could not compute it (the agent keeps its current state).
+	DesiredBindingsVersion string `protobuf:"bytes,3,opt,name=desired_bindings_version,json=desiredBindingsVersion,proto3" json:"desired_bindings_version,omitempty"`
+	unknownFields          protoimpl.UnknownFields
+	sizeCache              protoimpl.SizeCache
 }
 
 func (x *HeartbeatResponse) Reset() {
@@ -409,6 +413,13 @@ func (x *HeartbeatResponse) GetNextHeartbeatSeconds() int64 {
 		return x.NextHeartbeatSeconds
 	}
 	return 0
+}
+
+func (x *HeartbeatResponse) GetDesiredBindingsVersion() string {
+	if x != nil {
+		return x.DesiredBindingsVersion
+	}
+	return ""
 }
 
 // CommandRequest represents a kubectl command to execute on the agent.
@@ -2005,6 +2016,275 @@ func (x *PfSessionError) GetError() string {
 	return ""
 }
 
+type GetDesiredBindingsRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	AgentId       string                 `protobuf:"bytes,1,opt,name=agent_id,json=agentId,proto3" json:"agent_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetDesiredBindingsRequest) Reset() {
+	*x = GetDesiredBindingsRequest{}
+	mi := &file_agent_proto_msgTypes[27]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetDesiredBindingsRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetDesiredBindingsRequest) ProtoMessage() {}
+
+func (x *GetDesiredBindingsRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_agent_proto_msgTypes[27]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetDesiredBindingsRequest.ProtoReflect.Descriptor instead.
+func (*GetDesiredBindingsRequest) Descriptor() ([]byte, []int) {
+	return file_agent_proto_rawDescGZIP(), []int{27}
+}
+
+func (x *GetDesiredBindingsRequest) GetAgentId() string {
+	if x != nil {
+		return x.AgentId
+	}
+	return ""
+}
+
+// DesiredBinding is a RoleBinding, or a ClusterRoleBinding when namespace is empty.
+type DesiredBinding struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Name          string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	Namespace     string                 `protobuf:"bytes,2,opt,name=namespace,proto3" json:"namespace,omitempty"`
+	ClusterRole   string                 `protobuf:"bytes,3,opt,name=cluster_role,json=clusterRole,proto3" json:"cluster_role,omitempty"`
+	Users         []string               `protobuf:"bytes,4,rep,name=users,proto3" json:"users,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DesiredBinding) Reset() {
+	*x = DesiredBinding{}
+	mi := &file_agent_proto_msgTypes[28]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DesiredBinding) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DesiredBinding) ProtoMessage() {}
+
+func (x *DesiredBinding) ProtoReflect() protoreflect.Message {
+	mi := &file_agent_proto_msgTypes[28]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DesiredBinding.ProtoReflect.Descriptor instead.
+func (*DesiredBinding) Descriptor() ([]byte, []int) {
+	return file_agent_proto_rawDescGZIP(), []int{28}
+}
+
+func (x *DesiredBinding) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *DesiredBinding) GetNamespace() string {
+	if x != nil {
+		return x.Namespace
+	}
+	return ""
+}
+
+func (x *DesiredBinding) GetClusterRole() string {
+	if x != nil {
+		return x.ClusterRole
+	}
+	return ""
+}
+
+func (x *DesiredBinding) GetUsers() []string {
+	if x != nil {
+		return x.Users
+	}
+	return nil
+}
+
+type GetDesiredBindingsResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Version       string                 `protobuf:"bytes,1,opt,name=version,proto3" json:"version,omitempty"`
+	Bindings      []*DesiredBinding      `protobuf:"bytes,2,rep,name=bindings,proto3" json:"bindings,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetDesiredBindingsResponse) Reset() {
+	*x = GetDesiredBindingsResponse{}
+	mi := &file_agent_proto_msgTypes[29]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetDesiredBindingsResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetDesiredBindingsResponse) ProtoMessage() {}
+
+func (x *GetDesiredBindingsResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_agent_proto_msgTypes[29]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetDesiredBindingsResponse.ProtoReflect.Descriptor instead.
+func (*GetDesiredBindingsResponse) Descriptor() ([]byte, []int) {
+	return file_agent_proto_rawDescGZIP(), []int{29}
+}
+
+func (x *GetDesiredBindingsResponse) GetVersion() string {
+	if x != nil {
+		return x.Version
+	}
+	return ""
+}
+
+func (x *GetDesiredBindingsResponse) GetBindings() []*DesiredBinding {
+	if x != nil {
+		return x.Bindings
+	}
+	return nil
+}
+
+type ReportBindingSyncRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	AgentId       string                 `protobuf:"bytes,1,opt,name=agent_id,json=agentId,proto3" json:"agent_id,omitempty"`
+	Version       string                 `protobuf:"bytes,2,opt,name=version,proto3" json:"version,omitempty"`
+	InSync        bool                   `protobuf:"varint,3,opt,name=in_sync,json=inSync,proto3" json:"in_sync,omitempty"`
+	Errors        []string               `protobuf:"bytes,4,rep,name=errors,proto3" json:"errors,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ReportBindingSyncRequest) Reset() {
+	*x = ReportBindingSyncRequest{}
+	mi := &file_agent_proto_msgTypes[30]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ReportBindingSyncRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ReportBindingSyncRequest) ProtoMessage() {}
+
+func (x *ReportBindingSyncRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_agent_proto_msgTypes[30]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ReportBindingSyncRequest.ProtoReflect.Descriptor instead.
+func (*ReportBindingSyncRequest) Descriptor() ([]byte, []int) {
+	return file_agent_proto_rawDescGZIP(), []int{30}
+}
+
+func (x *ReportBindingSyncRequest) GetAgentId() string {
+	if x != nil {
+		return x.AgentId
+	}
+	return ""
+}
+
+func (x *ReportBindingSyncRequest) GetVersion() string {
+	if x != nil {
+		return x.Version
+	}
+	return ""
+}
+
+func (x *ReportBindingSyncRequest) GetInSync() bool {
+	if x != nil {
+		return x.InSync
+	}
+	return false
+}
+
+func (x *ReportBindingSyncRequest) GetErrors() []string {
+	if x != nil {
+		return x.Errors
+	}
+	return nil
+}
+
+type ReportBindingSyncResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ReportBindingSyncResponse) Reset() {
+	*x = ReportBindingSyncResponse{}
+	mi := &file_agent_proto_msgTypes[31]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ReportBindingSyncResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ReportBindingSyncResponse) ProtoMessage() {}
+
+func (x *ReportBindingSyncResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_agent_proto_msgTypes[31]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ReportBindingSyncResponse.ProtoReflect.Descriptor instead.
+func (*ReportBindingSyncResponse) Descriptor() ([]byte, []int) {
+	return file_agent_proto_rawDescGZIP(), []int{31}
+}
+
 var File_agent_proto protoreflect.FileDescriptor
 
 const file_agent_proto_rawDesc = "" +
@@ -2023,10 +2303,11 @@ const file_agent_proto_rawDesc = "" +
 	"\rerror_message\x18\x03 \x01(\tR\ferrorMessage\"d\n" +
 	"\x10HeartbeatRequest\x12\x19\n" +
 	"\bagent_id\x18\x01 \x01(\tR\aagentId\x125\n" +
-	"\x06status\x18\x02 \x01(\x0e2\x1d.kbridge.agent.v1.AgentStatusR\x06status\"m\n" +
+	"\x06status\x18\x02 \x01(\x0e2\x1d.kbridge.agent.v1.AgentStatusR\x06status\"\xa7\x01\n" +
 	"\x11HeartbeatResponse\x12\"\n" +
 	"\facknowledged\x18\x01 \x01(\bR\facknowledged\x124\n" +
-	"\x16next_heartbeat_seconds\x18\x02 \x01(\x03R\x14nextHeartbeatSeconds\"\xf9\x01\n" +
+	"\x16next_heartbeat_seconds\x18\x02 \x01(\x03R\x14nextHeartbeatSeconds\x128\n" +
+	"\x18desired_bindings_version\x18\x03 \x01(\tR\x16desiredBindingsVersion\"\xf9\x01\n" +
 	"\x0eCommandRequest\x12\x1d\n" +
 	"\n" +
 	"request_id\x18\x01 \x01(\tR\trequestId\x12\x19\n" +
@@ -2145,7 +2426,23 @@ const file_agent_proto_rawDesc = "" +
 	"\x0ePfSessionError\x12\x1d\n" +
 	"\n" +
 	"session_id\x18\x01 \x01(\tR\tsessionId\x12\x14\n" +
-	"\x05error\x18\x02 \x01(\tR\x05error*\\\n" +
+	"\x05error\x18\x02 \x01(\tR\x05error\"6\n" +
+	"\x19GetDesiredBindingsRequest\x12\x19\n" +
+	"\bagent_id\x18\x01 \x01(\tR\aagentId\"{\n" +
+	"\x0eDesiredBinding\x12\x12\n" +
+	"\x04name\x18\x01 \x01(\tR\x04name\x12\x1c\n" +
+	"\tnamespace\x18\x02 \x01(\tR\tnamespace\x12!\n" +
+	"\fcluster_role\x18\x03 \x01(\tR\vclusterRole\x12\x14\n" +
+	"\x05users\x18\x04 \x03(\tR\x05users\"t\n" +
+	"\x1aGetDesiredBindingsResponse\x12\x18\n" +
+	"\aversion\x18\x01 \x01(\tR\aversion\x12<\n" +
+	"\bbindings\x18\x02 \x03(\v2 .kbridge.agent.v1.DesiredBindingR\bbindings\"\x80\x01\n" +
+	"\x18ReportBindingSyncRequest\x12\x19\n" +
+	"\bagent_id\x18\x01 \x01(\tR\aagentId\x12\x18\n" +
+	"\aversion\x18\x02 \x01(\tR\aversion\x12\x17\n" +
+	"\ain_sync\x18\x03 \x01(\bR\x06inSync\x12\x16\n" +
+	"\x06errors\x18\x04 \x03(\tR\x06errors\"\x1b\n" +
+	"\x19ReportBindingSyncResponse*\\\n" +
 	"\vAgentStatus\x12\x18\n" +
 	"\x14AGENT_STATUS_UNKNOWN\x10\x00\x12\x18\n" +
 	"\x14AGENT_STATUS_HEALTHY\x10\x01\x12\x19\n" +
@@ -2154,14 +2451,16 @@ const file_agent_proto_rawDesc = "" +
 	"OutputType\x12\x17\n" +
 	"\x13OUTPUT_TYPE_UNKNOWN\x10\x00\x12\x16\n" +
 	"\x12OUTPUT_TYPE_STDOUT\x10\x01\x12\x16\n" +
-	"\x12OUTPUT_TYPE_STDERR\x10\x022\x81\x04\n" +
+	"\x12OUTPUT_TYPE_STDERR\x10\x022\xe0\x05\n" +
 	"\fAgentService\x12Q\n" +
 	"\bRegister\x12!.kbridge.agent.v1.RegisterRequest\x1a\".kbridge.agent.v1.RegisterResponse\x12T\n" +
 	"\tHeartbeat\x12\".kbridge.agent.v1.HeartbeatRequest\x1a#.kbridge.agent.v1.HeartbeatResponse\x12c\n" +
 	"\n" +
 	"OpenStream\x12$.kbridge.agent.v1.AgentStreamMessage\x1a+.kbridge.agent.v1.ControlPlaneStreamMessage(\x010\x01\x12o\n" +
 	"\x12GetPendingCommands\x12+.kbridge.agent.v1.GetPendingCommandsRequest\x1a,.kbridge.agent.v1.GetPendingCommandsResponse\x12r\n" +
-	"\x13SubmitCommandResult\x12,.kbridge.agent.v1.SubmitCommandResultRequest\x1a-.kbridge.agent.v1.SubmitCommandResultResponseB-Z+github.com/why-xn/kbridge/api/proto/agentpbb\x06proto3"
+	"\x13SubmitCommandResult\x12,.kbridge.agent.v1.SubmitCommandResultRequest\x1a-.kbridge.agent.v1.SubmitCommandResultResponse\x12o\n" +
+	"\x12GetDesiredBindings\x12+.kbridge.agent.v1.GetDesiredBindingsRequest\x1a,.kbridge.agent.v1.GetDesiredBindingsResponse\x12l\n" +
+	"\x11ReportBindingSync\x12*.kbridge.agent.v1.ReportBindingSyncRequest\x1a+.kbridge.agent.v1.ReportBindingSyncResponseB-Z+github.com/why-xn/kbridge/api/proto/agentpbb\x06proto3"
 
 var (
 	file_agent_proto_rawDescOnce sync.Once
@@ -2176,7 +2475,7 @@ func file_agent_proto_rawDescGZIP() []byte {
 }
 
 var file_agent_proto_enumTypes = make([]protoimpl.EnumInfo, 2)
-var file_agent_proto_msgTypes = make([]protoimpl.MessageInfo, 27)
+var file_agent_proto_msgTypes = make([]protoimpl.MessageInfo, 32)
 var file_agent_proto_goTypes = []any{
 	(AgentStatus)(0),                    // 0: kbridge.agent.v1.AgentStatus
 	(OutputType)(0),                     // 1: kbridge.agent.v1.OutputType
@@ -2207,6 +2506,11 @@ var file_agent_proto_goTypes = []any{
 	(*PfConnError)(nil),                 // 26: kbridge.agent.v1.PfConnError
 	(*PfReady)(nil),                     // 27: kbridge.agent.v1.PfReady
 	(*PfSessionError)(nil),              // 28: kbridge.agent.v1.PfSessionError
+	(*GetDesiredBindingsRequest)(nil),   // 29: kbridge.agent.v1.GetDesiredBindingsRequest
+	(*DesiredBinding)(nil),              // 30: kbridge.agent.v1.DesiredBinding
+	(*GetDesiredBindingsResponse)(nil),  // 31: kbridge.agent.v1.GetDesiredBindingsResponse
+	(*ReportBindingSyncRequest)(nil),    // 32: kbridge.agent.v1.ReportBindingSyncRequest
+	(*ReportBindingSyncResponse)(nil),   // 33: kbridge.agent.v1.ReportBindingSyncResponse
 }
 var file_agent_proto_depIdxs = []int32{
 	0,  // 0: kbridge.agent.v1.HeartbeatRequest.status:type_name -> kbridge.agent.v1.AgentStatus
@@ -2232,21 +2536,26 @@ var file_agent_proto_depIdxs = []int32{
 	28, // 20: kbridge.agent.v1.AgentStreamMessage.pf_session_error:type_name -> kbridge.agent.v1.PfSessionError
 	1,  // 21: kbridge.agent.v1.StreamOutput.type:type_name -> kbridge.agent.v1.OutputType
 	3,  // 22: kbridge.agent.v1.PortForwardStart.identity:type_name -> kbridge.agent.v1.Identity
-	2,  // 23: kbridge.agent.v1.AgentService.Register:input_type -> kbridge.agent.v1.RegisterRequest
-	5,  // 24: kbridge.agent.v1.AgentService.Heartbeat:input_type -> kbridge.agent.v1.HeartbeatRequest
-	18, // 25: kbridge.agent.v1.AgentService.OpenStream:input_type -> kbridge.agent.v1.AgentStreamMessage
-	9,  // 26: kbridge.agent.v1.AgentService.GetPendingCommands:input_type -> kbridge.agent.v1.GetPendingCommandsRequest
-	11, // 27: kbridge.agent.v1.AgentService.SubmitCommandResult:input_type -> kbridge.agent.v1.SubmitCommandResultRequest
-	4,  // 28: kbridge.agent.v1.AgentService.Register:output_type -> kbridge.agent.v1.RegisterResponse
-	6,  // 29: kbridge.agent.v1.AgentService.Heartbeat:output_type -> kbridge.agent.v1.HeartbeatResponse
-	13, // 30: kbridge.agent.v1.AgentService.OpenStream:output_type -> kbridge.agent.v1.ControlPlaneStreamMessage
-	10, // 31: kbridge.agent.v1.AgentService.GetPendingCommands:output_type -> kbridge.agent.v1.GetPendingCommandsResponse
-	12, // 32: kbridge.agent.v1.AgentService.SubmitCommandResult:output_type -> kbridge.agent.v1.SubmitCommandResultResponse
-	28, // [28:33] is the sub-list for method output_type
-	23, // [23:28] is the sub-list for method input_type
-	23, // [23:23] is the sub-list for extension type_name
-	23, // [23:23] is the sub-list for extension extendee
-	0,  // [0:23] is the sub-list for field type_name
+	30, // 23: kbridge.agent.v1.GetDesiredBindingsResponse.bindings:type_name -> kbridge.agent.v1.DesiredBinding
+	2,  // 24: kbridge.agent.v1.AgentService.Register:input_type -> kbridge.agent.v1.RegisterRequest
+	5,  // 25: kbridge.agent.v1.AgentService.Heartbeat:input_type -> kbridge.agent.v1.HeartbeatRequest
+	18, // 26: kbridge.agent.v1.AgentService.OpenStream:input_type -> kbridge.agent.v1.AgentStreamMessage
+	9,  // 27: kbridge.agent.v1.AgentService.GetPendingCommands:input_type -> kbridge.agent.v1.GetPendingCommandsRequest
+	11, // 28: kbridge.agent.v1.AgentService.SubmitCommandResult:input_type -> kbridge.agent.v1.SubmitCommandResultRequest
+	29, // 29: kbridge.agent.v1.AgentService.GetDesiredBindings:input_type -> kbridge.agent.v1.GetDesiredBindingsRequest
+	32, // 30: kbridge.agent.v1.AgentService.ReportBindingSync:input_type -> kbridge.agent.v1.ReportBindingSyncRequest
+	4,  // 31: kbridge.agent.v1.AgentService.Register:output_type -> kbridge.agent.v1.RegisterResponse
+	6,  // 32: kbridge.agent.v1.AgentService.Heartbeat:output_type -> kbridge.agent.v1.HeartbeatResponse
+	13, // 33: kbridge.agent.v1.AgentService.OpenStream:output_type -> kbridge.agent.v1.ControlPlaneStreamMessage
+	10, // 34: kbridge.agent.v1.AgentService.GetPendingCommands:output_type -> kbridge.agent.v1.GetPendingCommandsResponse
+	12, // 35: kbridge.agent.v1.AgentService.SubmitCommandResult:output_type -> kbridge.agent.v1.SubmitCommandResultResponse
+	31, // 36: kbridge.agent.v1.AgentService.GetDesiredBindings:output_type -> kbridge.agent.v1.GetDesiredBindingsResponse
+	33, // 37: kbridge.agent.v1.AgentService.ReportBindingSync:output_type -> kbridge.agent.v1.ReportBindingSyncResponse
+	31, // [31:38] is the sub-list for method output_type
+	24, // [24:31] is the sub-list for method input_type
+	24, // [24:24] is the sub-list for extension type_name
+	24, // [24:24] is the sub-list for extension extendee
+	0,  // [0:24] is the sub-list for field type_name
 }
 
 func init() { file_agent_proto_init() }
@@ -2280,7 +2589,7 @@ func file_agent_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_agent_proto_rawDesc), len(file_agent_proto_rawDesc)),
 			NumEnums:      2,
-			NumMessages:   27,
+			NumMessages:   32,
 			NumExtensions: 0,
 			NumServices:   1,
 		},
