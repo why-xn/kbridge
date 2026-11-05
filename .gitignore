@@ -43,3 +43,5 @@ docs/plans
 
 # Superpowers brainstorming / spec docs (kept local, not committed)
 docs/superpowers/
+# Superpowers SDD workspace (local scratch)
+.superpowers/
