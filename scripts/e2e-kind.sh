@@ -139,7 +139,8 @@ rbac:
   policy_file: "${CONFIG_DIR}/rbac.yaml"
 EOF
 
-    # Create RBAC policy: the e2e admin gets full access; everyone else is a viewer.
+    # Create RBAC policy: the e2e admin gets full access; the developer may do
+    # anything in e2e-dev; everyone else is a viewer.
     cat > "${CONFIG_DIR}/rbac.yaml" <<EOF
 default: viewer
 roles:
@@ -155,9 +156,17 @@ roles:
         namespaces: ["*"]
         resources: ["*"]
         verbs: ["get", "list", "watch", "describe", "logs"]
+  - name: developer
+    rules:
+      - clusters: ["*"]
+        namespaces: ["e2e-dev"]
+        resources: ["*"]
+        verbs: ["*"]
 bindings:
   - subject: admin@e2e.test
     roles: ["admin"]
+  - subject: developer@e2e.test
+    roles: ["viewer", "developer"]
 EOF
 
     # Fail fast (with a clear message) if the port is already taken by something
@@ -246,6 +255,20 @@ start_agent() {
     exit 1
 }
 
+# The agent impersonates kbridge:<email>, so those users need cluster RBAC.
+# shortcut: bound by hand until the agent syncs RBAC from the policy (Part C).
+bind_e2e_users() {
+    log_info "Binding e2e users in cluster RBAC..."
+    kubectl create namespace e2e-dev
+    kubectl create namespace e2e-nobind
+    kubectl label namespace e2e-dev pod-security.kubernetes.io/enforce=baseline
+    kubectl create clusterrolebinding e2e-admin --clusterrole=cluster-admin --user=kbridge:admin@e2e.test
+    kubectl create rolebinding e2e-developer -n e2e-dev --clusterrole=edit --user=kbridge:developer@e2e.test
+    kubectl create clusterrolebinding e2e-viewers --clusterrole=view \
+        --user=kbridge:viewer@e2e.test --user=kbridge:edge-verbs@e2e.test \
+        --user=kbridge:edge-reload@e2e.test --user=kbridge:edge-audit@e2e.test
+}
+
 stop_agent() {
     log_info "Stopping agent..."
     helm uninstall kbridge-agent -n kbridge --ignore-not-found 2>/dev/null || true
@@ -317,6 +340,7 @@ main() {
             start_control_plane
             login_control_plane
             start_agent
+            bind_e2e_users
             setup_cli_config
             log_info "E2E environment is ready!"
             log_info "Control plane: http://localhost:${CONTROL_PLANE_PORT}"
@@ -348,6 +372,7 @@ main() {
             start_control_plane
             login_control_plane
             start_agent
+            bind_e2e_users
             setup_cli_config
             run_tests
             # cleanup happens via trap

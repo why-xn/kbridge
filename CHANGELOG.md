@@ -32,9 +32,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   runs in the same cluster. An optional `networkPolicy` limits agent egress to
   the API server, the control plane and DNS.
 
-**Upgrading:** upgrade agents first; a new agent works with the current
-control plane and enforces the checks on its own. Then upgrade the control
-plane and the CLI. Behaviour users will notice:
+**Upgrading:** upgrade the control plane and agents together (see
+[Changed](#changed) below), then the CLI. Behaviour users will notice:
 
 - `-f <URL>` is fetched by the `kb` CLI; an older CLI's `-f <URL>` is refused.
 - `-k <dir>` is refused with a hint to run
@@ -42,6 +41,26 @@ plane and the CLI. Behaviour users will notice:
 - `kb cp` is refused. Use `kb exec -i … -- tar` or similar instead.
 - Commands into the agent's namespace or a protected namespace are refused,
   as is `kb get secrets -A`.
+
+### Changed
+
+- **Breaking: commands run as the requesting user, not as the agent.** The
+  agent impersonates `kbridge:<email>` on every request to the API server, so
+  Kubernetes RBAC bound to that user now decides what a command may do, after
+  the kbridge policy allows it. Admission (PodSecurity and the like) applies as
+  that user too. The agent chart's ClusterRole grants impersonation only; the
+  `rbac.rules` value is removed. Each request carries the extra
+  `kbridge-request-id`, visible in the Kubernetes audit log under
+  `impersonatedUser`. See
+  [docs/security.md](docs/security.md#binding-kbridge-users-in-the-cluster).
+
+**Upgrading:** upgrade the control plane and all agents together. A new
+agent refuses commands from an old control plane (no identity), and a new
+control plane answers `503` for an old agent. Before users run commands, bind
+each `kbridge:<email>` user in each cluster by hand, for example
+`kubectl create rolebinding dev-alice -n team-a --clusterrole=edit --user=kbridge:alice@corp.com`;
+without a binding every request is `Forbidden`. A later release syncs these
+bindings from the kbridge policy.
 
 ## [0.2.2-alpha.1] - 2026-10-21
 

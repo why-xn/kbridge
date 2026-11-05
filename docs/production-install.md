@@ -245,14 +245,11 @@ namespace too: `--set 'protectedNamespaces={kbridge-system}'`.
 
 For a private CA add `--set controlPlane.tls.caCert="$(cat ca.crt)"`.
 
-To scope the agent's ClusterRole down (the kbridge RBAC policy is the per-user
-gate, but defense-in-depth recommends limiting the SA's Kubernetes permissions):
-
-```bash
---set 'rbac.rules[0].apiGroups={""}'  \
---set 'rbac.rules[0].resources={pods,nodes,namespaces,services}'  \
---set 'rbac.rules[0].verbs={get,list,watch}'
-```
+The agent's ClusterRole grants impersonation only: every command runs as
+`kbridge:<email>`, and Kubernetes RBAC bound to that user decides what it may
+do. Bind your users in this cluster before they use it, for example
+`kubectl create rolebinding dev-alice -n team-a --clusterrole=edit --user=kbridge:alice@corp.com`
+(see [security.md](security.md#binding-kbridge-users-in-the-cluster)).
 
 ## 8. Verify the Deployment
 

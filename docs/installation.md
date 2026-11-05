@@ -113,8 +113,9 @@ Generate an agent token first with
 by seeding one through the control plane's `bootstrap` config.
 
 Key chart values are documented in each chart's `values.yaml`. The agent chart
-creates a ServiceAccount + ClusterRole; scope `rbac.rules` down to what your
-users actually need (the kbridge policy file is the per-user gate).
+creates a ServiceAccount + ClusterRole that grants impersonation only; every
+command runs as `kbridge:<email>`, so bind those users to roles in the cluster
+(see [security.md](security.md#binding-kbridge-users-in-the-cluster)).
 
 The agent never hands its ServiceAccount token to kubectl. The chart turns off
 the default token mount and projects the token, CA and namespace read-only
