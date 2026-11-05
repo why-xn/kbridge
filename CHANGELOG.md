@@ -7,6 +7,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+- **kubectl on the agent no longer holds the agent's credentials.** Before,
+  the agent ran kubectl with its own ServiceAccount (cluster-admin by chart
+  default) and passed user arguments through. A user allowed to run any
+  command could add `--server`, `--token`, `--kubeconfig` or `--as` to send
+  the agent's credentials elsewhere or act as someone else, reach the agent's
+  own namespace however `-n` was spelled (`-nkbridge`), have the agent fetch
+  `-f` URLs and read local files on the agent (`--from-file`, `-f <path>`), and
+  use `kb cp` to read or write the agent's filesystem, including its token.
+  Now kubectl talks to a loopback proxy in the agent with a one-off nonce; the
+  proxy adds the agent token, drops `Authorization` and `Impersonate-*`
+  headers, and refuses the agent's namespace, any `protectedNamespaces`, and
+  the cluster-wide secrets list and watch. Connection flags, file flags and
+  the verbs `cp`, `proxy`, `plugin`, `config` and `kustomize` are refused by
+  the control plane (`403`, audited as `denied`) and again by the agent. See
+  [docs/security.md](docs/security.md#layer-2--the-agent-what-kubectl-can-actually-do)
+  for what this does and does not cover.
+- **The agent chart mounts its token at `/var/run/kbridge/sa`** as a projected
+  volume (10 minute expiry) and nothing at the default ServiceAccount path. A
+  new `protectedNamespaces` value lists namespaces besides the release
+  namespace that the agent refuses; add the control plane's namespace if it
+  runs in the same cluster. An optional `networkPolicy` limits agent egress to
+  the API server, the control plane and DNS.
+
+**Upgrading:** upgrade agents first; a new agent works with the current
+control plane and enforces the checks on its own. Then upgrade the control
+plane and the CLI. Behaviour users will notice:
+
+- `-f <URL>` is fetched by the `kb` CLI; an older CLI's `-f <URL>` is refused.
+- `-k <dir>` is refused with a hint to run
+  `kubectl kustomize <dir> | kb apply -f -`.
+- `kb cp` is refused. Use `kb exec -i … -- tar` or similar instead.
+- Commands into the agent's namespace or a protected namespace are refused,
+  as is `kb get secrets -A`.
+
 ## [0.2.2-alpha.1] - 2026-10-21
 
 ### Fixed

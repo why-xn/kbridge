@@ -191,21 +191,58 @@ the audit log with status `denied` — the agent never sees it.
 See [rbac.md](rbac.md) for the full policy reference including wildcards,
 hot-reload, and the `default` role.
 
-### Layer 2 — agent Kubernetes ServiceAccount (what kubectl can actually do)
+### Layer 2 — the agent (what kubectl can actually do)
 
-The agent runs `kubectl` using the ServiceAccount bound to its ClusterRole. This
-controls what the Kubernetes API server will actually permit. It is entirely
-independent of the kbridge policy: even if a user is denied by kbridge RBAC, a
-compromised or misconfigured agent could still act using its own ServiceAccount
-credentials.
+The agent's ServiceAccount, bound to its ClusterRole, decides what the
+Kubernetes API server will permit. kubectl itself never holds that credential.
+For each command the agent starts kubectl with an empty kubeconfig and a
+minimal environment, pointed by flags at a TLS proxy on loopback inside the
+agent (the "window"), with a one-off nonce as its bearer token. The nonce is
+valid until that command ends. The window:
 
-**Critically: a locked-down kbridge policy combined with a `cluster-admin` agent
-ServiceAccount is NOT defense in depth.** If the agent is compromised, an
-attacker has full cluster access regardless of what the kbridge policy says.
+- accepts only requests that carry a live nonce;
+- strips any `Authorization` and `Impersonate-*` headers and forwards with the
+  agent's own token, re-read from disk on every request so kubelet rotation
+  takes effect;
+- refuses any request under a protected namespace: the agent's own namespace
+  (the Helm release namespace) and any listed in `protected_namespaces`
+  (`protectedNamespaces` in the chart). This covers `exec`, `logs`,
+  `port-forward`, `create token` and every object in those namespaces;
+- refuses `GET /api/v1/secrets` and `/api/v1/watch/secrets`, the cluster-wide
+  secrets list and watch.
 
-The agent chart default `rbac.rules` grants `*/*` on all verbs — equivalent to
-`cluster-admin`. You must scope this down to the minimum your users actually need
-(see the next section).
+The chart mounts the token as a projected volume at `/var/run/kbridge/sa`
+(default 10 minute expiry) and leaves nothing at the default ServiceAccount
+path.
+
+Two argument checks run before kubectl starts, first on the control plane
+(refusal is a `403` and a `denied` audit row) and again on the agent:
+
+- **Connection flags** (`--server`, `--token`, `--kubeconfig`, `--context`,
+  `--as`, client certificate and TLS flags and the like) are refused, so a
+  command cannot point kubectl somewhere other than the window or swap
+  credentials.
+- **File flags** (`--from-file`, `--from-env-file`, `-k`, `--template`,
+  `-f` with anything other than `-`, and similar) are refused, so kubectl
+  never reads a file on the agent. The `kb` CLI reads local files and fetches
+  `-f <URL>` itself and sends the content on stdin. The verbs `cp`, `proxy`,
+  `plugin`, `config` and `kustomize` are refused outright.
+
+**Limit: kubectl runs as the agent's uid.** It can read the token file the
+same way the agent does. The window keeps the token out of kubectl's
+arguments, kubeconfig and environment, but the flag checks above are what
+stop a command from reading the token file or sending it elsewhere. A gap in
+those checks is a token leak. The structural fix is to run kubectl under a second uid that
+cannot read the token; it is not done yet.
+
+The window narrows what a user can reach through kbridge. It does not narrow
+what a compromised agent can do: that is still the ClusterRole.
+**A locked-down kbridge policy combined with a `cluster-admin` agent
+ServiceAccount is NOT defense in depth.** The agent chart default `rbac.rules`
+grants `*/*` on all verbs, equivalent to `cluster-admin`. Scope it down to the
+minimum your users actually need (see the next section), and consider the
+chart's optional `networkPolicy`, which limits agent egress to the API server,
+the control plane and cluster DNS.
 
 ### How the layers interact
 

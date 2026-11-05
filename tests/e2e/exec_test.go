@@ -17,9 +17,15 @@ import (
 // ensureShellPod creates a long-lived pod with a shell and waits until Ready.
 func ensureShellPod(t *testing.T, name string) {
 	t.Helper()
+	ensurePod(t, name, "sleep 3600")
+}
+
+// ensurePod creates a busybox pod running script and waits until Ready.
+func ensurePod(t *testing.T, name, script string) {
+	t.Helper()
 	_, _, _ = runCLI(t, "delete", "pod", name, "--ignore-not-found")
 	if _, stderr, code := runCLI(t, "run", name, "--image=busybox:1.36", "--restart=Never",
-		"--command", "--", "sh", "-c", "sleep 3600"); code != 0 {
+		"--command", "--", "sh", "-c", script); code != 0 {
 		t.Fatalf("create pod: %s", stderr)
 	}
 	if _, stderr, code := runCLI(t, "wait", "--for=condition=Ready", "pod/"+name, "--timeout=60s"); code != 0 {
