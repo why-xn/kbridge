@@ -33,9 +33,14 @@ var boolFlags = map[string][]string{
 
 var shortValueFlags = map[byte]bool{'n': true, 'o': true, 'l': true, 'c': true, 'L': true}
 
-// valueFlags are global and shared options that take a separate value, which verbOf must skip.
-var valueFlags = []string{"-v", "--v", "--vmodule", "--request-timeout", "--log-flush-frequency",
-	"--namespace", "--output", "--selector", "--container", "--label-columns"}
+// globalValueFlags and globalBoolFlags are kubectl's global options at v1.31.0 (`kubectl options`).
+// Before the verb, cobra lets any other --flag written without "=" take the next token, which hides the verb.
+var globalValueFlags = []string{"--as", "--as-group", "--as-uid", "--cache-dir", "--certificate-authority",
+	"--client-certificate", "--client-key", "--cluster", "--context", "--kubeconfig", "--log-flush-frequency",
+	"--namespace", "--password", "--profile", "--profile-output", "--request-timeout", "--server",
+	"--tls-server-name", "--token", "--user", "--username", "--v", "--vmodule"}
+var globalBoolFlags = []string{"--disable-compression", "--insecure-skip-tls-verify", "--match-server-version",
+	"--warnings-as-errors"}
 
 func connErr(flag string) error {
 	return fmt.Errorf("flag %s is not allowed: kbridge manages the cluster connection", flag)
@@ -49,7 +54,10 @@ func fileErr(flag string) error {
 // or run verbs that act on the agent's own environment. It never parses manifests.
 // A value flag can swallow "--", so "--" ends the check only for a container-command verb.
 func Check(args []string) error {
-	verb := verbOf(args)
+	verb, err := verbOf(args)
+	if err != nil {
+		return err
+	}
 	if refusedVerbs[verb] {
 		return fmt.Errorf("kubectl %s is not supported through kbridge", verb)
 	}
@@ -68,18 +76,22 @@ func Check(args []string) error {
 	return nil
 }
 
-// verbOf returns the first positional token, skipping flags and their values.
-func verbOf(args []string) string {
+// verbOf returns the first positional token, skipping flags and their values the way cobra does,
+// and refuses a flag before it that cobra would let swallow the verb.
+func verbOf(args []string) (string, error) {
 	for i := 0; i < len(args); i++ {
 		tok := args[i]
 		switch {
 		case !strings.HasPrefix(tok, "-"):
-			return tok
+			return tok, nil
+		case tok == "--" || strings.Contains(tok, "=") || slices.Contains(globalBoolFlags, tok):
 		case takesNext(tok):
 			i++
+		case strings.HasPrefix(tok, "--"):
+			return "", fmt.Errorf("flag %s must come after the command or be written as %s=<value>", tok, tok)
 		}
 	}
-	return ""
+	return "", nil
 }
 
 // checkTerminator refuses a "--" that the flag just before it would take as its value.
@@ -119,10 +131,9 @@ func shortSwallower(tok, verb string) string {
 	return ""
 }
 
+// takesNext reports whether cobra gives tok the next token: any two-letter short flag, or a global value option.
 func takesNext(tok string) bool {
-	return (len(tok) == 2 && shortValueFlags[tok[1]]) || tok == "-f" || tok == "--filename" ||
-		slices.Contains(connectionFlags, tok) || slices.Contains(fileFlags, tok) ||
-		slices.Contains(valueFlags, tok)
+	return (len(tok) == 2 && tok[1] != '-') || slices.Contains(globalValueFlags, tok)
 }
 
 func checkToken(tok, next, verb string) error {

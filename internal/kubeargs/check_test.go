@@ -15,11 +15,14 @@ const (
 	fMsg    = `-f only accepts "-" on the agent: the kb CLI uploads local files and URLs`
 	verbMsg = "kubectl %s is not supported through kbridge"
 	termMsg = "flag %s must be written as %s=<value> before --"
+	leadMsg = "flag %s must come after the command or be written as %s=<value>"
 )
 
 func sprintf(f, a string) string { return strings.Replace(f, "%s", a, 1) }
 
 func term(flag string) string { return strings.ReplaceAll(termMsg, "%s", flag) }
+
+func lead(flag string) string { return strings.ReplaceAll(leadMsg, "%s", flag) }
 
 func TestCheck(t *testing.T) {
 	refused := []struct {
@@ -60,6 +63,13 @@ func TestCheck(t *testing.T) {
 		{"exec web -itn -- --server=x sh", term("-n")},
 		{"exec web -v -- --token=x sh", term("-v")},
 		{"-- cp /var/run/kbridge/sa/token default/x:/tmp/t", sprintf(verbMsg, "cp")},
+		// cobra lets an unknown flag before the verb take the next token, so the verb would hide behind it
+		{"--retries 5 cp /var/run/kbridge/sa/token default/x:/tmp/t", lead("--retries")},
+		{"--port 8001 proxy", lead("--port")},
+		{"--retries=5 cp a b", sprintf(verbMsg, "cp")},
+		{"--unknown-flag get pods", lead("--unknown-flag")},
+		{"-p 8001 proxy", sprintf(verbMsg, "proxy")},
+		{"-c 5 cp /var/run/kbridge/sa/token default/x:/tmp/t", sprintf(verbMsg, "cp")},
 	}
 	for _, tc := range refused {
 		err := Check(strings.Fields(tc.args))
@@ -78,6 +88,7 @@ func TestCheck(t *testing.T) {
 		"run x --image=busybox --rm -it -- sh", "run x --image busybox -- sh",
 		"debug node/x --image=busybox -it -- sh",
 		"get pods -- name",
+		"--namespace dev get pods", "--warnings-as-errors get pods", "get pods --retries 5",
 	}
 	for _, a := range allowed {
 		if err := Check(strings.Fields(a)); err != nil {
@@ -124,15 +135,22 @@ func mentionsRisk(flag string) bool {
 
 var optionLine = regexp.MustCompile(`(?m)^\s+(?:(-\w), )?(--[\w-]+)=(.*?):`)
 
-// assertValueOptionsSkipped fails when a value-taking global option does not hide its value from verbOf.
+// assertValueOptionsSkipped fails when a global option is not classified as kubectl classifies it,
+// or when verbOf does not skip a value-taking option's value.
 func assertValueOptionsSkipped(t *testing.T, options string) {
 	t.Helper()
 	for _, m := range optionLine.FindAllStringSubmatch(options, -1) {
 		if m[3] == "true" || m[3] == "false" {
+			if !slices.Contains(globalBoolFlags, m[2]) {
+				t.Errorf("global boolean option %s is not in globalBoolFlags", m[2])
+			}
 			continue
 		}
+		if !slices.Contains(globalValueFlags, m[2]) {
+			t.Errorf("global value option %s is not in globalValueFlags", m[2])
+		}
 		for _, name := range []string{m[1], m[2]} {
-			if name != "" && verbOf([]string{name, "VALUE", "get"}) != "get" {
+			if verb, _ := verbOf([]string{name, "VALUE", "get"}); name != "" && verb != "get" {
 				t.Errorf("verbOf does not skip the value of %s", name)
 			}
 		}
