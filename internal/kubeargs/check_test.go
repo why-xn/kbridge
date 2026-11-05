@@ -14,9 +14,12 @@ const (
 	fileMsg = "flag %s is not allowed: the agent does not read local files; the kb CLI uploads them"
 	fMsg    = `-f only accepts "-" on the agent: the kb CLI uploads local files and URLs`
 	verbMsg = "kubectl %s is not supported through kbridge"
+	termMsg = "flag %s must be written as %s=<value> before --"
 )
 
 func sprintf(f, a string) string { return strings.Replace(f, "%s", a, 1) }
+
+func term(flag string) string { return strings.ReplaceAll(termMsg, "%s", flag) }
 
 func TestCheck(t *testing.T) {
 	refused := []struct {
@@ -45,6 +48,18 @@ func TestCheck(t *testing.T) {
 		{"proxy", sprintf(verbMsg, "proxy")},
 		{"config view", sprintf(verbMsg, "config")},
 		{"kustomize ./d", sprintf(verbMsg, "kustomize")},
+		// a value flag swallows "--", so the flags after it are live to kubectl
+		{"create configmap x --dry-run=client -o yaml --field-manager -- --from-file=/var/run/kbridge/sa/token",
+			sprintf(fileMsg, "--from-file")},
+		{"apply --field-manager -- -f /var/run/kbridge/sa/token", fMsg},
+		{"patch cm x --subresource -- --patch-file=/var/run/kbridge/sa/token", sprintf(fileMsg, "--patch-file")},
+		{"debug node/x --profile -- --custom=/var/run/kbridge/sa/token", sprintf(fileMsg, "--profile")},
+		{"debug node/x --image -- --custom=/var/run/kbridge/sa/token", term("--image")},
+		{"run x --image=busybox --overrides -- sh", term("--overrides")},
+		{"exec web -c -- --kubeconfig=/k sh", term("-c")},
+		{"exec web -itn -- --server=x sh", term("-n")},
+		{"exec web -v -- --token=x sh", term("-v")},
+		{"-- cp /var/run/kbridge/sa/token default/x:/tmp/t", sprintf(verbMsg, "cp")},
 	}
 	for _, tc := range refused {
 		err := Check(strings.Fields(tc.args))
@@ -59,6 +74,10 @@ func TestCheck(t *testing.T) {
 		"get pods -o wide", "get pods -o jsonpath={.items[0]}",
 		"get pods -l app=x -nfoo", "-n dev get pods",
 		"-v 4 get pods", "--request-timeout=5s get pods",
+		"exec web -c app -- sh", "exec --stdin --tty web -- sh", "exec web --stdin -- sh",
+		"run x --image=busybox --rm -it -- sh", "run x --image busybox -- sh",
+		"debug node/x --image=busybox -it -- sh",
+		"get pods -- name",
 	}
 	for _, a := range allowed {
 		if err := Check(strings.Fields(a)); err != nil {
@@ -74,6 +93,7 @@ func TestCheck_KnowsPinnedKubectlFlags(t *testing.T) {
 	}
 	known := slices.Concat(connectionFlags, fileFlags, []string{"-f", "--filename"}, benignFlags)
 	re := regexp.MustCompile(`--[a-z0-9-]+`)
+	assertBoolFlagsBoolean(t, bin)
 	for _, sub := range [][]string{{"options"}, {"apply", "--help"}} {
 		out, err := exec.Command(bin, sub...).CombinedOutput()
 		if err != nil {
@@ -114,6 +134,28 @@ func assertValueOptionsSkipped(t *testing.T, options string) {
 		for _, name := range []string{m[1], m[2]} {
 			if name != "" && verbOf([]string{name, "VALUE", "get"}) != "get" {
 				t.Errorf("verbOf does not skip the value of %s", name)
+			}
+		}
+	}
+}
+
+// assertBoolFlagsBoolean fails when a flag the check treats as boolean takes a value at the pinned kubectl.
+func assertBoolFlagsBoolean(t *testing.T, bin string) {
+	t.Helper()
+	for verb, flags := range boolFlags {
+		out, err := exec.Command(bin, verb, "--help").CombinedOutput()
+		if err != nil {
+			t.Fatalf("kubectl %s --help: %v", verb, err)
+		}
+		var bools []string
+		for _, m := range optionLine.FindAllStringSubmatch(string(out), -1) {
+			if m[3] == "true" || m[3] == "false" {
+				bools = append(bools, m[1], m[2])
+			}
+		}
+		for _, f := range flags {
+			if !slices.Contains(bools, f) {
+				t.Errorf("kubectl %s: flag %s is not boolean", verb, f)
 			}
 		}
 	}

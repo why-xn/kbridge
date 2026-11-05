@@ -12,8 +12,25 @@ var connectionFlags = []string{"-s", "--server", "--token", "--kubeconfig", "--c
 	"--certificate-authority", "--client-certificate", "--client-key",
 	"--insecure-skip-tls-verify", "--tls-server-name", "--cache-dir"}
 var fileFlags = []string{"-k", "--kustomize", "--from-file", "--from-env-file", "--cert", "--key",
-	"--patch-file", "--template", "--profile", "--profile-output"}
+	"--patch-file", "--template", "--profile", "--profile-output", "--custom"}
 var refusedVerbs = map[string]bool{"cp": true, "proxy": true, "plugin": true, "config": true, "kustomize": true}
+
+// containerVerbs pass the arguments after a real "--" to a container command, not to kubectl.
+var containerVerbs = map[string]bool{"exec": true, "attach": true, "run": true, "debug": true}
+
+// boolFlags are the boolean flags of each container-command verb at kubectl v1.31.0 (`kubectl <verb> --help`).
+// Any other flag written without "=" just before "--" takes "--" as its value.
+var boolFlags = map[string][]string{
+	"exec":   {"-i", "--stdin", "-t", "--tty", "-q", "--quiet"},
+	"attach": {"-i", "--stdin", "-t", "--tty", "-q", "--quiet"},
+	"run": {"-i", "--stdin", "-t", "--tty", "-q", "--quiet", "-R", "--recursive", "--allow-missing-template-keys",
+		"--attach", "--command", "--expose", "--force", "--leave-stdin-open", "--privileged", "--rm",
+		"--save-config", "--show-managed-fields", "--wait"},
+	"debug": {"-i", "--stdin", "-t", "--tty", "-q", "--quiet", "--arguments-only", "--attach",
+		"--keep-annotations", "--keep-init-containers", "--keep-labels", "--keep-liveness", "--keep-readiness",
+		"--keep-startup", "--replace", "--same-node", "--share-processes"},
+}
+
 var shortValueFlags = map[byte]bool{'n': true, 'o': true, 'l': true, 'c': true, 'L': true}
 
 // valueFlags are global and shared options that take a separate value, which verbOf must skip.
@@ -30,14 +47,15 @@ func fileErr(flag string) error {
 
 // Check refuses kubectl arguments that change the connection, read local files,
 // or run verbs that act on the agent's own environment. It never parses manifests.
+// A value flag can swallow "--", so "--" ends the check only for a container-command verb.
 func Check(args []string) error {
 	verb := verbOf(args)
 	if refusedVerbs[verb] {
 		return fmt.Errorf("kubectl %s is not supported through kbridge", verb)
 	}
 	for i, tok := range args {
-		if tok == "--" {
-			return nil
+		if tok == "--" && containerVerbs[verb] {
+			return checkTerminator(args[:i], verb)
 		}
 		next := ""
 		if i+1 < len(args) {
@@ -55,12 +73,47 @@ func verbOf(args []string) string {
 	for i := 0; i < len(args); i++ {
 		tok := args[i]
 		switch {
-		case tok == "--":
-			return ""
 		case !strings.HasPrefix(tok, "-"):
 			return tok
 		case takesNext(tok):
 			i++
+		}
+	}
+	return ""
+}
+
+// checkTerminator refuses a "--" that the flag just before it would take as its value.
+func checkTerminator(before []string, verb string) error {
+	if len(before) == 0 {
+		return nil
+	}
+	if flag := swallower(before[len(before)-1], verb); flag != "" {
+		return fmt.Errorf("flag %s must be written as %s=<value> before --", flag, flag)
+	}
+	return nil
+}
+
+// swallower returns the flag in tok that would take the next token as its value, or "".
+func swallower(tok, verb string) string {
+	switch {
+	case strings.HasPrefix(tok, "--"):
+		if !strings.Contains(tok, "=") && !slices.Contains(boolFlags[verb], tok) {
+			return tok
+		}
+	case len(tok) > 1 && tok[0] == '-':
+		return shortSwallower(tok, verb)
+	}
+	return ""
+}
+
+// shortSwallower finds the first non-boolean letter of a cluster; it takes the next token only when it is last.
+func shortSwallower(tok, verb string) string {
+	for i := 1; i < len(tok); i++ {
+		if f := "-" + string(tok[i]); !slices.Contains(boolFlags[verb], f) {
+			if i == len(tok)-1 {
+				return f
+			}
+			return ""
 		}
 	}
 	return ""
