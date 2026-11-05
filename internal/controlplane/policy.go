@@ -24,8 +24,9 @@ type PolicyRule struct {
 
 // PolicyRole is a named collection of rules.
 type PolicyRole struct {
-	Name  string       `yaml:"name"`
-	Rules []PolicyRule `yaml:"rules"`
+	Name          string          `yaml:"name"`
+	Rules         []PolicyRule    `yaml:"rules"`
+	ClusterAccess []ClusterAccess `yaml:"clusterAccess"`
 }
 
 // PolicyBinding maps a subject (matched against the JWT email, may contain
@@ -108,6 +109,9 @@ func (p *Policy) validate() error {
 			return fmt.Errorf("duplicate policy role %q", r.Name)
 		}
 		defined[r.Name] = true
+		if err := validateClusterAccess(r); err != nil {
+			return err
+		}
 	}
 	for _, b := range p.Bindings {
 		for _, name := range b.Roles {
