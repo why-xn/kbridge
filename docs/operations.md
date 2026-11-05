@@ -69,10 +69,14 @@ EOF
 
 ```bash
 # Back up first (see above), then:
-helm upgrade kbridge-control-plane ./charts/control-plane \
-  --reuse-values \
-  --set image.tag=v0.2.2-alpha.1
+helm upgrade kbridge-control-plane oci://ghcr.io/why-xn/charts/kbridge-control-plane \
+  --version 0.2.2-alpha.1 \
+  --reuse-values
 ```
+
+The chart's `--version` and its default `image.tag` move together, so pin the
+chart version rather than overriding the image tag. From a clone, use
+`./charts/control-plane` in place of the `oci://…` reference.
 
 - Schema migrations run automatically on startup via `createSchema` in
   `internal/controlplane/migrations.go`. New tables and columns are added; no manual

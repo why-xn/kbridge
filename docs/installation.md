@@ -89,18 +89,23 @@ docker run -p 8080:8080 -p 9090:9090 \
 
 ## Helm (Kubernetes)
 
-Charts live in `charts/control-plane` and `charts/agent`.
+Charts are published as OCI artifacts to `oci://ghcr.io/why-xn/charts` on every
+release, so no `helm repo add` is needed; Helm 3.8+ installs them straight from
+the URL. Pin `--version` to the release you want (the chart version is the
+release tag without the `v`).
 
 ```bash
 # Control Plane — change the secrets for any real deployment
-helm install kbridge-control-plane ./charts/control-plane \
+helm install kbridge-control-plane oci://ghcr.io/why-xn/charts/kbridge-control-plane \
+  --version 0.2.2-alpha.1 \
   --set auth.jwtSecret="$(openssl rand -hex 32)" \
   --set auth.adminPassword="$(openssl rand -hex 12)"
 
 # Agent — deployed into each target cluster, in its own namespace
 kubectl create namespace kbridge
 kubectl label namespace kbridge pod-security.kubernetes.io/enforce=restricted
-helm install kbridge-agent ./charts/agent -n kbridge \
+helm install kbridge-agent oci://ghcr.io/why-xn/charts/kbridge-agent -n kbridge \
+  --version 0.2.2-alpha.1 \
   --set controlPlane.url=kbridge-control-plane-control-plane.default.svc:9090 \
   --set controlPlane.token=<agent-token> \
   --set cluster.name=prod-us-east \
@@ -111,6 +116,10 @@ Generate an agent token first with
 `kb admin agent-tokens create --cluster <name>` (see the
 [admin guide](admin.md)) — or via the `POST /api/v1/admin/agent-tokens` API, or
 by seeding one through the control plane's `bootstrap` config.
+
+From a clone of this repository, the same commands work with the local charts:
+replace the `oci://…` reference with `./charts/control-plane` or `./charts/agent`
+and drop `--version`.
 
 Key chart values are documented in each chart's `values.yaml`. The agent chart
 creates a ServiceAccount + ClusterRole that grants impersonation and binding
