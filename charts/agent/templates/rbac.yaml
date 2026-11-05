@@ -5,6 +5,7 @@ metadata:
   name: {{ include "agent.serviceAccountName" . }}
   labels:
     {{- include "agent.labels" . | nindent 4 }}
+automountServiceAccountToken: false
 {{- end }}
 {{- if .Values.rbac.create }}
 ---

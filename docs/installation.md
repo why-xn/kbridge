@@ -97,11 +97,14 @@ helm install kbridge-control-plane ./charts/control-plane \
   --set auth.jwtSecret="$(openssl rand -hex 32)" \
   --set auth.adminPassword="$(openssl rand -hex 12)"
 
-# Agent — deployed into each target cluster
-helm install kbridge-agent ./charts/agent \
-  --set control_plane.url=kbridge-control-plane:9090 \
-  --set control_plane.token=<agent-token> \
-  --set cluster.name=prod-us-east
+# Agent — deployed into each target cluster, in its own namespace
+kubectl create namespace kbridge
+kubectl label namespace kbridge pod-security.kubernetes.io/enforce=restricted
+helm install kbridge-agent ./charts/agent -n kbridge \
+  --set controlPlane.url=kbridge-control-plane-control-plane.default.svc:9090 \
+  --set controlPlane.token=<agent-token> \
+  --set cluster.name=prod-us-east \
+  --set 'protectedNamespaces={default}'   # the control plane's namespace, when co-located
 ```
 
 Generate an agent token first with
@@ -112,6 +115,24 @@ by seeding one through the control plane's `bootstrap` config.
 Key chart values are documented in each chart's `values.yaml`. The agent chart
 creates a ServiceAccount + ClusterRole; scope `rbac.rules` down to what your
 users actually need (the kbridge policy file is the per-user gate).
+
+The agent never hands its ServiceAccount token to kubectl. The chart turns off
+the default token mount and projects the token, CA and namespace read-only
+at `/var/run/kbridge/sa` (`defaultMode: 0400`; the kubelet adds group read for
+the pod's `fsGroup: 10001`, the agent user). Agent chart values for this:
+
+| Value | Default | Purpose |
+|---|---|---|
+| `protectedNamespaces` | `[]` | Namespaces users can never touch through kbridge. The release namespace is always added; add the control plane's namespace when it runs in the same cluster. |
+| `serviceAccountToken.expirationSeconds` | `600` | Lifetime of the projected token; the kubelet rotates it. |
+| `networkPolicy.enabled` | `false` | Render an egress NetworkPolicy (recommended). Requires `apiServerCIDRs` and `controlPlaneTo`; rendering fails without them. |
+| `networkPolicy.apiServerCIDRs` | `[]` | API server endpoint IPs, e.g. `kubectl get endpoints kubernetes -o jsonpath='{.subsets[*].addresses[*].ip}'` as `/32`s. |
+| `networkPolicy.apiServerPorts` | `[443, 6443]` | API server ports. |
+| `networkPolicy.controlPlaneTo` | `[]` | NetworkPolicyPeer list for the control plane, e.g. `[{ipBlock: {cidr: 203.0.113.10/32}}]`. |
+| `networkPolicy.controlPlanePort` | `9090` | Control plane gRPC port. |
+
+With the policy on, the agent can reach only the API server, the control plane
+and `kube-dns` in `kube-system` (53/UDP and TCP).
 
 ## Verifying
 

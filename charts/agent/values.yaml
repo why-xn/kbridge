@@ -29,6 +29,8 @@ cluster:
 
 podSecurityContext:
   runAsNonRoot: true
+  # Group of the agent user (uid 10001) so it can read the 0400 projected token files.
+  fsGroup: 10001
   seccompProfile:
     type: RuntimeDefault
 
@@ -53,6 +55,26 @@ rbac:
     - apiGroups: ["*"]
       resources: ["*"]
       verbs: ["*"]
+
+# Namespaces the agent refuses to touch. The release namespace is always
+# protected; add the control plane's namespace when it runs in this cluster.
+protectedNamespaces: []
+
+# The agent's own ServiceAccount token is projected at /var/run/kbridge/sa
+# (not the default path, which is left unmounted) and rotated by the kubelet.
+serviceAccountToken:
+  expirationSeconds: 600
+
+# Optional egress lock-down: the agent may only reach the API server, the
+# control plane and cluster DNS. Recommended; both lists below are required.
+networkPolicy:
+  enabled: false
+  # API server endpoint IPs, e.g. from `kubectl get endpoints kubernetes`.
+  apiServerCIDRs: []
+  apiServerPorts: [443, 6443]
+  # NetworkPolicyPeer list for the control plane, e.g. [{ipBlock: {cidr: 203.0.113.10/32}}].
+  controlPlaneTo: []
+  controlPlanePort: 9090
 
 resources: {}
 nodeSelector: {}
