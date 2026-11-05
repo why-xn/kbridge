@@ -156,8 +156,8 @@ func TestAgent_Register(t *testing.T) {
 		t.Errorf("expected 1 register call, got %d", mock.registerCalled)
 	}
 
-	if len(mock.lastCapabilities) != 1 || mock.lastCapabilities[0] != "impersonation" {
-		t.Errorf("capabilities = %v, want [impersonation]", mock.lastCapabilities)
+	if !slices.Equal(mock.lastCapabilities, []string{"impersonation", "rbac-sync"}) {
+		t.Errorf("capabilities = %v, want [impersonation rbac-sync]", mock.lastCapabilities)
 	}
 
 	if mock.lastClusterName != "test-cluster" {

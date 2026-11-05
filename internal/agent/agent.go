@@ -27,6 +27,8 @@ type Agent struct {
 	windowDir string // holds the window CA; removed on shutdown
 	tempToken string // token file LoadUpstream wrote from a kubeconfig; removed on shutdown
 	agentID   string
+	sync      *syncer // keeps cluster role bindings in step; set by openWindow
+	bindingsV string  // last desired-bindings version a heartbeat reported
 	mu        sync.RWMutex
 	stopCh    chan struct{}
 	stoppedCh chan struct{}
@@ -75,8 +77,11 @@ func (a *Agent) Run(ctx context.Context) error {
 	// Start persistent stream client
 	go a.runStream(ctx)
 
+	stopSync := a.startSync(ctx)
+
 	// Run heartbeat loop (blocks until stopped)
 	a.runHeartbeatLoop(ctx)
+	stopSync()
 
 	// Let an in-flight command report its result before the connection closes,
 	// so its caller gets an answer instead of waiting for the command timeout.
@@ -97,11 +102,44 @@ func (a *Agent) openWindow() error {
 	if a.windowDir, err = os.MkdirTemp("", "kbridge-window-"); err != nil {
 		return fmt.Errorf("creating window dir: %w", err)
 	}
-	if a.window, err = NewWindow(up, windowProtected(a.config), a.windowDir); err != nil {
+	protected := windowProtected(a.config)
+	if a.window, err = NewWindow(up, protected, a.windowDir); err != nil {
 		return err
 	}
 	a.executor.window = a.window
+	a.sync = newSyncer(newKubeAPI(up), protected, a.config.Sync.Interval, a.currentClient)
 	return nil
+}
+
+// startSync runs the binding sync loop beside command handling; the returned
+// func stops it and waits for it to finish.
+func (a *Agent) startSync(ctx context.Context) func() {
+	ctx, cancel := context.WithCancel(ctx)
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		a.sync.run(ctx)
+	}()
+	return func() {
+		cancel()
+		<-done
+	}
+}
+
+// currentClient is the control plane client and agent ID the sync loop uses.
+func (a *Agent) currentClient() (agentpb.AgentServiceClient, string) {
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+	return a.client, a.agentID
+}
+
+// noteBindingsVersion triggers a sync when a heartbeat reports new desired bindings.
+func (a *Agent) noteBindingsVersion(v string) {
+	if v == "" || v == a.bindingsV || a.sync == nil {
+		return
+	}
+	a.bindingsV = v
+	a.sync.trigger()
 }
 
 // closeWindow releases whatever openWindow managed to set up.
@@ -182,7 +220,7 @@ func (a *Agent) register(ctx context.Context) error {
 	req := &agentpb.RegisterRequest{
 		AgentToken:   a.config.ControlPlane.Token,
 		ClusterName:  a.config.Cluster.Name,
-		Capabilities: []string{"impersonation"},
+		Capabilities: []string{"impersonation", "rbac-sync"},
 	}
 
 	// Add timeout for registration
@@ -265,6 +303,7 @@ func (a *Agent) sendHeartbeat(ctx context.Context) (time.Duration, error) {
 	if !resp.Acknowledged {
 		return 0, fmt.Errorf("heartbeat not acknowledged")
 	}
+	a.noteBindingsVersion(resp.GetDesiredBindingsVersion())
 
 	return time.Duration(resp.NextHeartbeatSeconds) * time.Second, nil
 }

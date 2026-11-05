@@ -6,6 +6,7 @@ import (
 	"net"
 	"os"
 	"strings"
+	"time"
 
 	"gopkg.in/yaml.v3"
 )
@@ -18,6 +19,12 @@ type Config struct {
 
 	Kubernetes          KubernetesConfig `yaml:"kubernetes"`
 	ProtectedNamespaces []string         `yaml:"protected_namespaces"`
+	Sync                SyncConfig       `yaml:"sync"`
+}
+
+// SyncConfig controls how the agent keeps cluster role bindings in step with policy.
+type SyncConfig struct {
+	Interval time.Duration `yaml:"interval"` // full re-check period; default 60s
 }
 
 // KubernetesConfig describes how the window reaches the API server.
@@ -79,6 +86,7 @@ func DefaultConfig() *Config {
 		},
 		HealthFile: "/tmp/kbridge-agent-healthy",
 		Kubernetes: defaultKubernetesConfig(),
+		Sync:       SyncConfig{Interval: DefaultSyncInterval},
 	}
 }
 
@@ -178,6 +186,21 @@ func applyEnvOverrides(cfg *Config) {
 		cfg.Cluster.Name = name
 	}
 	applyKubernetesEnv(cfg)
+	applySyncEnv(cfg)
+}
+
+// applySyncEnv reads KBRIDGE_SYNC_INTERVAL; an unparsable value zeroes the
+// interval so Validate refuses it rather than silently keeping the default.
+func applySyncEnv(cfg *Config) {
+	v := os.Getenv("KBRIDGE_SYNC_INTERVAL")
+	if v == "" {
+		return
+	}
+	d, err := time.ParseDuration(v)
+	if err != nil {
+		d = 0
+	}
+	cfg.Sync.Interval = d
 }
 
 func applyKubernetesEnv(cfg *Config) {
@@ -207,7 +230,13 @@ func (c *Config) Validate() error {
 	if c.Cluster.Name == "" {
 		return fmt.Errorf("cluster.name is required")
 	}
-	return c.Kubernetes.validate()
+	if err := c.Kubernetes.validate(); err != nil {
+		return err
+	}
+	if c.Sync.Interval <= 0 {
+		return fmt.Errorf("sync.interval must be a positive duration such as 60s")
+	}
+	return nil
 }
 
 func (k KubernetesConfig) validate() error {

@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 )
 
 func TestResolveSecret(t *testing.T) {
@@ -158,6 +159,7 @@ func TestConfig_Validate(t *testing.T) {
 				ControlPlane: ControlPlaneConfig{URL: "localhost:9090", Token: "token"},
 				Cluster: ClusterConfig{Name: "test"},
 				Kubernetes: KubernetesConfig{Server: "https://k", TokenFile: "/t"},
+				Sync:         SyncConfig{Interval: time.Second},
 			},
 			wantErr: false,
 		},
@@ -167,7 +169,17 @@ func TestConfig_Validate(t *testing.T) {
 				ControlPlane: ControlPlaneConfig{URL: "localhost:9090", Token: "token"},
 				Cluster:      ClusterConfig{Name: "test"},
 				Kubernetes:   KubernetesConfig{Kubeconfig: "/kc"},
+				Sync:         SyncConfig{Interval: time.Second},
 			},
+		},
+		{
+			name: "zero sync interval",
+			config: &Config{
+				ControlPlane: ControlPlaneConfig{URL: "localhost:9090", Token: "token"},
+				Cluster:      ClusterConfig{Name: "test"},
+				Kubernetes:   KubernetesConfig{Kubeconfig: "/kc"},
+			},
+			wantErr: true,
 		},
 		{
 			name: "missing URL",
@@ -362,5 +374,32 @@ func TestKubernetesConfig_Validate(t *testing.T) {
 				t.Fatalf("got %v, want %q", err, tt.want)
 			}
 		})
+	}
+}
+
+func TestSyncConfig_DefaultYAMLAndEnv(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "a.yaml")
+	if err := os.WriteFile(path, []byte("control_plane:\n  token: t\nsync:\n  interval: 15s\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	tests := []struct {
+		name, env string
+		want      time.Duration
+	}{
+		{"yaml", "", 15 * time.Second},
+		{"env", "2m", 2 * time.Minute},
+		{"bad env refused by validate", "soon", 0},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Setenv("KBRIDGE_SYNC_INTERVAL", tt.env)
+			cfg, err := LoadConfig(path)
+			if err != nil || cfg.Sync.Interval != tt.want {
+				t.Fatalf("interval = %v, err %v, want %v", cfg.Sync.Interval, err, tt.want)
+			}
+		})
+	}
+	if DefaultConfig().Sync.Interval != DefaultSyncInterval {
+		t.Errorf("default interval = %v", DefaultConfig().Sync.Interval)
 	}
 }

@@ -93,6 +93,15 @@ type stampKey struct{}
 // newUpstreamProxy forwards to target over a verified TLS connection.
 // FlushInterval -1 keeps logs -f and watch streaming.
 func newUpstreamProxy(target *url.URL, up Upstream) *httputil.ReverseProxy {
+	return &httputil.ReverseProxy{
+		Rewrite:       func(pr *httputil.ProxyRequest) { rewrite(pr, target) },
+		Transport:     up.transport(),
+		FlushInterval: -1,
+	}
+}
+
+// transport verifies the API server against CA and presents ClientCert when set.
+func (up Upstream) transport() *http.Transport {
 	tlsCfg := &tls.Config{RootCAs: up.CA}
 	if up.ClientCert != nil {
 		tlsCfg.Certificates = []tls.Certificate{*up.ClientCert}
@@ -100,11 +109,7 @@ func newUpstreamProxy(target *url.URL, up Upstream) *httputil.ReverseProxy {
 	transport := http.DefaultTransport.(*http.Transport).Clone()
 	transport.TLSClientConfig = tlsCfg
 	transport.ForceAttemptHTTP2 = false // exec and port-forward need HTTP/1.1 Upgrade
-	return &httputil.ReverseProxy{
-		Rewrite:       func(pr *httputil.ProxyRequest) { rewrite(pr, target) },
-		Transport:     transport,
-		FlushInterval: -1,
-	}
+	return transport
 }
 
 // rewrite stamps the outbound request. It must run here, after ReverseProxy
@@ -168,7 +173,7 @@ func (w *Window) serveHTTP(rw http.ResponseWriter, r *http.Request) {
 		refuse(rw, msg, http.StatusForbidden)
 		return
 	}
-	token, err := w.agentToken()
+	token, err := w.up.token()
 	if err != nil {
 		refuse(rw, err.Error(), http.StatusBadGateway)
 		return
@@ -231,12 +236,12 @@ func protectedPath(method, p string, protected []string) bool {
 	return false
 }
 
-// agentToken re-reads the token file on each request; projected tokens rotate.
-func (w *Window) agentToken() (string, error) {
-	if w.up.TokenFile == "" {
+// token re-reads the token file on each request; projected tokens rotate.
+func (up Upstream) token() (string, error) {
+	if up.TokenFile == "" {
 		return "", nil
 	}
-	b, err := os.ReadFile(w.up.TokenFile)
+	b, err := os.ReadFile(up.TokenFile)
 	if err != nil {
 		return "", fmt.Errorf("reading agent token: %w", err)
 	}
