@@ -208,6 +208,9 @@ func (w *Window) refusal(r *http.Request) string {
 		if nodeProxyPath(p) {
 			return "node proxy is not allowed through kbridge"
 		}
+		if serviceAccountTokenPath(p) {
+			return "creating service account tokens is not allowed through kbridge"
+		}
 	}
 	return ""
 }
@@ -217,6 +220,14 @@ func (w *Window) refusal(r *http.Request) string {
 func nodeProxyPath(p string) bool {
 	segs := strings.Split(path.Clean(p), "/")
 	return len(segs) >= 6 && segs[1] == "api" && segs[2] == "v1" && segs[3] == "nodes" && segs[5] == "proxy"
+}
+
+// serviceAccountTokenPath reports whether p mints a ServiceAccount token, a
+// credential the user could use outside kbridge.
+func serviceAccountTokenPath(p string) bool {
+	segs := strings.Split(path.Clean(p), "/")
+	return len(segs) >= 8 && segs[1] == "api" && segs[2] == "v1" && segs[3] == "namespaces" &&
+		segs[5] == "serviceaccounts" && segs[7] == "token"
 }
 
 // clusterSecretsPath reports whether any form of the path lists or watches

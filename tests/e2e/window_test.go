@@ -47,6 +47,8 @@ func testWindowRefuses(t *testing.T) {
 		{"connection flag", []string{"get", "pods", "--server=https://example.com"},
 			"flag --server is not allowed: kbridge manages the cluster connection"},
 		{"token for the agent account", []string{"create", "token", "kbridge-agent", "-n", agentNamespace}, reservedCopy},
+		{"service account token", []string{"create", "token", "default", "-n", "default"},
+			"creating service account tokens is not allowed through kbridge"},
 		{"secrets across namespaces", []string{"get", "secrets", "-A"},
 			"reading secrets across all namespaces is not allowed through kbridge"},
 		{"node proxy", []string{"get", "--raw", "/api/v1/nodes/" + nodeName + "/proxy/healthz"},
