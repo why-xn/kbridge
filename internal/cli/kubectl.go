@@ -133,7 +133,7 @@ func runKubectl(cmd *cobra.Command, args []string) error {
 
 	// Exit with the same code as the remote kubectl
 	if resp.ExitCode != 0 {
-		os.Exit(int(resp.ExitCode))
+		os.Exit(exitStatus(int(resp.ExitCode)))
 	}
 
 	return nil
@@ -152,9 +152,18 @@ func runStreamingKubectl(controlPlaneURL, cluster string, args []string, namespa
 		return err
 	}
 	if code != 0 {
-		os.Exit(code)
+		os.Exit(exitStatus(code))
 	}
 	return nil
+}
+
+// exitStatus maps a remote exit code to the CLI's: a command that never ran
+// (agent disconnected, exec failure) reports -1, which is an error like any other.
+func exitStatus(code int) int {
+	if code < 0 {
+		return 1
+	}
+	return code
 }
 
 // isStreamingCommand reports whether args use a follow/watch flag and should be

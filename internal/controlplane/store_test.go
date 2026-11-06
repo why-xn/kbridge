@@ -276,7 +276,7 @@ func TestAgentStore_Concurrent(t *testing.T) {
 func TestMarkDisconnected_FailsQueuedCommands(t *testing.T) {
 	store := NewAgentStore()
 	q := NewCommandQueue()
-	store.OnDisconnect = func(id string) { q.FailForAgent(id, "agent is disconnected") }
+	store.OnDisconnect = failQueuedOnDisconnect(store, q)
 	store.Register(&AgentInfo{ID: "agent-1", ClusterName: "test"})
 	id, _ := q.Enqueue("agent-1", "test", "", []string{"get", "pods"}, "default", 30, nil)
 
@@ -288,7 +288,7 @@ func TestMarkDisconnected_FailsQueuedCommands(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
 	res, err := q.WaitForResult(ctx, id)
-	if err != nil || res.ErrorMessage != "agent is disconnected" {
+	if err != nil || res.ErrorMessage != `cluster "test": agent is disconnected` {
 		t.Fatalf("res=%v err=%v, want failed result", res, err)
 	}
 }

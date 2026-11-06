@@ -745,7 +745,7 @@ func (c *ControlPlaneClient) parseExecResponse(resp *http.Response, clusterName 
 		return nil, fmt.Errorf("cluster %q not found", clusterName)
 	}
 	if resp.StatusCode == http.StatusServiceUnavailable {
-		return nil, fmt.Errorf("cluster %q agent is disconnected", clusterName)
+		return nil, fmt.Errorf("cluster %q: agent is disconnected", clusterName)
 	}
 	if resp.StatusCode == http.StatusGatewayTimeout {
 		return nil, fmt.Errorf("command execution timed out")

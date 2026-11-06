@@ -30,3 +30,11 @@ func TestIsStreamingCommand(t *testing.T) {
 		})
 	}
 }
+
+func TestExitStatus(t *testing.T) {
+	for _, tt := range []struct{ in, want int }{{-1, 1}, {1, 1}, {2, 2}, {137, 137}} {
+		if got := exitStatus(tt.in); got != tt.want {
+			t.Errorf("exitStatus(%d) = %d, want %d", tt.in, got, tt.want)
+		}
+	}
+}

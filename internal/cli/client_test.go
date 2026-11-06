@@ -262,8 +262,8 @@ func TestControlPlaneClient_ExecCommand_Disconnected(t *testing.T) {
 
 	client := NewControlPlaneClient(server.URL)
 	_, err := client.ExecCommand("prod", []string{"get", "pods"}, "", 30)
-	if err == nil {
-		t.Fatal("expected error for disconnected agent")
+	if err == nil || err.Error() != `cluster "prod": agent is disconnected` {
+		t.Fatalf("err = %v, want the disconnected message", err)
 	}
 }
 
