@@ -32,7 +32,7 @@ roles:
       - clusters: ["*"]
         namespaces: ["*"]
         resources: ["*"]
-        verbs: ["get", "list", "watch", "describe", "logs"]
+        verbs: ["get", "list", "watch", "describe", "logs", "auth"]
     clusterAccess:
       - clusters: ["*"]
         clusterRole: view

@@ -9,6 +9,7 @@ import (
 	"os"
 	"strings"
 	"text/tabwriter"
+	"time"
 
 	"github.com/spf13/cobra"
 )
@@ -97,7 +98,11 @@ func orDash(s *string) string {
 	if s == nil {
 		return "-"
 	}
-	return *s
+	t, err := time.Parse(time.RFC3339, *s)
+	if err != nil {
+		return *s
+	}
+	return t.UTC().Format("2006-01-02T15:04:05Z")
 }
 
 // GetRBACStatus fetches each connected cluster's binding sync state.

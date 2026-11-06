@@ -47,7 +47,7 @@ func connErr(flag string) error {
 }
 
 func fileErr(flag string) error {
-	return fmt.Errorf("flag %s is not allowed: the agent does not read local files; the kb CLI uploads them", flag)
+	return fmt.Errorf("flag %s is not allowed: the agent does not read local files; build the object locally with 'kubectl create ... --dry-run=client -o yaml' and send it with 'kb apply -f -'", flag)
 }
 
 // Check refuses kubectl arguments that change the connection, read local files,

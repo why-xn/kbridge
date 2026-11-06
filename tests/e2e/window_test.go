@@ -53,7 +53,7 @@ func testWindowRefuses(t *testing.T) {
 			"node proxy is not allowed through kbridge"},
 		{"cp", []string{"cp", "/etc/hosts", "default/x:/tmp/h"}, "kubectl cp is not supported through kbridge"},
 		{"local file read", []string{"create", "configmap", "t", "--from-file=/etc/hosts"},
-			"flag --from-file is not allowed: the agent does not read local files; the kb CLI uploads them"},
+			"flag --from-file is not allowed: the agent does not read local files; build the object locally with 'kubectl create ... --dry-run=client -o yaml' and send it with 'kb apply -f -'"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

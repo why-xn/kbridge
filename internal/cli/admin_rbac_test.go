@@ -11,12 +11,15 @@ import (
 
 func TestRenderRBACStatus(t *testing.T) {
 	at := "2026-11-05T10:00:00Z"
+	ns := "2026-11-05T10:00:00.123456789Z"
 	tests := []struct {
 		name    string
 		rows    []RBACClusterStatus
 		want    []string
 		notWant []string
 	}{
+		{"nanoseconds trimmed", []RBACClusterStatus{{Cluster: "dev-1", State: "in sync", ReportedAt: &ns}},
+			[]string{"2026-11-05T10:00:00Z"}, []string{".123456789"}},
 		{"empty", nil, []string{"No clusters connected."}, []string{"CLUSTER"}},
 		{"in sync", []RBACClusterStatus{{Cluster: "dev-1", Version: "0123456789abcdef", State: "in sync", ReportedAt: &at}},
 			[]string{"CLUSTER", "dev-1", "01234567 ", "in sync", at}, []string{"89abcdef", "drift:"}},

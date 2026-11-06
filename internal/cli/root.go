@@ -43,6 +43,9 @@ func Execute() {
 func init() {
 	cobra.OnInitialize(initConfig)
 
+	// Declared so cobra adds no -v shorthand: kubectl owns -v for verbosity.
+	rootCmd.Flags().Bool("version", false, "version for kb")
+
 	// Add version flag template
 	rootCmd.SetVersionTemplate("kb version {{.Version}}\n")
 }

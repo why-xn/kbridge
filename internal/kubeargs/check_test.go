@@ -11,7 +11,7 @@ import (
 
 const (
 	connMsg = "flag %s is not allowed: kbridge manages the cluster connection"
-	fileMsg = "flag %s is not allowed: the agent does not read local files; the kb CLI uploads them"
+	fileMsg = "flag %s is not allowed: the agent does not read local files; build the object locally with 'kubectl create ... --dry-run=client -o yaml' and send it with 'kb apply -f -'"
 	fMsg    = `-f only accepts "-" on the agent: the kb CLI uploads local files and URLs`
 	verbMsg = "kubectl %s is not supported through kbridge"
 	termMsg = "flag %s must be written as %s=<value> before --"

@@ -42,3 +42,12 @@ func TestRewriteArgs(t *testing.T) {
 		})
 	}
 }
+
+func TestRootHasNoVersionShorthand(t *testing.T) {
+	if rootCmd.Flags().ShorthandLookup("v") != nil {
+		t.Error("root must not claim -v; kubectl uses it for verbosity")
+	}
+	if got := rewriteArgs([]string{"-v", "4", "get", "pods"}); got[0] != "kubectl" {
+		t.Errorf("rewriteArgs(-v 4 get pods) = %v, want kubectl dispatch", got)
+	}
+}
