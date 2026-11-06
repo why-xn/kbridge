@@ -94,29 +94,50 @@ release, so no `helm repo add` is needed; Helm 3.8+ installs them straight from
 the URL. Pin `--version` to the release you want (the chart version is the
 release tag without the `v`).
 
-The agent authenticates to the control plane with an **agent token**. There is
-one per cluster, and the agent will not register without it, so the order is:
-install the control plane, create the token, then install the agent with it.
+This quick start installs the control plane and an agent into one cluster, in
+the namespace `kbridge`. The agent authenticates to the control plane with an
+**agent token**. There is one per cluster, and the agent will not register
+without it, so the order is: install the control plane, create the token, then
+install the agent with it.
 
 ### Step 1: Install the control plane
 
 ```bash
-# Change the secrets for any real deployment
+kubectl create namespace kbridge
+kubectl label namespace kbridge pod-security.kubernetes.io/enforce=restricted
+
+# Change the secrets for any real deployment; note the admin password
+ADMIN_PASSWORD="$(openssl rand -hex 12)"; echo "admin password: $ADMIN_PASSWORD"
 helm install kbridge-control-plane oci://ghcr.io/why-xn/charts/kbridge-control-plane \
-  --version 0.2.2-alpha.1 \
+  -n kbridge --version 0.2.2-alpha.1 \
   --set auth.jwtSecret="$(openssl rand -hex 32)" \
-  --set auth.adminPassword="$(openssl rand -hex 12)"
+  --set auth.adminPassword="$ADMIN_PASSWORD"
+kubectl -n kbridge rollout status deploy/kbridge-control-plane
 ```
 
 ### Step 2: Create the agent token
 
-Log in as the seeded admin (`auth.adminEmail`, default `admin@kbridge.local`,
-with the `auth.adminPassword` you set), then create one token per cluster:
+Reach the control plane from your machine (leave this running in another
+terminal):
 
 ```bash
-kb login                      # prompts for the control plane URL, email and password
+kubectl -n kbridge port-forward svc/kbridge-control-plane 8080:8080
+```
+
+Log in as the seeded admin (`auth.adminEmail`, default `admin@kbridge.local`,
+with the password from step 1), then create one token per cluster:
+
+```bash
+kb login
+# Control plane URL: http://localhost:8080
+# Email: admin@kbridge.local
+# Password: <admin password from step 1>
 kb admin agent-tokens create --cluster prod-us-east
-# Agent token: kba_xxxxxxxxxxxxxxxxxxxx   <- shown once; copy it now
+# Agent token for cluster "prod-us-east" created.
+#
+#   kbat_xxxxxxxxxxxxxxxxxxxx
+#
+# Store it now — it cannot be retrieved again. ...
 ```
 
 The secret is shown only at creation. `kb admin agent-tokens list` shows
@@ -125,18 +146,31 @@ same token can also be created through `POST /api/v1/admin/agent-tokens` or
 seeded through the control plane's `bootstrap` config (see the
 [admin guide](admin.md)).
 
-### Step 3: Install the agent in each target cluster
+### Step 3: Install the agent
 
 ```bash
-kubectl create namespace kbridge
-kubectl label namespace kbridge pod-security.kubernetes.io/enforce=restricted
-helm install kbridge-agent oci://ghcr.io/why-xn/charts/kbridge-agent -n kbridge \
-  --version 0.2.2-alpha.1 \
-  --set controlPlane.url=kbridge-control-plane.default.svc:9090 \
-  --set controlPlane.token=kba_xxxxxxxxxxxxxxxxxxxx \
-  --set cluster.name=prod-us-east \
-  --set 'protectedNamespaces={default}'   # the control plane's namespace, when co-located
+helm install kbridge-agent oci://ghcr.io/why-xn/charts/kbridge-agent \
+  -n kbridge --version 0.2.2-alpha.1 \
+  --set controlPlane.url=kbridge-control-plane.kbridge.svc:9090 \
+  --set controlPlane.token=kbat_xxxxxxxxxxxxxxxxxxxx \
+  --set cluster.name=prod-us-east
 ```
+
+The agent always protects its own namespace, so users cannot reach the control
+plane's pods or Secrets in `kbridge` through kbridge. For an agent in another
+cluster, create and label the `kbridge` namespace there first and set
+`controlPlane.url` to an address that cluster can reach (see the
+[production guide](production-install.md)).
+
+### Step 4: Label namespaces where kbridge grants `edit`
+
+```bash
+kubectl label ns <ns> pod-security.kubernetes.io/enforce=baseline
+```
+
+Without the label kbridge will not grant `edit` (or any role that can create
+pods) in that namespace: the agent refuses the binding and
+`kb admin rbac status` shows the command to fix it.
 
 `cluster.name` must match the `--cluster` the token was created for. For a
 production install, keep the token in a Kubernetes Secret and point the chart at
@@ -177,10 +211,13 @@ and `kube-dns` in `kube-system` (53/UDP and TCP).
 
 ## Verifying
 
+With the port-forward from step 2 still running:
+
 ```bash
-curl http://localhost:8080/health      # {"status":"healthy"}
-kb login                          # authenticate
-kb clusters list                  # list registered clusters
+curl http://localhost:8080/health   # {"status":"healthy"}
+kb clusters list                    # prod-us-east  connected
+kb clusters use prod-us-east
+kb get pods                         # runs as kbridge:admin@kbridge.local
 ```
 
 For production deployments, see [Production Install](production-install.md). Before

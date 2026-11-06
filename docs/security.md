@@ -308,7 +308,7 @@ binding without its label alone.
 Requests made through kbridge appear in the API server audit log with:
 
 - `user.username`: the agent's ServiceAccount,
-  `system:serviceaccount:<release namespace>:<release>-agent`;
+  `system:serviceaccount:kbridge:kbridge-agent` with the quick start's names;
 - `impersonatedUser.username`: `kbridge:<email>`, the user RBAC was evaluated for;
 - `impersonatedUser.extra.kbridge-request-id`: the id the control plane gave the
   command, stream or port-forward session.

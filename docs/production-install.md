@@ -32,7 +32,9 @@ variables:
 | `admin_password` | `KBRIDGE_ADMIN_PASSWORD_FILE` |
 
 ```bash
-kubectl create secret generic kbridge-control-plane-secrets \
+kubectl create namespace kbridge
+kubectl label namespace kbridge pod-security.kubernetes.io/enforce=restricted
+kubectl -n kbridge create secret generic kbridge-control-plane-secrets \
   --from-literal=jwt_secret="$(openssl rand -hex 32)" \
   --from-literal=token_pepper="$(openssl rand -hex 32)" \
   --from-literal=admin_password="$(openssl rand -hex 16)"
@@ -42,7 +44,7 @@ kubectl create secret generic kbridge-control-plane-secrets \
 
 ```bash
 helm install kbridge-control-plane oci://ghcr.io/why-xn/charts/kbridge-control-plane \
-  --version 0.2.2-alpha.1 \
+  -n kbridge --version 0.2.2-alpha.1 \
   --set auth.existingSecret=kbridge-control-plane-secrets \
   --set auth.adminEmail=admin@example.com \
   --set persistence.enabled=true \
@@ -77,7 +79,7 @@ apiVersion: v1
 kind: Service
 metadata:
   name: kbridge-control-plane-grpc
-  namespace: default
+  namespace: kbridge
 spec:
   type: LoadBalancer
   selector:
@@ -93,10 +95,12 @@ spec:
 ```bash
 kubectl apply -f kbridge-control-plane-grpc-svc.yaml
 # Wait for an external IP
-kubectl get svc kbridge-control-plane-grpc -w
+kubectl -n kbridge get svc kbridge-control-plane-grpc -w
 ```
 
-Agents will point `controlPlane.url` at `<EXTERNAL-IP>:9090`.
+Point a DNS name, for example `kbridge-grpc.example.com`, at the external IP.
+Agents set `controlPlane.url` to `kbridge-grpc.example.com:9090`; with TLS the
+name must be in the control plane's certificate (step 5a).
 
 ### Option B — nginx TCP passthrough
 
@@ -110,7 +114,7 @@ metadata:
   name: tcp-services
   namespace: ingress-nginx
 data:
-  "9090": "default/kbridge-control-plane:9090"
+  "9090": "kbridge/kbridge-control-plane:9090"
 ```
 
 Also patch the nginx-ingress controller Service to expose port 9090, then update
@@ -130,7 +134,7 @@ apiVersion: cert-manager.io/v1
 kind: Certificate
 metadata:
   name: kbridge-control-plane-tls
-  namespace: default
+  namespace: kbridge
 spec:
   secretName: kbridge-control-plane-tls
   issuerRef:
@@ -138,14 +142,19 @@ spec:
     kind: ClusterIssuer
   dnsNames:
     - control-plane.example.com
+    - kbridge-grpc.example.com
 ```
 
 Then add to your Helm install (or `helm upgrade`):
 
 ```bash
 --set tls.enabled=true \
---set tls.secretName=kbridge-control-plane-tls
+--set tls.secretName=kbridge-control-plane-tls \
+--set 'ingress.annotations.nginx\.ingress\.kubernetes\.io/backend-protocol=HTTPS'
 ```
+
+With `tls.enabled` the pod serves HTTPS on 8080 too, so the Ingress must talk
+HTTPS to it.
 
 The chart mounts the Secret at `/etc/kbridge/tls/` and passes the paths as
 `cert_file` / `key_file` in the generated config.
@@ -184,7 +193,7 @@ Log in as the admin user that was seeded from the `admin_password` secret:
 ```bash
 kb login
 # Control plane URL: https://control-plane.example.com
-# Username: admin@example.com
+# Email: admin@example.com
 # Password: <value of admin_password key from kbridge-control-plane-secrets>
 ```
 
@@ -192,7 +201,11 @@ Create a token for the first target cluster:
 
 ```bash
 kb admin agent-tokens create --cluster prod-us-east
-# Agent token: kba_xxxxxxxxxxxxxxxxxxxx
+# Agent token for cluster "prod-us-east" created.
+#
+#   kbat_xxxxxxxxxxxxxxxxxxxx
+#
+# Store it now — it cannot be retrieved again. ...
 ```
 
 Store the token in a Secret in the **target** cluster:
@@ -205,7 +218,7 @@ kubectl create namespace kbridge
 kubectl label namespace kbridge pod-security.kubernetes.io/enforce=restricted
 
 kubectl create secret generic kbridge-agent-secrets -n kbridge \
-  --from-literal=token="kba_xxxxxxxxxxxxxxxxxxxx"
+  --from-literal=token="kbat_xxxxxxxxxxxxxxxxxxxx"
 ```
 
 The agent chart expects the Secret to contain a key named `token` and mounts it
@@ -215,9 +228,9 @@ at `/etc/kbridge-token/token`, passing it via `KBRIDGE_AGENT_TOKEN_FILE`.
 
 ```bash
 # Still in the target cluster context
-helm install kbridge-agent oci://ghcr.io/why-xn/charts/kbridge-agent -n kbridge \
-  --version 0.2.2-alpha.1 \
-  --set controlPlane.url=<EXTERNAL-IP>:9090 \
+helm install kbridge-agent oci://ghcr.io/why-xn/charts/kbridge-agent \
+  -n kbridge --version 0.2.2-alpha.1 \
+  --set controlPlane.url=kbridge-grpc.example.com:9090 \
   --set controlPlane.existingSecret=kbridge-agent-secrets \
   --set controlPlane.tls.enabled=true \
   --set cluster.name=prod-us-east \
@@ -241,8 +254,13 @@ required and the render fails without them. It needs a CNI that enforces
 NetworkPolicy.
 
 The release namespace is always protected: users cannot run commands in it
-through kbridge. If the control plane also runs in this cluster, protect its
-namespace too: `--set 'protectedNamespaces={kbridge-system}'`.
+through kbridge. If the control plane also runs in this cluster, install the
+agent in the control plane's namespace (`kbridge`), or protect that namespace
+too: `--set 'protectedNamespaces={<control-plane-namespace>}'`.
+
+Label each namespace where kbridge will grant `edit`:
+`kubectl label ns <ns> pod-security.kubernetes.io/enforce=baseline`. Without
+it the agent refuses the binding and `kb admin rbac status` shows the fix.
 
 For a private CA add `--set controlPlane.tls.caCert="$(cat ca.crt)"`.
 
@@ -263,20 +281,21 @@ and check `kb admin rbac status` after install (see
 kubectl config use-context management
 
 # Check control plane pod logs
-kubectl logs deployment/kbridge-control-plane
+kubectl -n kbridge logs deployment/kbridge-control-plane
 
 # From the CLI
 kb clusters list
-# NAME            STATUS     VERSION
-# prod-us-east    connected  v1.30.0
+# CURRENT   NAME           STATUS
+#           prod-us-east   connected
 
-kb get nodes --cluster prod-us-east
+kb clusters use prod-us-east
+kb get nodes
 ```
 
 The `connected` status confirms the agent has registered and its heartbeat is
 current. If the status is `disconnected`, check:
 
-1. Agent pod logs: `kubectl logs deployment/kbridge-agent` (in target cluster).
+1. Agent pod logs: `kubectl -n kbridge logs deployment/kbridge-agent` (in target cluster).
 2. `controlPlane.url` — must be reachable from inside the target cluster on port 9090.
 3. TLS — if `controlPlane.tls.insecure` was not set and the cert is self-signed,
    provide the CA via `controlPlane.tls.caCert`.

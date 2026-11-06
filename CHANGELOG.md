@@ -119,6 +119,18 @@ agents' `controlPlane.url` at the new Service name.
   file watch. The chart now restarts the control plane when `rbac.policy`
   changes, and the control plane also re-reads the policy file every 10 s and
   reloads when its content changed. See [docs/rbac.md](docs/rbac.md#reloading).
+- **The control plane chart stops the old pod before starting the new one**
+  (`Recreate` strategy), so an upgrade never runs two SQLite writers or waits
+  on a ReadWriteOnce volume still attached elsewhere, and sets `fsGroup: 10001`
+  so the control plane can write its PVC on storage that mounts as root.
+- **The install guides work as written.** The quick start installs both charts
+  into one `kbridge` namespace labelled Pod Security `restricted`, reaches the
+  control plane with `kubectl port-forward`, and labels the namespaces where
+  kbridge grants `edit`. Backup and restore no longer need `sqlite3` in the
+  image, token rotation covers both an inline token and `existingSecret`, and
+  every command names the right namespace, Deployment and Secret. See
+  [docs/installation.md](docs/installation.md#helm-kubernetes) and
+  [docs/operations.md](docs/operations.md).
 
 ## [0.2.2-alpha.1] - 2026-10-21
 

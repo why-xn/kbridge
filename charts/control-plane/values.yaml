@@ -90,6 +90,8 @@ streams:
 
 podSecurityContext:
   runAsNonRoot: true
+  # Group of the control plane user (uid 10001) so it can write the data PVC.
+  fsGroup: 10001
   seccompProfile:
     type: RuntimeDefault
 

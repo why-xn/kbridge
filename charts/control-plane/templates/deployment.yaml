@@ -6,6 +6,10 @@ metadata:
     {{- include "controlplane.labels" . | nindent 4 }}
 spec:
   replicas: {{ .Values.replicaCount }}
+  # SQLite allows one writer and the data PVC is ReadWriteOnce: stop the old
+  # pod before starting the new one.
+  strategy:
+    type: Recreate
   selector:
     matchLabels:
       {{- include "controlplane.selectorLabels" . | nindent 6 }}
