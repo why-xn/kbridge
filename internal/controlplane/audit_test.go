@@ -268,7 +268,10 @@ roles:
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			body, _ := json.Marshal(ExecRequest{Command: tt.command, Namespace: tt.namespace, Stdin: tt.manifest, Timeout: 1})
-			req, _ := http.NewRequest("POST", "/api/v1/clusters/prod/exec", bytes.NewReader(body))
+			// No agent answers: an allowed command would wait out the timeout grace.
+			ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+			defer cancel()
+			req, _ := http.NewRequestWithContext(ctx, "POST", "/api/v1/clusters/prod/exec", bytes.NewReader(body))
 			req.Header.Set("Content-Type", "application/json")
 			req.Header.Set("Authorization", "Bearer "+token)
 			w := httptest.NewRecorder()

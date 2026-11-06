@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/why-xn/kbridge/internal/kubeargs"
 	"gopkg.in/yaml.v3"
 )
 
@@ -80,9 +81,10 @@ var podScopedVerbs = map[string]bool{
 
 // parseAccessRequest derives an AccessRequest from a kubectl command (the args
 // after "kubectl"). The verb is the first token; the resource is the first
-// non-flag token after it (with any "/name" suffix stripped), or "pods" for
-// pod-scoped verbs. The namespace comes from -n/--namespace, "*" for
-// --all-namespaces/-A, else fallbackNamespace, else "default".
+// positional token after it, skipping flag values (with any "/name" suffix
+// stripped), or "pods" for pod-scoped verbs. The namespace comes from the last
+// -n/--namespace, "*" for --all-namespaces/-A, else fallbackNamespace, else
+// "default".
 func parseAccessRequest(cluster string, command []string, fallbackNamespace string) AccessRequest {
 	req := AccessRequest{Cluster: cluster, Namespace: fallbackNamespace}
 	if req.Namespace == "" {
@@ -92,36 +94,10 @@ func parseAccessRequest(cluster string, command []string, fallbackNamespace stri
 		return req
 	}
 	req.Verb = command[0]
-
-	args := command[1:]
-	positional, all := "", false
-	for i := 0; i < len(args); i++ {
-		a := args[i]
-		switch {
-		case !strings.HasPrefix(a, "-"):
-			if positional == "" {
-				positional = a
-			}
-		case a == "-A" || a == "--all-namespaces":
-			all = true
-		case a == "-n" || a == "--namespace":
-			if i+1 < len(args) {
-				req.Namespace = args[i+1]
-				i++
-			}
-		case strings.HasPrefix(a, "--namespace="):
-			req.Namespace = strings.TrimPrefix(a, "--namespace=")
-		case strings.HasPrefix(a, "-n="):
-			req.Namespace = strings.TrimPrefix(a, "-n=")
-		case strings.HasPrefix(a, "-n") && len(a) > 2:
-			req.Namespace = a[2:] // kubectl honours the attached -nteam-b form
-		}
-	}
-
+	positional, all := scanArgs(&req, command[1:])
 	if all { // kubectl's -A wins over any -n
 		req.Namespace = "*"
 	}
-	// The -n value is skipped above, so "-n team-a pods" names pods.
 	req.Resource = positional
 	if podScopedVerbs[req.Verb] {
 		req.Resource = "pods"
@@ -130,6 +106,68 @@ func parseAccessRequest(cluster string, command []string, fallbackNamespace stri
 		req.Resource = req.Resource[:idx]
 	}
 	return req
+}
+
+// scanArgs sets req.Namespace from the namespace flags and returns the first
+// positional token and whether -A was given. A flag value is never taken for
+// the resource: "get -l pods secrets" reads secrets.
+func scanArgs(req *AccessRequest, args []string) (positional string, all bool) {
+	for i := 0; i < len(args); i++ {
+		a, next := args[i], ""
+		if i+1 < len(args) {
+			next = args[i+1]
+		}
+		switch {
+		case !strings.HasPrefix(a, "-"):
+			if positional == "" {
+				positional = a
+			}
+		case a == "--all-namespaces":
+			all = true
+		case a == "--namespace":
+			req.Namespace = next
+			i++
+		case strings.HasPrefix(a, "--namespace="):
+			req.Namespace = strings.TrimPrefix(a, "--namespace=")
+		case strings.HasPrefix(a, "--"):
+			if kubeargs.TakesValue(a) {
+				i++
+			}
+		default:
+			ns, clusterAll, takesNext := shortFlag(a, next, req.Verb)
+			all = all || clusterAll
+			if ns != "" {
+				req.Namespace = ns
+			}
+			if takesNext {
+				i++
+			}
+		}
+	}
+	return positional, all
+}
+
+// shortFlag reads a single-dash cluster such as -n, -nteam-b, -n=x or -itn:
+// the namespace it sets, whether it holds -A, and whether its value letter
+// takes the next token.
+func shortFlag(tok, next, verb string) (ns string, all, takesNext bool) {
+	for i := 1; i < len(tok); i++ {
+		c := tok[i]
+		all = all || c == 'A'
+		if (c == 'f' && verb == "logs") || !kubeargs.TakesValue("-"+string(c)) {
+			continue // logs -f is --follow
+		}
+		value := strings.TrimPrefix(tok[i+1:], "=")
+		takesNext = tok[i+1:] == ""
+		if takesNext {
+			value = next
+		}
+		if c == 'n' {
+			ns = value
+		}
+		return ns, all, takesNext
+	}
+	return "", all, false
 }
 
 // manifestVerbs take objects from stdin manifests, which name their own

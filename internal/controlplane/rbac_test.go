@@ -149,3 +149,33 @@ func TestManifestNamespaces(t *testing.T) {
 		})
 	}
 }
+
+func TestParseAccessRequest_SkipsFlagValues(t *testing.T) {
+	tests := []struct {
+		name    string
+		command []string
+		wantRes string
+		wantNS  string
+	}{
+		{"-l value", []string{"get", "-l", "pods", "secrets"}, "secrets", "default"},
+		{"-o value", []string{"get", "-o", "json", "secrets"}, "secrets", "default"},
+		{"--selector value", []string{"get", "--selector", "app=x", "pods"}, "pods", "default"},
+		{"-o= form", []string{"get", "-o=json", "secrets"}, "secrets", "default"},
+		{"global value flag", []string{"get", "--request-timeout", "pods", "secrets"}, "secrets", "default"},
+		{"pod-scoped verb", []string{"logs", "-c", "app", "web"}, "pods", "default"},
+		{"no aliasing", []string{"get", "--output", "wide", "-n", "dev", "deploy"}, "deploy", "dev"},
+		{"short cluster ending in n", []string{"exec", "-itn", "dev", "web", "--", "sh"}, "pods", "dev"},
+		{"short cluster with attached n", []string{"get", "-wndev", "secrets"}, "secrets", "dev"},
+		{"logs -f is follow", []string{"logs", "-f", "-n", "dev", "web"}, "pods", "dev"},
+		{"-l value that looks like -n", []string{"get", "-ln", "secrets"}, "secrets", "default"},
+		{"-A inside a short cluster", []string{"get", "-An", "dev", "secrets"}, "secrets", "*"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := parseAccessRequest("c1", tt.command, "")
+			if got.Resource != tt.wantRes || got.Namespace != tt.wantNS {
+				t.Errorf("got res=%q ns=%q; want res=%q ns=%q", got.Resource, got.Namespace, tt.wantRes, tt.wantNS)
+			}
+		})
+	}
+}

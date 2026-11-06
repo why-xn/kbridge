@@ -194,3 +194,31 @@ func walkShortCluster(tok, next, verb string) error {
 	}
 	return nil
 }
+
+// longValueFlags are the long forms of the short value letters.
+// shortcut: other verb-level value flags (--sort-by, --field-selector, ...) are not listed; add them as policy needs.
+var longValueFlags = []string{"--output", "--selector", "--container", "--label-columns", "--filename"}
+
+// TakesValue reports whether flag, written without "=", takes the next token as its value.
+// A short cluster takes it when its first value letter is its last, as in -itn.
+func TakesValue(flag string) bool {
+	switch {
+	case strings.Contains(flag, "=") || slices.Contains(globalBoolFlags, flag):
+		return false
+	case strings.HasPrefix(flag, "--"):
+		return slices.Contains(globalValueFlags, flag) || slices.Contains(longValueFlags, flag) ||
+			slices.Contains(connectionFlags, flag) || slices.Contains(fileFlags, flag)
+	case len(flag) > 1 && flag[0] == '-':
+		for i := 1; i < len(flag); i++ {
+			if valueLetter(flag[i]) {
+				return i == len(flag)-1
+			}
+		}
+	}
+	return false
+}
+
+func valueLetter(c byte) bool {
+	f := "-" + string(c)
+	return shortValueFlags[c] || c == 'f' || slices.Contains(connectionFlags, f) || slices.Contains(fileFlags, f)
+}

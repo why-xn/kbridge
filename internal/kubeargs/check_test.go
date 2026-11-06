@@ -178,3 +178,40 @@ func assertBoolFlagsBoolean(t *testing.T, bin string) {
 		}
 	}
 }
+
+func TestTakesValue(t *testing.T) {
+	tests := []struct {
+		flag string
+		want bool
+	}{
+		{"--request-timeout", true}, // global value flag
+		{"--server", true},          // connection flag
+		{"--kustomize", true},       // file flag
+		{"--selector", true},        // long form of a short value letter
+		{"--output", true},
+		{"--output=json", false},
+		{"--watch", false},
+		{"--insecure-skip-tls-verify", false}, // global bool
+		{"-n", true},
+		{"-o", true},
+		{"-l", true},
+		{"-c", true},
+		{"-L", true},
+		{"-f", true},
+		{"-s", true},
+		{"-itn", true},      // cluster ending in a value letter
+		{"-nteam-b", false}, // value attached
+		{"-ldevn", false},   // n is part of -l's value
+		{"-o=json", false},
+		{"-it", false},
+		{"-w", false},
+		{"pods", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.flag, func(t *testing.T) {
+			if got := TakesValue(tt.flag); got != tt.want {
+				t.Errorf("TakesValue(%q) = %v, want %v", tt.flag, got, tt.want)
+			}
+		})
+	}
+}
