@@ -12,7 +12,7 @@ spec:
   template:
     metadata:
       annotations:
-        checksum/config: {{ include (print $.Template.BasePath "/secret.yaml") . | sha256sum }}
+        checksum/config: {{ print (include (print $.Template.BasePath "/secret.yaml") .) (include (print $.Template.BasePath "/configmap.yaml") .) | sha256sum }}
       labels:
         {{- include "controlplane.selectorLabels" . | nindent 8 }}
     spec:

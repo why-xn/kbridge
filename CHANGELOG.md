@@ -97,6 +97,15 @@ control plane answers `503` for an old agent. Without a binding for its
 `kbridge:<email>` user every request is `Forbidden`; the agent creates those
 bindings from policy `clusterAccess` (see [Added](#added)).
 
+### Fixed
+
+- **Policy changes reach the running control plane.** A `helm upgrade` that
+  changed `rbac.policy` left the old policy in force: the pod restart covered
+  only the config Secret, and the kubelet's ConfigMap update did not fire the
+  file watch. The chart now restarts the control plane when `rbac.policy`
+  changes, and the control plane also re-reads the policy file every 10 s and
+  reloads when its content changed. See [docs/rbac.md](docs/rbac.md#reloading).
+
 ## [0.2.2-alpha.1] - 2026-10-21
 
 ### Fixed

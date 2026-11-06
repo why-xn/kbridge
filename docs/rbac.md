@@ -193,15 +193,18 @@ agent's proxy still refuses every request into those.
 
 ## Reloading
 
-The policy is reloaded by two mechanisms, whichever fires first:
+The policy is reloaded within 10 s of the file changing, with no restart:
 
-- **File watch** — control plane watches the policy file's directory and reloads
-  automatically on change. Note this relies on filesystem change events
-  (inotify), which some filesystems (e.g. 9p/NFS or WSL `/mnt/*` mounts) do not
-  deliver reliably.
-- **SIGHUP** — sending `SIGHUP` to the control plane process reloads the policy on
-  demand. This always works, and is the recommended trigger in environments
-  where the file watch may not fire:
+- **File watch and poll** — the control plane reloads on a filesystem event for
+  the policy file, and also re-reads the file every 10 s and reloads when its
+  content changed. The poll covers what events miss: Kubernetes ConfigMap
+  mounts (updated by a symlink swap) and filesystems such as 9p/NFS or WSL
+  `/mnt/*` that do not deliver inotify events.
+- **Helm** — the control-plane chart renders `rbac.policy` into a ConfigMap,
+  and a `helm upgrade` that changes `rbac.policy` restarts the control plane,
+  so the new policy applies as soon as the new pod is ready.
+- **SIGHUP** — sending `SIGHUP` to the control plane process reloads the policy
+  at once:
 
   ```bash
   kill -HUP "$(pidof kbridge-control-plane)"
