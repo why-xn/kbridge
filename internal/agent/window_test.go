@@ -267,6 +267,30 @@ func TestWindow_ClusterWideSecrets(t *testing.T) {
 	}
 }
 
+func TestWindow_NodeProxy(t *testing.T) {
+	w, c, _ := windowFixture(t)
+	nonce, release := w.Register(Identity{User: "kbridge:a@x"})
+	defer release()
+	base := serverOf(t, w, nonce)
+	want := "node proxy is not allowed through kbridge"
+	for _, tc := range []struct{ method, path string }{
+		{"GET", "/api/v1/nodes/n1/proxy/healthz"},
+		{"POST", "/api/v1/nodes/n1/proxy/run/kbridge/p/agent?cmd=cat+/x"},
+		{"GET", "/api/v1/nodes/n1/proxy"},
+		{"GET", "/api/v1/nodes/n1/pro%78y/stats"},
+		{"GET", "/api/v1/nodes/n1/../n1/proxy/healthz"},
+	} {
+		if r := do(t, c, tc.method, base+tc.path, nonce, nil); r.status != http.StatusForbidden || r.body != want {
+			t.Errorf("%s %s: got %d %q, want 403 %q", tc.method, tc.path, r.status, r.body, want)
+		}
+	}
+	for _, p := range []string{"/api/v1/nodes/n1", "/api/v1/nodes/n1/status"} {
+		if e := upstreamSaw(t, do(t, c, "GET", base+p, nonce, nil)); e.Path != p {
+			t.Errorf("upstream path = %q, want %q", e.Path, p)
+		}
+	}
+}
+
 func TestWindow_TokenReReadPerRequest(t *testing.T) {
 	w, c, tokenFile := windowFixture(t)
 	nonce, release := w.Register(Identity{User: "kbridge:a@x"})

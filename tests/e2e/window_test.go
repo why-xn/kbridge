@@ -34,6 +34,11 @@ func TestWindow(t *testing.T) {
 }
 
 func testWindowRefuses(t *testing.T) {
+	node, err := exec.Command("kubectl", "get", "nodes", "-o", "name").Output()
+	if err != nil {
+		t.Fatalf("list nodes with admin kubectl: %v", err)
+	}
+	nodeName := strings.TrimPrefix(strings.Fields(string(node))[0], "node/")
 	cases := []struct {
 		name string
 		args []string
@@ -44,6 +49,8 @@ func testWindowRefuses(t *testing.T) {
 		{"token for the agent account", []string{"create", "token", "kbridge-agent", "-n", agentNamespace}, reservedCopy},
 		{"secrets across namespaces", []string{"get", "secrets", "-A"},
 			"reading secrets across all namespaces is not allowed through kbridge"},
+		{"node proxy", []string{"get", "--raw", "/api/v1/nodes/" + nodeName + "/proxy/healthz"},
+			"node proxy is not allowed through kbridge"},
 		{"cp", []string{"cp", "/etc/hosts", "default/x:/tmp/h"}, "kubectl cp is not supported through kbridge"},
 		{"local file read", []string{"create", "configmap", "t", "--from-file=/etc/hosts"},
 			"flag --from-file is not allowed: the agent does not read local files; the kb CLI uploads them"},

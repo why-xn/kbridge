@@ -204,7 +204,19 @@ func (w *Window) refusal(r *http.Request) string {
 	if r.Method == http.MethodGet && clusterSecretsPath(paths) {
 		return "reading secrets across all namespaces is not allowed through kbridge"
 	}
+	for _, p := range paths {
+		if nodeProxyPath(p) {
+			return "node proxy is not allowed through kbridge"
+		}
+	}
 	return ""
+}
+
+// nodeProxyPath reports whether p reaches a kubelet through the API server's
+// node proxy, which can run commands in any pod without a namespace segment.
+func nodeProxyPath(p string) bool {
+	segs := strings.Split(path.Clean(p), "/")
+	return len(segs) >= 6 && segs[1] == "api" && segs[2] == "v1" && segs[3] == "nodes" && segs[5] == "proxy"
 }
 
 // clusterSecretsPath reports whether any form of the path lists or watches
