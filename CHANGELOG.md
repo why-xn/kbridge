@@ -68,6 +68,18 @@ granting access until removed), e.g.
   namespace that the agent refuses; add the control plane's namespace if it
   runs in the same cluster. An optional `networkPolicy` limits agent egress to
   the API server, the control plane and DNS.
+- **The agent's proxy refuses the kubelet node proxy and ServiceAccount
+  tokens.** `/api/v1/nodes/<node>/proxy/...` could run commands in any pod,
+  the agent's included, and `kb create token <sa>` returned a token usable
+  outside kbridge. Both are now refused with a `403` naming what was refused.
+- **Pod Security grants follow the namespace label.** A pod-creating grant is
+  deleted when its namespace stops enforcing `baseline` or `restricted`, and
+  kept when the namespace cannot be read (only a definite answer revokes).
+- **The policy finds the resource and namespace kubectl will use.** A flag
+  value no longer stands in for the resource (`get -l pods secrets` was judged
+  as `pods`), an unknown long flag before the resource takes the next token as
+  its value, and `apply -f -` is checked against every namespace its manifests
+  name, as is an attached `-nteam-b`.
 
 **Upgrading:** upgrade the control plane and agents together (see
 [Changed](#changed) below), then the CLI. Behaviour users will notice:
@@ -131,6 +143,18 @@ agents' `controlPlane.url` at the new Service name.
   every command names the right namespace, Deployment and Secret. See
   [docs/installation.md](docs/installation.md#helm-kubernetes) and
   [docs/operations.md](docs/operations.md).
+- **`kb login` prompts for the control plane URL** when none is set and
+  reads a piped password (`echo "$PW" | kb login`).
+- **Policy refusals say what was refused and who can help**, naming the verb,
+  resource, namespace, cluster and user, and `kb` prints each error once
+  without a usage block.
+- **A disconnected agent fails commands at once.** Commands queued when an
+  agent drops fail with `cluster "<name>": agent is disconnected`, the same
+  message and exit code (1) as a command sent afterwards, and a reconnecting
+  agent reports its sync state again so `kb admin rbac status` is current.
+- **`kb -v=<n>` reaches kubectl**, viewers may run `kb auth can-i`, the
+  `--from-file` refusal says how to send the object instead, and
+  `kb admin rbac status` shows times in seconds.
 
 ## [0.2.2-alpha.1] - 2026-10-21
 

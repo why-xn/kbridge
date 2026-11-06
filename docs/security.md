@@ -220,6 +220,10 @@ valid until that command ends. The window:
   `port-forward`, `create token` and every object in those namespaces;
 - refuses `GET /api/v1/secrets` and `/api/v1/watch/secrets`, the cluster-wide
   secrets list and watch.
+- refuses the kubelet node proxy, `/api/v1/nodes/<node>/proxy/...`, which
+  reaches every pod on a node without a namespace in the path;
+- refuses `/api/v1/namespaces/<ns>/serviceaccounts/<name>/token`
+  (`kb create token`), so a user never receives a ServiceAccount token.
 
 The chart mounts the token as a projected volume at `/var/run/kbridge/sa`
 (default 10 minute expiry) and leaves nothing at the default ServiceAccount
@@ -333,8 +337,10 @@ match it to the Kubernetes audit event by email, cluster and time.
   credential reaches every binding whose subject is a `User`, `kbridge:` or
   not. Bind people outside kbridge by group.
 - **`edit` lets users run pods as that namespace's ServiceAccounts**, and so
-  use whatever those ServiceAccounts may do. Grant `edit` only where the
-  namespace's ServiceAccounts hold no more than the user should.
+  use whatever those ServiceAccounts may do. They can also create a
+  `kubernetes.io/service-account-token` Secret and read it, which the window
+  does not refuse. Grant `edit` only where the namespace's ServiceAccounts
+  hold no more than the user should.
 - **Cluster-wide `edit` or `admin` bindings are not checked for Pod
   Security.** The agent refuses a namespaced binding to a role that can create
   pods unless the namespace enforces `baseline` or `restricted`, but a
