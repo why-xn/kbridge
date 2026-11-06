@@ -1,6 +1,7 @@
 package controlplane
 
 import (
+	"fmt"
 	"strings"
 )
 
@@ -10,6 +11,21 @@ type AccessRequest struct {
 	Namespace string
 	Resource  string
 	Verb      string
+}
+
+// DenialMessage tells email what was refused and who can unblock it. It names
+// only the verb, resource, namespace and cluster, never the whole command.
+func (a AccessRequest) DenialMessage(email string) string {
+	what := a.Verb
+	if a.Resource != "" {
+		what += " " + a.Resource
+	}
+	where := fmt.Sprintf("in namespace %q", a.Namespace)
+	if a.Namespace == "*" {
+		where = "in all namespaces"
+	}
+	return fmt.Sprintf("permission denied: %s %s on cluster %q is not allowed for %s; ask a kbridge admin to extend your role",
+		what, where, a.Cluster, email)
 }
 
 // matchPattern reports whether value matches pattern, where '*' is a wildcard

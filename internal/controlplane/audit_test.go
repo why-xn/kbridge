@@ -198,3 +198,43 @@ roles:
 		})
 	}
 }
+
+func TestAuthorizeExec_DenialBody(t *testing.T) {
+	const want = `permission denied: delete pods in namespace "team-b" on cluster "prod" is not allowed for dev@x.com; ask a kbridge admin to extend your role`
+	store := newTestStore(t)
+	jm := auth.NewJWTManager("test-secret-at-least-32-chars!!", time.Hour)
+	eng := &PolicyEngine{}
+	eng.current.Store(mustParse(t, `
+default: viewer
+roles:
+  - name: viewer
+    rules:
+      - clusters: ["*"]
+        namespaces: ["*"]
+        resources: ["*"]
+        verbs: ["get"]
+`))
+	agents := NewAgentStore()
+	agents.Register(&AgentInfo{ID: "a1", ClusterName: "prod", Capabilities: []string{capImpersonation}})
+	srv := NewHTTPServer(agents, NewCommandQueue(),
+		NewAuthHandlers(store, jm, time.Hour), NewAdminHandlers(store, testPepper), eng, NewAuditRecorder(store), nil, jm)
+	user := &User{Email: "dev@x.com", Name: "Dev", PasswordHash: "h", IsActive: true}
+	if err := store.CreateUser(context.Background(), user); err != nil {
+		t.Fatalf("seed user: %v", err)
+	}
+	token, _ := jm.GenerateAccessToken(&auth.UserClaims{UserID: user.ID, Email: user.Email})
+
+	w := execRequest(t, srv, token, []string{"delete", "pods", "-n", "team-b"})
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("want 403, got %d", w.Code)
+	}
+	var got map[string]string
+	json.Unmarshal(w.Body.Bytes(), &got)
+	if got["error"] != want {
+		t.Errorf("body error = %q, want %q", got["error"], want)
+	}
+	logs, _, _ := store.ListAuditLogs(context.Background(), AuditLogFilter{})
+	if len(logs) != 1 || logs[0].ErrorMessage != want {
+		t.Errorf("audit error column = %+v, want %q", logs, want)
+	}
+}

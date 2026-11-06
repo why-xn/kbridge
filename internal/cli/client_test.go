@@ -2,6 +2,7 @@ package cli
 
 import (
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -462,5 +463,29 @@ func TestTransparentRefresh_NoRefreshToken(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "run 'kb login' first") {
 		t.Fatalf("expected 'run kb login' error, got: %v", err)
+	}
+}
+
+func TestHTTPStatusError_UsesBody(t *testing.T) {
+	const msg = `permission denied: get pods in namespace "x" on cluster "c" is not allowed for a@b.c; ask a kbridge admin to extend your role`
+	tests := []struct {
+		name, body, want string
+	}{
+		{"json error field", `{"error":"` + strings.ReplaceAll(msg, `"`, `\"`) + `"}`, msg},
+		{"no body", "", "permission denied"},
+		{"not json", "nope", "permission denied"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			resp := func() *http.Response {
+				return &http.Response{StatusCode: http.StatusForbidden, Body: io.NopCloser(strings.NewReader(tt.body))}
+			}
+			if got := httpStatusError(resp()).Error(); got != tt.want {
+				t.Errorf("httpStatusError = %q, want %q", got, tt.want)
+			}
+			if got := streamStatusError(resp(), "c").Error(); got != tt.want {
+				t.Errorf("streamStatusError = %q, want %q", got, tt.want)
+			}
+		})
 	}
 }

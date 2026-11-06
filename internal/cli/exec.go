@@ -83,7 +83,7 @@ func httpStatusError(resp *http.Response) error {
 	case http.StatusUnauthorized:
 		return fmt.Errorf("authentication required, run kb login")
 	case http.StatusForbidden:
-		return fmt.Errorf("permission denied")
+		return forbiddenError(body)
 	case http.StatusNotFound:
 		return fmt.Errorf("cluster not found")
 	case http.StatusServiceUnavailable:

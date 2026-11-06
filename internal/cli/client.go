@@ -701,6 +701,18 @@ func (c *ControlPlaneClient) openStream(ctx context.Context, clusterName string,
 	return resp, nil
 }
 
+// forbiddenError surfaces the control plane's refusal, which says what was
+// refused and who can help, falling back to a bare "permission denied".
+func forbiddenError(body []byte) error {
+	var e struct {
+		Error string `json:"error"`
+	}
+	if json.Unmarshal(body, &e) == nil && e.Error != "" {
+		return errors.New(e.Error)
+	}
+	return errors.New("permission denied")
+}
+
 // streamStatusError maps a non-200 stream response to a user-facing error.
 func streamStatusError(resp *http.Response, clusterName string) error {
 	switch resp.StatusCode {
@@ -709,7 +721,8 @@ func streamStatusError(resp *http.Response, clusterName string) error {
 	case http.StatusUnauthorized:
 		return fmt.Errorf("authentication required: run 'kb login' first")
 	case http.StatusForbidden:
-		return fmt.Errorf("permission denied")
+		b, _ := io.ReadAll(resp.Body)
+		return forbiddenError(b)
 	case http.StatusNotFound:
 		return fmt.Errorf("cluster %q not found", clusterName)
 	case http.StatusServiceUnavailable:

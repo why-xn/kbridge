@@ -103,7 +103,6 @@ func runKubectl(cmd *cobra.Command, args []string) error {
 	// Local manifests (-f file/dir/-) are read here and sent as stdin.
 	args, manifests, hasManifests, err := localManifests(args, os.Stdin)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		return err
 	}
 
@@ -119,7 +118,6 @@ func runKubectl(cmd *cobra.Command, args []string) error {
 		resp, err = client.ExecCommand(currentCluster, args, namespace, timeout)
 	}
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		return err
 	}
 
@@ -181,12 +179,10 @@ func isStreamingCommand(args []string) bool {
 func runKubectlEdit(args []string) error {
 	handler, err := NewEditHandler(args)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		return err
 	}
 
 	if err := handler.Execute(); err != nil {
-		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		return err
 	}
 

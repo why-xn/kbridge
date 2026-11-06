@@ -85,3 +85,24 @@ func TestParseAccessRequest(t *testing.T) {
 		})
 	}
 }
+
+func TestDenialMessage(t *testing.T) {
+	const tail = ` on cluster "prod" is not allowed for dev@x.com; ask a kbridge admin to extend your role`
+	tests := []struct {
+		name    string
+		command []string
+		want    string
+	}{
+		{"namespaced", []string{"delete", "pods", "-n", "team-b"}, `permission denied: delete pods in namespace "team-b"` + tail},
+		{"all namespaces", []string{"get", "pods", "-A"}, `permission denied: get pods in all namespaces` + tail},
+		{"no resource", []string{"apply", "-f", "-"}, `permission denied: apply in namespace "default"` + tail},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := parseAccessRequest("prod", tt.command, "").DenialMessage("dev@x.com")
+			if got != tt.want {
+				t.Errorf("got  %q\nwant %q", got, tt.want)
+			}
+		})
+	}
+}

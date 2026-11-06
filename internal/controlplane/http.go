@@ -318,8 +318,9 @@ func (s *HTTPServer) policyAllows(c *gin.Context, clusterName string, req ExecRe
 	if !s.policy.Allows(claims.Email, access) {
 		log.Printf("RBAC denied: user=%s cluster=%s verb=%s resource=%s namespace=%s",
 			claims.Email, clusterName, access.Verb, access.Resource, access.Namespace)
-		s.recordExecAudit(c, clusterName, req, AuditStatusDenied, nil, nil, "permission denied")
-		c.JSON(http.StatusForbidden, gin.H{"error": "permission denied"})
+		msg := access.DenialMessage(claims.Email)
+		s.recordExecAudit(c, clusterName, req, AuditStatusDenied, nil, nil, msg)
+		c.JSON(http.StatusForbidden, gin.H{"error": msg})
 		return false
 	}
 	return true
