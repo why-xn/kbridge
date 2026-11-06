@@ -106,6 +106,8 @@ func TestRBACSync_NeverProtectedNamespace(t *testing.T) {
 // is labelled baseline, then binds, and revokes once the label is removed.
 func TestRBACSync_RequiresPodSecurity(t *testing.T) {
 	const ns = "e2e-nopsa"
+	// useDeveloperConfig moves HOME; pin kubectl to the harness kubeconfig first.
+	t.Setenv("KUBECONFIG", hostKubeconfig())
 	ensureUser(t, developerEmail)
 	waitDeveloperBound(t)
 	withNopsaEdit(t, ns)
