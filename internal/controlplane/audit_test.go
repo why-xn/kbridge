@@ -238,3 +238,50 @@ roles:
 		t.Errorf("audit error column = %+v, want %q", logs, want)
 	}
 }
+
+func TestAuthorizeExec_ManifestNamespace(t *testing.T) {
+	srv, jm := newRBACTestServer(t, `
+default: developer
+roles:
+  - name: developer
+    rules:
+      - clusters: ["*"]
+        namespaces: ["team-a"]
+        resources: ["*"]
+        verbs: ["*"]
+`)
+	token, _ := jm.GenerateAccessToken(&auth.UserClaims{UserID: "u1", Email: "dev@x.com"})
+	tests := []struct {
+		name      string
+		command   []string
+		namespace string
+		manifest  string
+		wantDeny  string
+	}{
+		{"manifest namespace allowed without -n", []string{"apply", "-f", "-"}, "", "metadata:\n  namespace: team-a\n", ""},
+		{"unnamed document falls back to default", []string{"apply", "-f", "-"}, "", "metadata:\n  name: x\n",
+			`permission denied: apply in namespace "default" on cluster "prod" is not allowed for dev@x.com; ask a kbridge admin to extend your role`},
+		{"manifest namespace differs from -n", []string{"apply", "-f", "-", "-n", "team-a"}, "team-a",
+			"metadata:\n  namespace: team-a\n---\nmetadata:\n  namespace: team-b\n",
+			`permission denied: apply in namespace "team-b" on cluster "prod" is not allowed for dev@x.com; ask a kbridge admin to extend your role`},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			body, _ := json.Marshal(ExecRequest{Command: tt.command, Namespace: tt.namespace, Stdin: tt.manifest, Timeout: 1})
+			req, _ := http.NewRequest("POST", "/api/v1/clusters/prod/exec", bytes.NewReader(body))
+			req.Header.Set("Content-Type", "application/json")
+			req.Header.Set("Authorization", "Bearer "+token)
+			w := httptest.NewRecorder()
+			srv.Handler().ServeHTTP(w, req)
+
+			var got map[string]string
+			json.Unmarshal(w.Body.Bytes(), &got)
+			if tt.wantDeny == "" && w.Code == http.StatusForbidden {
+				t.Fatalf("want allowed, got 403: %s", got["error"])
+			}
+			if tt.wantDeny != "" && (w.Code != http.StatusForbidden || got["error"] != tt.wantDeny) {
+				t.Errorf("got %d %q, want 403 %q", w.Code, got["error"], tt.wantDeny)
+			}
+		})
+	}
+}

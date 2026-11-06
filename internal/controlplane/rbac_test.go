@@ -1,6 +1,7 @@
 package controlplane
 
 import (
+	"reflect"
 	"testing"
 )
 
@@ -71,6 +72,8 @@ func TestParseAccessRequest(t *testing.T) {
 		{"logs is pod-scoped", []string{"logs", "web-1"}, "", "logs", "pods", "default"},
 		{"exec is pod-scoped", []string{"exec", "web-1", "--", "sh"}, "", "exec", "pods", "default"},
 		{"empty command", []string{}, "", "", "", "default"},
+		{"-A wins over a later -n", []string{"get", "secrets", "-A", "-n", "team-a"}, "", "get", "secrets", "*"},
+		{"-n value is not the resource", []string{"get", "-n", "team-a", "secrets"}, "", "get", "secrets", "team-a"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -102,6 +105,46 @@ func TestDenialMessage(t *testing.T) {
 			got := parseAccessRequest("prod", tt.command, "").DenialMessage("dev@x.com")
 			if got != tt.want {
 				t.Errorf("got  %q\nwant %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestParseAccessRequest_AttachedNamespace(t *testing.T) {
+	tests := []struct {
+		name    string
+		command []string
+		want    string
+	}{
+		{"attached", []string{"get", "pods", "-nteam-b"}, "team-b"},
+		{"last wins", []string{"get", "pods", "-n", "team-a", "-nteam-b"}, "team-b"},
+		{"separate after attached", []string{"get", "pods", "-nteam-b", "-n", "team-a"}, "team-a"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := parseAccessRequest("c1", tt.command, "").Namespace; got != tt.want {
+				t.Errorf("namespace = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestManifestNamespaces(t *testing.T) {
+	tests := []struct {
+		name, stdin string
+		want        []string
+		wantUnnamed bool
+	}{
+		{"one namespaced, one not", "metadata:\n  namespace: team-a\n---\nmetadata:\n  name: x\n", []string{"team-a"}, true},
+		{"duplicates collapse", "metadata: {namespace: a}\n---\nmetadata: {namespace: b}\n---\nmetadata: {namespace: a}\n", []string{"a", "b"}, false},
+		{"invalid yaml", "metadata: [\n", nil, true},
+		{"empty", "", nil, true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, unnamed := manifestNamespaces([]byte(tt.stdin))
+			if !reflect.DeepEqual(got, tt.want) || unnamed != tt.wantUnnamed {
+				t.Errorf("got %q unnamed=%v, want %q unnamed=%v", got, unnamed, tt.want, tt.wantUnnamed)
 			}
 		})
 	}

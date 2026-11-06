@@ -314,8 +314,10 @@ func (s *HTTPServer) policyAllows(c *gin.Context, clusterName string, req ExecRe
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "not authenticated"})
 		return false
 	}
-	access := parseAccessRequest(clusterName, req.Command, req.Namespace)
-	if !s.policy.Allows(claims.Email, access) {
+	for _, access := range accessRequests(clusterName, req) {
+		if s.policy.Allows(claims.Email, access) {
+			continue
+		}
 		log.Printf("RBAC denied: user=%s cluster=%s verb=%s resource=%s namespace=%s",
 			claims.Email, clusterName, access.Verb, access.Resource, access.Namespace)
 		msg := access.DenialMessage(claims.Email)

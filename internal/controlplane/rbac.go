@@ -1,8 +1,11 @@
 package controlplane
 
 import (
+	"bytes"
 	"fmt"
 	"strings"
+
+	"gopkg.in/yaml.v3"
 )
 
 // AccessRequest describes a single kubectl action a user wants to perform.
@@ -91,11 +94,16 @@ func parseAccessRequest(cluster string, command []string, fallbackNamespace stri
 	req.Verb = command[0]
 
 	args := command[1:]
+	positional, all := "", false
 	for i := 0; i < len(args); i++ {
 		a := args[i]
 		switch {
+		case !strings.HasPrefix(a, "-"):
+			if positional == "" {
+				positional = a
+			}
 		case a == "-A" || a == "--all-namespaces":
-			req.Namespace = "*"
+			all = true
 		case a == "-n" || a == "--namespace":
 			if i+1 < len(args) {
 				req.Namespace = args[i+1]
@@ -105,21 +113,74 @@ func parseAccessRequest(cluster string, command []string, fallbackNamespace stri
 			req.Namespace = strings.TrimPrefix(a, "--namespace=")
 		case strings.HasPrefix(a, "-n="):
 			req.Namespace = strings.TrimPrefix(a, "-n=")
+		case strings.HasPrefix(a, "-n") && len(a) > 2:
+			req.Namespace = a[2:] // kubectl honours the attached -nteam-b form
 		}
 	}
 
+	if all { // kubectl's -A wins over any -n
+		req.Namespace = "*"
+	}
+	// The -n value is skipped above, so "-n team-a pods" names pods.
+	req.Resource = positional
 	if podScopedVerbs[req.Verb] {
 		req.Resource = "pods"
-	} else {
-		for _, a := range args {
-			if !strings.HasPrefix(a, "-") {
-				req.Resource = a
-				break
-			}
-		}
 	}
 	if idx := strings.IndexByte(req.Resource, '/'); idx >= 0 {
 		req.Resource = req.Resource[:idx]
 	}
 	return req
+}
+
+// manifestVerbs take objects from stdin manifests, which name their own
+// namespaces.
+var manifestVerbs = map[string]bool{
+	"apply": true, "create": true, "replace": true, "delete": true, "patch": true,
+}
+
+// accessRequests lists every check a command needs: the flag namespace, plus
+// each namespace its stdin manifests write to. The flag namespace is skipped
+// only when every manifest names its own, since kubectl then never uses it.
+func accessRequests(cluster string, req ExecRequest) []AccessRequest {
+	base := parseAccessRequest(cluster, req.Command, req.Namespace)
+	if !manifestVerbs[base.Verb] || req.Stdin == "" {
+		return []AccessRequest{base}
+	}
+	namespaces, unnamed := manifestNamespaces([]byte(req.Stdin))
+	var out []AccessRequest
+	if unnamed {
+		out = append(out, base)
+	}
+	for _, ns := range namespaces {
+		r := base
+		r.Namespace = ns
+		out = append(out, r)
+	}
+	return out
+}
+
+// manifestNamespaces returns the distinct metadata.namespace values of the
+// YAML documents in stdin, and whether any document (or none at all) lacks
+// one. It stops at the first decode error: kubectl rejects bad YAML itself.
+// shortcut: List kinds are not unpacked, add items[] if users send them.
+func manifestNamespaces(stdin []byte) (namespaces []string, unnamed bool) {
+	dec := yaml.NewDecoder(bytes.NewReader(stdin))
+	seen := map[string]bool{}
+	docs := 0
+	for {
+		var doc struct {
+			Metadata struct{ Namespace string } `yaml:"metadata"`
+		}
+		if dec.Decode(&doc) != nil {
+			return namespaces, unnamed || docs == 0
+		}
+		docs++
+		ns := doc.Metadata.Namespace
+		if ns == "" {
+			unnamed = true
+		} else if !seen[ns] {
+			seen[ns] = true
+			namespaces = append(namespaces, ns)
+		}
+	}
 }
