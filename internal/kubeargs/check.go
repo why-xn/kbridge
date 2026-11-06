@@ -196,7 +196,7 @@ func walkShortCluster(tok, next, verb string) error {
 }
 
 // longValueFlags are the long forms of the short value letters.
-// shortcut: other verb-level value flags (--sort-by, --field-selector, ...) are not listed; add them as policy needs.
+// The policy treats any other long flag before the resource as a value flag, unless IsBoolFlag knows it.
 var longValueFlags = []string{"--output", "--selector", "--container", "--label-columns", "--filename"}
 
 // TakesValue reports whether flag, written without "=", takes the next token as its value.
@@ -216,6 +216,11 @@ func TakesValue(flag string) bool {
 		}
 	}
 	return false
+}
+
+// IsBoolFlag reports whether flag is one of kubectl's boolean global options.
+func IsBoolFlag(flag string) bool {
+	return slices.Contains(globalBoolFlags, flag)
 }
 
 func valueLetter(c byte) bool {

@@ -15,6 +15,9 @@ type AccessRequest struct {
 	Namespace string
 	Resource  string
 	Verb      string
+	// FlagHidResource is set when an unknown long flag before the resource
+	// took the next token as its value, so the resource may be missing.
+	FlagHidResource bool
 }
 
 // DenialMessage tells email what was refused and who can unblock it. It names
@@ -28,8 +31,12 @@ func (a AccessRequest) DenialMessage(email string) string {
 	if a.Namespace == "*" {
 		where = "in all namespaces"
 	}
-	return fmt.Sprintf("permission denied: %s %s on cluster %q is not allowed for %s; ask a kbridge admin to extend your role",
+	msg := fmt.Sprintf("permission denied: %s %s on cluster %q is not allowed for %s; ask a kbridge admin to extend your role",
 		what, where, a.Cluster, email)
+	if a.Resource == "" && a.FlagHidResource {
+		msg += " (write flags as --flag=value or put them after the resource)"
+	}
+	return msg
 }
 
 // matchPattern reports whether value matches pattern, where '*' is a wildcard
@@ -132,6 +139,9 @@ func scanArgs(req *AccessRequest, args []string) (positional string, all bool) {
 		case strings.HasPrefix(a, "--"):
 			if kubeargs.TakesValue(a) {
 				i++
+			} else if positional == "" && unknownTakesNext(a, next) {
+				req.FlagHidResource = true
+				i++
 			}
 		default:
 			ns, clusterAll, takesNext := shortFlag(a, next, req.Verb)
@@ -145,6 +155,13 @@ func scanArgs(req *AccessRequest, args []string) (positional string, all bool) {
 		}
 	}
 	return positional, all
+}
+
+// unknownTakesNext fails closed on a long flag kbridge does not know: before
+// the resource it is read as taking a value, so "get --sort-by pods secrets"
+// reads secrets. It never takes a flag, so "--no-headers -n dev" keeps -n.
+func unknownTakesNext(flag, next string) bool {
+	return !strings.Contains(flag, "=") && !kubeargs.IsBoolFlag(flag) && next != "" && !strings.HasPrefix(next, "-")
 }
 
 // shortFlag reads a single-dash cluster such as -n, -nteam-b, -n=x or -itn:

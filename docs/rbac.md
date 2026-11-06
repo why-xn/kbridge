@@ -51,6 +51,12 @@ Subjects support the same wildcards, e.g. `*@dev.corp.com`.
 | resource | the resource type; `pods` for `logs`/`exec`/`cp`/etc.; `foo/name` → `foo` |
 | namespace | `-n`/`--namespace`; `*` for `-A`/`--all-namespaces`; else `default` |
 
+A flag that takes a value must be written `--flag=value` when it comes before
+the resource, or be placed after it: kbridge reads an unknown `--flag value`
+before the resource as taking a value, so `kb get --sort-by pods secrets` is
+checked as `secrets`, and `kb get --no-headers pods` has no resource and is
+refused by a role that lists resources.
+
 ## Example
 
 ```yaml

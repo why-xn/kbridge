@@ -99,6 +99,8 @@ func TestDenialMessage(t *testing.T) {
 		{"namespaced", []string{"delete", "pods", "-n", "team-b"}, `permission denied: delete pods in namespace "team-b"` + tail},
 		{"all namespaces", []string{"get", "pods", "-A"}, `permission denied: get pods in all namespaces` + tail},
 		{"no resource", []string{"apply", "-f", "-"}, `permission denied: apply in namespace "default"` + tail},
+		{"flag hid the resource", []string{"get", "--no-headers", "pods"},
+			`permission denied: get in namespace "default"` + tail + " (write flags as --flag=value or put them after the resource)"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -168,6 +170,12 @@ func TestParseAccessRequest_SkipsFlagValues(t *testing.T) {
 		{"short cluster with attached n", []string{"get", "-wndev", "secrets"}, "secrets", "dev"},
 		{"logs -f is follow", []string{"logs", "-f", "-n", "dev", "web"}, "pods", "dev"},
 		{"-l value that looks like -n", []string{"get", "-ln", "secrets"}, "secrets", "default"},
+		{"unknown long flag takes a value", []string{"get", "--sort-by", "pods", "secrets"}, "secrets", "default"},
+		{"unknown long flag hides the resource", []string{"get", "--no-headers", "pods"}, "", "default"},
+		{"unknown long flag with =", []string{"get", "--no-headers=true", "pods"}, "pods", "default"},
+		{"unknown long flag after resource", []string{"get", "pods", "--no-headers"}, "pods", "default"},
+		{"unknown long flag never swallows a flag", []string{"get", "--no-headers", "-n", "dev", "pods"}, "pods", "dev"},
+		{"known global bool", []string{"get", "--warnings-as-errors", "pods"}, "pods", "default"},
 		{"-A inside a short cluster", []string{"get", "-An", "dev", "secrets"}, "secrets", "*"},
 	}
 	for _, tt := range tests {

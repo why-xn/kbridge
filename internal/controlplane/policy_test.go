@@ -96,12 +96,12 @@ func TestPolicy_Allows(t *testing.T) {
 		req     AccessRequest
 		want    bool
 	}{
-		{"admin can delete anywhere", "alice@corp.com", AccessRequest{"prod-1", "kube-system", "pods", "delete"}, true},
-		{"dev wildcard subject gets developer", "carol@dev.corp.com", AccessRequest{"dev-2", "default", "pods", "logs"}, true},
-		{"developer denied on prod", "carol@dev.corp.com", AccessRequest{"prod-1", "default", "pods", "logs"}, false},
-		{"developer denied delete verb", "carol@dev.corp.com", AccessRequest{"dev-2", "default", "pods", "delete"}, false},
-		{"unbound user falls back to viewer (read allowed)", "stranger@x.com", AccessRequest{"prod-1", "default", "pods", "get"}, true},
-		{"unbound user denied writes via viewer default", "stranger@x.com", AccessRequest{"prod-1", "default", "pods", "delete"}, false},
+		{"admin can delete anywhere", "alice@corp.com", AccessRequest{Cluster: "prod-1", Namespace: "kube-system", Resource: "pods", Verb: "delete"}, true},
+		{"dev wildcard subject gets developer", "carol@dev.corp.com", AccessRequest{Cluster: "dev-2", Namespace: "default", Resource: "pods", Verb: "logs"}, true},
+		{"developer denied on prod", "carol@dev.corp.com", AccessRequest{Cluster: "prod-1", Namespace: "default", Resource: "pods", Verb: "logs"}, false},
+		{"developer denied delete verb", "carol@dev.corp.com", AccessRequest{Cluster: "dev-2", Namespace: "default", Resource: "pods", Verb: "delete"}, false},
+		{"unbound user falls back to viewer (read allowed)", "stranger@x.com", AccessRequest{Cluster: "prod-1", Namespace: "default", Resource: "pods", Verb: "get"}, true},
+		{"unbound user denied writes via viewer default", "stranger@x.com", AccessRequest{Cluster: "prod-1", Namespace: "default", Resource: "pods", Verb: "delete"}, false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -126,7 +126,7 @@ bindings:
     roles: ["admin"]
 `
 	p := mustParse(t, noDefault)
-	if p.allows("nobody@x.com", AccessRequest{"c", "default", "pods", "get"}) {
+	if p.allows("nobody@x.com", AccessRequest{Cluster: "c", Namespace: "default", Resource: "pods", Verb: "get"}) {
 		t.Error("expected deny for unbound user when no default role")
 	}
 }
@@ -153,7 +153,7 @@ roles:
 		t.Fatalf("load: %v", err)
 	}
 
-	req := AccessRequest{"prod", "default", "pods", "delete"}
+	req := AccessRequest{Cluster: "prod", Namespace: "default", Resource: "pods", Verb: "delete"}
 	if engine.Allows("u@x.com", req) {
 		t.Fatal("delete should be denied under restrictive policy")
 	}

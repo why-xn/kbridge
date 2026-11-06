@@ -179,6 +179,14 @@ func assertBoolFlagsBoolean(t *testing.T, bin string) {
 	}
 }
 
+func TestIsBoolFlag(t *testing.T) {
+	for flag, want := range map[string]bool{"--warnings-as-errors": true, "--no-headers": false, "--server": false} {
+		if got := IsBoolFlag(flag); got != want {
+			t.Errorf("IsBoolFlag(%q) = %v, want %v", flag, got, want)
+		}
+	}
+}
+
 func TestTakesValue(t *testing.T) {
 	tests := []struct {
 		flag string
