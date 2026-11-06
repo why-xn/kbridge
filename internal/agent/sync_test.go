@@ -202,6 +202,24 @@ func TestReconcile_RequiresPodSecurity(t *testing.T) {
 			}
 		})
 	}
+	t.Run("label removed revokes", func(t *testing.T) {
+		f, k := newFakeKube(t)
+		f.putNamespace("team-a", map[string]string{podSecurityEnforce: "baseline"})
+		desired := []binding{rb("team-a", "kbridge-dev-edit", "edit", "kbridge:a@x"), rb("team-a", "kbridge-dev-view", "view", "kbridge:a@x")}
+		if errs := reconcile(context.Background(), k, desired, nil); len(errs) != 0 {
+			t.Fatalf("errors = %v", errs)
+		}
+		f.putNamespace("team-a", map[string]string{})
+		if errs := reconcile(context.Background(), k, desired, nil); !slices.Equal(errs, []string{refusal}) {
+			t.Errorf("errors = %v, want %q", errs, refusal)
+		}
+		if _, ok := f.get("team-a", "kbridge-dev-edit"); ok {
+			t.Error("edit binding kept after the namespace stopped enforcing")
+		}
+		if _, ok := f.get("team-a", "kbridge-dev-view"); !ok {
+			t.Error("view binding deleted")
+		}
+	})
 }
 
 func TestNeedsPodSecurity(t *testing.T) {

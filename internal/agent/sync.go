@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"regexp"
@@ -75,18 +76,23 @@ func checkBinding(b binding, protected []string) error {
 }
 
 // reconcile makes the cluster match desired: creates or updates every desired
-// binding, deletes managed ones not desired, skips protected namespaces, and
-// returns one error string per binding the cluster refused.
+// binding, deletes managed ones not desired or refused with a revokeError,
+// skips protected namespaces, and returns one error string per refused binding.
 func reconcile(ctx context.Context, k *kubeAPI, desired []binding, protected []string) []string {
 	var errs []string
 	existing, err := k.listManaged(ctx)
 	if err != nil {
 		errs = append(errs, err.Error())
 	}
+	kept := make([]binding, 0, len(desired))
 	for _, b := range desired {
-		errs = appendErr(errs, applyOne(ctx, k, b, protected))
+		err := applyOne(ctx, k, b, protected)
+		errs = appendErr(errs, err)
+		if !errors.As(err, new(revokeError)) {
+			kept = append(kept, b)
+		}
 	}
-	for _, b := range stale(existing, desired) {
+	for _, b := range stale(existing, kept) {
 		errs = appendErr(errs, pruneOne(ctx, k, b, protected))
 	}
 	return errs
@@ -112,6 +118,10 @@ func applyOne(ctx context.Context, k *kubeAPI, b binding, protected []string) er
 	return nil
 }
 
+// revokeError is a refusal that also removes an existing grant: the binding
+// is pruned as if it were no longer desired.
+type revokeError struct{ error }
+
 // needsPodSecurity reports whether role can create pods; only view cannot.
 func needsPodSecurity(clusterRole string) bool {
 	return clusterRole != "view"
@@ -126,11 +136,11 @@ func checkPodSecurity(ctx context.Context, k *kubeAPI, b binding) error {
 	}
 	level, err := k.namespaceEnforce(ctx, b.Namespace)
 	if err != nil {
-		return fmt.Errorf("binding %s: reading namespace %q: %w", b.Name, b.Namespace, err)
+		return revokeError{fmt.Errorf("binding %s: reading namespace %q: %w", b.Name, b.Namespace, err)}
 	}
 	if level != "baseline" && level != "restricted" {
-		return fmt.Errorf("binding %s: namespace %q must enforce pod-security baseline or restricted before %s can be granted there (kubectl label ns %s pod-security.kubernetes.io/enforce=baseline)",
-			b.Name, b.Namespace, b.ClusterRole, b.Namespace)
+		return revokeError{fmt.Errorf("binding %s: namespace %q must enforce pod-security baseline or restricted before %s can be granted there (kubectl label ns %s pod-security.kubernetes.io/enforce=baseline)",
+			b.Name, b.Namespace, b.ClusterRole, b.Namespace)}
 	}
 	return nil
 }

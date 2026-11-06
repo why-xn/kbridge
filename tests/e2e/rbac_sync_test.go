@@ -103,7 +103,7 @@ func TestRBACSync_NeverProtectedNamespace(t *testing.T) {
 
 // TestRBACSync_RequiresPodSecurity grants the developer edit in e2e-nopsa,
 // which does not enforce Pod Security: the agent refuses until the namespace
-// is labelled baseline, then binds.
+// is labelled baseline, then binds, and revokes once the label is removed.
 func TestRBACSync_RequiresPodSecurity(t *testing.T) {
 	const ns = "e2e-nopsa"
 	ensureUser(t, developerEmail)
@@ -128,6 +128,15 @@ func TestRBACSync_RequiresPodSecurity(t *testing.T) {
 	useDeveloperConfig(t)
 	if stdout, stderr, code := runCLI(t, "create", "configmap", "x", "-n", ns); code != 0 {
 		t.Fatalf("create configmap as developer: exit %d, stdout %q, stderr %q", code, stdout, stderr)
+	}
+	if out, err := exec.Command("kubectl", "label", "ns", ns, podSecurityLabel+"-").CombinedOutput(); err != nil {
+		t.Fatalf("unlabel namespace: %v: %s", err, out)
+	}
+	if !poll(30*time.Second, func() bool { return bindingUsers(t, ns, developerBinding) == "" }) {
+		t.Fatalf("%s still in %s 30s after the label was removed", developerBinding, ns)
+	}
+	if stdout, stderr, code := runCLI(t, "create", "configmap", "y", "-n", ns); code == 0 {
+		t.Fatalf("create configmap as developer after revoke succeeded: stdout %q, stderr %q", stdout, stderr)
 	}
 }
 

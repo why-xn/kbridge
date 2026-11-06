@@ -21,7 +21,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   enforced.** A namespaced binding to any ClusterRole but `view` needs the
   namespace labelled `pod-security.kubernetes.io/enforce=baseline` (or
   `restricted`); otherwise `kb admin rbac status` shows the refusal and the
-  label command. The agent chart grants `get` on namespaces for this, and a new
+  label command, and a grant already made there is deleted. The agent chart grants `get` on namespaces for this, and a new
   `sync.interval` value (default `60s`) sets how often it re-checks. See
   [docs/rbac.md](docs/rbac.md#cluster-bindings-clusteraccess).
 - **Agent chart `accessCeiling`** caps what the agent may bind: by default the

@@ -174,6 +174,9 @@ What the agent refuses, reported per binding in `kb admin rbac status`:
   kubectl label ns <ns> pod-security.kubernetes.io/enforce=baseline
   ```
 
+  If a namespace stops enforcing, the agent deletes the binding it made there
+  on its next sync and reports the same refusal.
+
   `view` is exempt: it cannot create pods. Cluster-wide bindings are not
   checked; see [security.md](security.md#known-limits).
 
