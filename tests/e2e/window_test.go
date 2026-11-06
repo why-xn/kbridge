@@ -16,7 +16,7 @@ import (
 
 const (
 	agentNamespace  = "kbridge"
-	agentDeployment = "deploy/kbridge-agent-agent"
+	agentDeployment = "deploy/kbridge-agent"
 	agentTokenPath  = "/var/run/kbridge/sa/token"
 	reservedCopy    = `namespace "kbridge" is reserved for the kbridge agent`
 )

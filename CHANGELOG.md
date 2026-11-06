@@ -97,6 +97,20 @@ control plane answers `503` for an old agent. Without a binding for its
 `kbridge:<email>` user every request is `Forbidden`; the agent creates those
 bindings from policy `clusterAccess` (see [Added](#added)).
 
+- **Chart resources take standard Helm names.** Installed as `kbridge-agent`
+  and `kbridge-control-plane`, the charts name their Deployment, Service,
+  ServiceAccount, ClusterRole and Secrets `kbridge-agent` and
+  `kbridge-control-plane` (before, the release name was followed by `-agent`
+  or `-control-plane` again). A release name that does not contain
+  the chart name gets `<release>-kbridge-agent` or
+  `<release>-kbridge-control-plane`.
+
+**Upgrading:** the control plane's data PVC is renamed too, so `helm upgrade`
+deletes the old `<release>-control-plane-data` PVC and starts on an empty
+database. Back up the database before upgrading and restore it afterwards (see
+[docs/operations.md](docs/operations.md#backup--restore-sqlite)). Point
+agents' `controlPlane.url` at the new Service name.
+
 ### Fixed
 
 - **Policy changes reach the running control plane.** A `helm upgrade` that

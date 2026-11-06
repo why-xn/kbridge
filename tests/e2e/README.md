@@ -100,7 +100,7 @@ When running tests, logs are stored in `tests/e2e/logs/`:
 The agent runs as a pod in the `kbridge` namespace, so its logs come from the cluster:
 
 ```bash
-kubectl -n kbridge logs deploy/kbridge-agent-agent
+kubectl -n kbridge logs deploy/kbridge-agent
 ```
 
 ## Configuration
@@ -135,5 +135,5 @@ kind delete cluster --name kbridge-e2e-test
 cat tests/e2e/logs/control-plane.log
 
 # View agent (pod) logs
-kubectl -n kbridge logs deploy/kbridge-agent-agent
+kubectl -n kbridge logs deploy/kbridge-agent
 ```

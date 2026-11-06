@@ -266,7 +266,7 @@ start_agent() {
     done
 
     log_error "Agent failed to register. Agent pod logs:"
-    kubectl -n kbridge logs deploy/kbridge-agent-agent --tail=50
+    kubectl -n kbridge logs deploy/kbridge-agent --tail=50
     exit 1
 }
 
@@ -291,7 +291,7 @@ wait_rbac_sync() {
     done
     log_error "Cluster RBAC did not sync:"
     "${BIN_DIR}/kb" admin rbac status || true
-    kubectl -n kbridge logs deploy/kbridge-agent-agent --tail=50
+    kubectl -n kbridge logs deploy/kbridge-agent --tail=50
     exit 1
 }
 

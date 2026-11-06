@@ -132,7 +132,7 @@ kubectl create namespace kbridge
 kubectl label namespace kbridge pod-security.kubernetes.io/enforce=restricted
 helm install kbridge-agent oci://ghcr.io/why-xn/charts/kbridge-agent -n kbridge \
   --version 0.2.2-alpha.1 \
-  --set controlPlane.url=kbridge-control-plane-control-plane.default.svc:9090 \
+  --set controlPlane.url=kbridge-control-plane.default.svc:9090 \
   --set controlPlane.token=kba_xxxxxxxxxxxxxxxxxxxx \
   --set cluster.name=prod-us-east \
   --set 'protectedNamespaces={default}'   # the control plane's namespace, when co-located

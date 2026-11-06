@@ -276,7 +276,7 @@ kb get nodes --cluster prod-us-east
 The `connected` status confirms the agent has registered and its heartbeat is
 current. If the status is `disconnected`, check:
 
-1. Agent pod logs: `kubectl logs deployment/kbridge-agent-agent` (in target cluster).
+1. Agent pod logs: `kubectl logs deployment/kbridge-agent` (in target cluster).
 2. `controlPlane.url` — must be reachable from inside the target cluster on port 9090.
 3. TLS — if `controlPlane.tls.insecure` was not set and the cert is self-signed,
    provide the CA via `controlPlane.tls.caCert`.
