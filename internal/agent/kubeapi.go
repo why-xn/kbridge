@@ -125,6 +125,11 @@ func isNotFound(err error) bool {
 	return errors.As(err, &ae) && ae.code == http.StatusNotFound
 }
 
+func isForbidden(err error) bool {
+	var ae *apiError
+	return errors.As(err, &ae) && ae.code == http.StatusForbidden
+}
+
 // send makes one request and returns the response only when it is 2xx.
 func (k *kubeAPI) send(ctx context.Context, method, path string, body any) (*http.Response, error) {
 	req, err := k.newRequest(ctx, method, path, body)

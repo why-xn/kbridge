@@ -24,6 +24,7 @@ type fakeKube struct {
 	tokens  []string
 	forbidC bool                         // 403 on listing clusterrolebindings
 	ns      map[string]map[string]string // namespace name -> labels; absent = 404
+	nsFail  int                          // when set, namespace GETs answer this status
 }
 
 func newFakeKube(t *testing.T) (*fakeKube, *kubeAPI) {
@@ -61,7 +62,12 @@ func (f *fakeKube) putNamespace(name string, labels map[string]string) {
 func (f *fakeKube) readNamespace(w http.ResponseWriter, name string) {
 	f.mu.Lock()
 	labels, ok := f.ns[name]
+	fail := f.nsFail
 	f.mu.Unlock()
+	if fail != 0 {
+		kubeStatus(w, fail, http.StatusText(fail))
+		return
+	}
 	if !ok {
 		kubeStatus(w, http.StatusNotFound, "namespaces \""+name+"\" not found")
 		return

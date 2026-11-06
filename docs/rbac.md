@@ -175,7 +175,9 @@ What the agent refuses, reported per binding in `kb admin rbac status`:
   ```
 
   If a namespace stops enforcing, the agent deletes the binding it made there
-  on its next sync and reports the same refusal.
+  on its next sync and reports the same refusal; so does a namespace the agent
+  may not read (403) or that is gone (404). Any other read failure, such as an
+  API server outage, leaves the binding as it is and reports the error.
 
   `view` is exempt: it cannot create pods. Cluster-wide bindings are not
   checked; see [security.md](security.md#known-limits).

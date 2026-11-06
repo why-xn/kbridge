@@ -129,14 +129,20 @@ func needsPodSecurity(clusterRole string) bool {
 
 // checkPodSecurity refuses a namespaced binding that can create pods unless
 // the namespace enforces baseline or restricted: a hostPath pod would read
-// the agent's token off the node. Cluster-wide bindings are a documented limit.
+// the agent's token off the node. A non-qualifying label, 403 or 404 revokes an
+// existing grant; any other read failure leaves it. Cluster-wide bindings are
+// a documented limit.
 func checkPodSecurity(ctx context.Context, k *kubeAPI, b binding) error {
 	if b.Namespace == "" || !needsPodSecurity(b.ClusterRole) {
 		return nil
 	}
 	level, err := k.namespaceEnforce(ctx, b.Namespace)
 	if err != nil {
-		return revokeError{fmt.Errorf("binding %s: reading namespace %q: %w", b.Name, b.Namespace, err)}
+		err = fmt.Errorf("binding %s: reading namespace %q: %w", b.Name, b.Namespace, err)
+		if isForbidden(err) || isNotFound(err) { // a definite answer; anything else may be an outage
+			return revokeError{err}
+		}
+		return err
 	}
 	if level != "baseline" && level != "restricted" {
 		return revokeError{fmt.Errorf("binding %s: namespace %q must enforce pod-security baseline or restricted before %s can be granted there (kubectl label ns %s pod-security.kubernetes.io/enforce=baseline)",

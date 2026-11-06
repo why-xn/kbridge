@@ -2,7 +2,9 @@ package agent
 
 import (
 	"context"
+	"fmt"
 	"net"
+	"net/http"
 	"slices"
 	"strings"
 	"testing"
@@ -220,6 +222,25 @@ func TestReconcile_RequiresPodSecurity(t *testing.T) {
 			t.Error("view binding deleted")
 		}
 	})
+	for code, keep := range map[int]bool{500: true, 403: false, 404: false} {
+		t.Run(fmt.Sprintf("read fails %d", code), func(t *testing.T) {
+			f, k := newFakeKube(t)
+			f.putNamespace("team-a", map[string]string{podSecurityEnforce: "baseline"})
+			desired := []binding{rb("team-a", "kbridge-dev-edit", "edit", "kbridge:a@x")}
+			reconcile(context.Background(), k, desired, nil)
+			f.mu.Lock()
+			f.nsFail = code
+			f.mu.Unlock()
+			errs := reconcile(context.Background(), k, desired, nil)
+			want := fmt.Sprintf(`binding kbridge-dev-edit: reading namespace "team-a": GET /api/v1/namespaces/team-a: %d %s`, code, http.StatusText(code))
+			if !slices.Equal(errs, []string{want}) {
+				t.Errorf("errors = %v, want %q", errs, want)
+			}
+			if _, ok := f.get("team-a", "kbridge-dev-edit"); ok != keep {
+				t.Errorf("binding kept = %v, want %v", ok, keep)
+			}
+		})
+	}
 }
 
 func TestNeedsPodSecurity(t *testing.T) {
