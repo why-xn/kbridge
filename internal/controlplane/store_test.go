@@ -1,6 +1,7 @@
 package controlplane
 
 import (
+	"context"
 	"sync"
 	"testing"
 	"time"
@@ -270,4 +271,24 @@ func TestAgentStore_Concurrent(t *testing.T) {
 	}
 
 	wg.Wait()
+}
+
+func TestMarkDisconnected_FailsQueuedCommands(t *testing.T) {
+	store := NewAgentStore()
+	q := NewCommandQueue()
+	store.OnDisconnect = func(id string) { q.FailForAgent(id, "agent is disconnected") }
+	store.Register(&AgentInfo{ID: "agent-1", ClusterName: "test"})
+	id, _ := q.Enqueue("agent-1", "test", "", []string{"get", "pods"}, "default", 30, nil)
+
+	store.mu.Lock()
+	store.agents["agent-1"].LastSeen = time.Now().Add(-2 * time.Minute)
+	store.mu.Unlock()
+	store.MarkDisconnected()
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	res, err := q.WaitForResult(ctx, id)
+	if err != nil || res.ErrorMessage != "agent is disconnected" {
+		t.Fatalf("res=%v err=%v, want failed result", res, err)
+	}
 }

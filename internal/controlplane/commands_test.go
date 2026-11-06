@@ -308,3 +308,26 @@ func TestGenerateRequestID(t *testing.T) {
 		ids[id] = true
 	}
 }
+
+func TestCommandQueue_FailForAgent(t *testing.T) {
+	q := NewCommandQueue()
+	mine, _ := q.Enqueue("agent-1", "c", "", []string{"get", "pods"}, "default", 30, nil)
+	running, _ := q.Enqueue("agent-1", "c", "", []string{"get", "pods"}, "default", 30, nil)
+	other, _ := q.Enqueue("agent-2", "c", "", []string{"get", "pods"}, "default", 30, nil)
+	q.MarkRunning(running)
+
+	if n := q.FailForAgent("agent-1", "agent is disconnected"); n != 2 {
+		t.Fatalf("failed %d commands, want 2", n)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	for _, id := range []string{mine, running} {
+		res, err := q.WaitForResult(ctx, id)
+		if err != nil || res.ErrorMessage != "agent is disconnected" {
+			t.Errorf("%s: res=%v err=%v", id, res, err)
+		}
+	}
+	if cmd, _ := q.Get(other); cmd.Status != CommandStatusPending {
+		t.Errorf("other agent's command status = %q, want pending", cmd.Status)
+	}
+}

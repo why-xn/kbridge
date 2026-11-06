@@ -36,6 +36,9 @@ type Server struct {
 func NewServer(cfg *Config) (*Server, error) {
 	agentStore := NewAgentStore()
 	commandQueue := NewCommandQueue()
+	agentStore.OnDisconnect = func(id string) {
+		commandQueue.FailForAgent(id, "agent is disconnected")
+	}
 
 	// Open SQLite store
 	dbStore, err := NewSQLiteStore(cfg.Database.Path)

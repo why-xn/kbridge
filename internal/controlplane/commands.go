@@ -189,6 +189,24 @@ func (q *CommandQueue) Fail(requestID string, errorMessage string) bool {
 	return true
 }
 
+// FailForAgent fails every pending or running command of an agent, so callers
+// stop waiting for one that is gone. Returns how many it failed.
+func (q *CommandQueue) FailForAgent(agentID, msg string) int {
+	q.mu.RLock()
+	var ids []string
+	for id, cmd := range q.commands {
+		if cmd.AgentID == agentID && (cmd.Status == CommandStatusPending || cmd.Status == CommandStatusRunning) {
+			ids = append(ids, id)
+		}
+	}
+	q.mu.RUnlock()
+
+	for _, id := range ids {
+		q.Fail(id, msg)
+	}
+	return len(ids)
+}
+
 // WaitForResult waits for a command result with timeout.
 func (q *CommandQueue) WaitForResult(ctx context.Context, requestID string) (*CommandResult, error) {
 	q.mu.RLock()

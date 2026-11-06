@@ -478,3 +478,24 @@ func TestAgent_CloseWindowCleansUp(t *testing.T) {
 		}
 	}
 }
+
+func TestRun_TriggersSyncAfterRegister(t *testing.T) {
+	addr, cleanup := startMockServer(t, &mockAgentService{})
+	defer cleanup()
+	a := New(&Config{ControlPlane: ControlPlaneConfig{URL: addr, Token: "t"}, Cluster: ClusterConfig{Name: "test"}})
+	a.sync = newSyncer(nil, nil, 0, a.currentClient)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := a.connect(ctx); err != nil {
+		t.Fatal(err)
+	}
+	defer a.disconnect()
+	if err := a.register(ctx); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-a.sync.kick:
+	default:
+		t.Error("register did not trigger a sync")
+	}
+}

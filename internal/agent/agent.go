@@ -241,6 +241,10 @@ func (a *Agent) register(ctx context.Context) error {
 	a.mu.Unlock()
 
 	log.Printf("Registered successfully with agent ID: %s", resp.AgentId)
+	// A restarted control plane has no sync status; report without waiting for the timer.
+	if a.sync != nil {
+		a.sync.trigger()
+	}
 	return nil
 }
 
