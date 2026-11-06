@@ -213,7 +213,7 @@ permissions it renders.
 |---------|-------|------------|
 | **Agent won't connect** | gRPC port 9090 reachable from agent pod? | `kubectl -n kbridge exec deploy/kbridge-agent -- nc -zv <control-plane-host> 9090` |
 | | TLS CA mismatch? | Verify agent `control_plane.tls.ca_file` matches the cert served by the control plane |
-| | Token invalid or expired? | `kb admin agent-tokens list` — check `is_revoked` and `expires_at`; re-issue if needed |
+| | Token invalid or revoked? | `kb admin agent-tokens list` — the agent's token `PREFIX` must be listed with `REVOKED` `false` (agent tokens do not expire); issue a new one if not |
 | | `kb clusters list` shows "disconnected"? | Check agent logs: `kubectl -n kbridge logs deploy/kbridge-agent -f` |
 | **401 from `kb`** | Access token expired? | `kb` auto-refreshes; if the refresh token is also expired, run `kb login` |
 | | `jwt_secret` rotated on the control plane? | All sessions are invalidated — `kb login` required for all users |

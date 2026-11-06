@@ -2,7 +2,9 @@
 
 kbridge authorization is **declarative**: a single YAML policy file defines roles
 and who they apply to. The file is pointed to by `rbac.policy_file` in
-`control-plane.yaml` and is **hot-reloaded** (no restart needed) — see
+`control-plane.yaml`. A change to the mounted file, or a `SIGHUP`, reloads it in
+place within 10 s; a change through Helm restarts the control plane, and `kb`
+fails for the 30 s or so the new pod takes to start — see
 [Reloading](#reloading) below. When `rbac.policy_file` is empty, enforcement is
 disabled and every authenticated user is allowed.
 
@@ -193,7 +195,7 @@ agent's proxy still refuses every request into those.
 
 ## Reloading
 
-The policy is reloaded within 10 s of the file changing, with no restart:
+A change to the file is reloaded within 10 s, with no restart:
 
 - **File watch and poll** — the control plane reloads on a filesystem event for
   the policy file, and also re-reads the file every 10 s and reloads when its
@@ -201,8 +203,9 @@ The policy is reloaded within 10 s of the file changing, with no restart:
   mounts (updated by a symlink swap) and filesystems such as 9p/NFS or WSL
   `/mnt/*` that do not deliver inotify events.
 - **Helm** — the control-plane chart renders `rbac.policy` into a ConfigMap,
-  and a `helm upgrade` that changes `rbac.policy` restarts the control plane,
-  so the new policy applies as soon as the new pod is ready.
+  and a `helm upgrade` that changes `rbac.policy` restarts the control plane
+  (`Recreate`), so the new policy applies once the new pod is ready; `kb`
+  fails for the 30 s or so in between.
 - **SIGHUP** — sending `SIGHUP` to the control plane process reloads the policy
   at once:
 
