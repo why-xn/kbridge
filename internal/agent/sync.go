@@ -103,8 +103,34 @@ func applyOne(ctx context.Context, k *kubeAPI, b binding, protected []string) er
 	if err := checkBinding(b, protected); err != nil {
 		return err
 	}
+	if err := checkPodSecurity(ctx, k, b); err != nil {
+		return err
+	}
 	if err := k.apply(ctx, b); err != nil {
 		return fmt.Errorf("binding %s: %w", b.Name, err)
+	}
+	return nil
+}
+
+// needsPodSecurity reports whether role can create pods; only view cannot.
+func needsPodSecurity(clusterRole string) bool {
+	return clusterRole != "view"
+}
+
+// checkPodSecurity refuses a namespaced binding that can create pods unless
+// the namespace enforces baseline or restricted: a hostPath pod would read
+// the agent's token off the node. Cluster-wide bindings are a documented limit.
+func checkPodSecurity(ctx context.Context, k *kubeAPI, b binding) error {
+	if b.Namespace == "" || !needsPodSecurity(b.ClusterRole) {
+		return nil
+	}
+	level, err := k.namespaceEnforce(ctx, b.Namespace)
+	if err != nil {
+		return fmt.Errorf("binding %s: reading namespace %q: %w", b.Name, b.Namespace, err)
+	}
+	if level != "baseline" && level != "restricted" {
+		return fmt.Errorf("binding %s: namespace %q must enforce pod-security baseline or restricted before %s can be granted there (kubectl label ns %s pod-security.kubernetes.io/enforce=baseline)",
+			b.Name, b.Namespace, b.ClusterRole, b.Namespace)
 	}
 	return nil
 }

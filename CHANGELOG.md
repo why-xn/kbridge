@@ -17,6 +17,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   edited by hand, and deletes them when policy or the user goes away. It never
   writes in its own or a protected namespace and only binds `kbridge:` users.
   See [docs/rbac.md](docs/rbac.md#cluster-bindings-clusteraccess).
+- **The agent grants a role that can create pods only where Pod Security is
+  enforced.** A namespaced binding to any ClusterRole but `view` needs the
+  namespace labelled `pod-security.kubernetes.io/enforce=baseline` (or
+  `restricted`); otherwise `kb admin rbac status` shows the refusal and the
+  label command. The agent chart grants `get` on namespaces for this, and a new
+  `sync.interval` value (default `60s`) sets how often it re-checks. See
+  [docs/rbac.md](docs/rbac.md#cluster-bindings-clusteraccess).
 - **Agent chart `accessCeiling`** caps what the agent may bind: by default the
   ClusterRoles `view`, `edit` and `cluster-admin`, in any non-protected
   namespace and cluster-wide. Kubernetes refuses anything above it. The default

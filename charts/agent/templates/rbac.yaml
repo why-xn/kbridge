@@ -33,6 +33,11 @@ rules:
   - apiGroups: ["authentication.k8s.io"]
     resources: ["userextras/kbridge-request-id"]
     verbs: ["impersonate"]
+  # Sync reads a namespace's pod-security label before granting a role that
+  # can create pods there.
+  - apiGroups: [""]
+    resources: ["namespaces"]
+    verbs: ["get"]
   # The drift watch lists both kinds cluster-wide, whatever the ceiling.
   - apiGroups: ["rbac.authorization.k8s.io"]
     resources: ["rolebindings", "clusterrolebindings"]

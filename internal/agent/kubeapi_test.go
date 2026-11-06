@@ -22,12 +22,13 @@ type fakeKube struct {
 	rv      int
 	writes  []string // "METHOD <ns>/<name>"
 	tokens  []string
-	forbidC bool // 403 on listing clusterrolebindings
+	forbidC bool                         // 403 on listing clusterrolebindings
+	ns      map[string]map[string]string // namespace name -> labels; absent = 404
 }
 
 func newFakeKube(t *testing.T) (*fakeKube, *kubeAPI) {
 	t.Helper()
-	f := &fakeKube{objs: map[string]rbObject{}}
+	f := &fakeKube{objs: map[string]rbObject{}, ns: map[string]map[string]string{}}
 	srv := httptest.NewTLSServer(http.HandlerFunc(f.serve))
 	t.Cleanup(srv.Close)
 	pool := x509.NewCertPool()
@@ -50,6 +51,24 @@ func (f *fakeKube) put(b binding, managed bool) {
 	f.objs[b.Namespace+"/"+b.Name] = o
 }
 
+// putNamespace seeds a namespace with labels.
+func (f *fakeKube) putNamespace(name string, labels map[string]string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.ns[name] = labels
+}
+
+func (f *fakeKube) readNamespace(w http.ResponseWriter, name string) {
+	f.mu.Lock()
+	labels, ok := f.ns[name]
+	f.mu.Unlock()
+	if !ok {
+		kubeStatus(w, http.StatusNotFound, "namespaces \""+name+"\" not found")
+		return
+	}
+	_ = json.NewEncoder(w).Encode(map[string]any{"kind": "Namespace", "metadata": map[string]any{"name": name, "labels": labels}})
+}
+
 func (f *fakeKube) get(ns, name string) (rbObject, bool) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -69,6 +88,10 @@ func (f *fakeKube) serve(w http.ResponseWriter, r *http.Request) {
 	f.mu.Unlock()
 	if r.Header.Get("Authorization") != "Bearer agent-sa-token" {
 		kubeStatus(w, http.StatusUnauthorized, "Unauthorized")
+		return
+	}
+	if name, ok := strings.CutPrefix(r.URL.Path, "/api/v1/namespaces/"); ok && r.Method == http.MethodGet {
+		f.readNamespace(w, name)
 		return
 	}
 	ns, name, collection := parseRBACPath(r.URL.Path)
@@ -255,5 +278,32 @@ func TestKubeAPI_SendsAgentToken(t *testing.T) {
 		if tok != "Bearer agent-sa-token" {
 			t.Errorf("Authorization = %q", tok)
 		}
+	}
+}
+
+func TestKubeAPI_NamespaceEnforce(t *testing.T) {
+	f, k := newFakeKube(t)
+	f.putNamespace("enforced", map[string]string{podSecurityEnforce: "baseline", "pod-security.kubernetes.io/warn": "restricted"})
+	f.putNamespace("warn-only", map[string]string{"pod-security.kubernetes.io/warn": "baseline"})
+	f.putNamespace("bare", nil)
+	tests := []struct {
+		ns, want string
+		wantErr  bool
+	}{
+		{"enforced", "baseline", false},
+		{"warn-only", "", false},
+		{"bare", "", false},
+		{"missing", "", true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.ns, func(t *testing.T) {
+			got, err := k.namespaceEnforce(context.Background(), tt.ns)
+			if got != tt.want || (err != nil) != tt.wantErr {
+				t.Errorf("namespaceEnforce = %q, %v; want %q, err %v", got, err, tt.want, tt.wantErr)
+			}
+			if tt.wantErr && !isNotFound(err) {
+				t.Errorf("err = %v, want a 404", err)
+			}
+		})
 	}
 }

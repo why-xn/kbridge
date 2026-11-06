@@ -251,7 +251,8 @@ start_agent() {
         --set image.repository=kbridge-agent --set image.tag=e2e --set image.pullPolicy=Never \
         --set controlPlane.url="$(kind_gateway):${GRPC_PORT}" --set controlPlane.token=dev-token \
         --set cluster.name="${CLUSTER_NAME}" \
-        --set 'accessCeiling.clusterRoles={view,edit,cluster-admin}' --set accessCeiling.clusterWide=true
+        --set 'accessCeiling.clusterRoles={view,edit,cluster-admin}' --set accessCeiling.clusterWide=true \
+        --set sync.interval=10s
 
     # Wait for agent to register
     log_info "Waiting for agent to register..."
@@ -274,6 +275,7 @@ create_e2e_namespaces() {
     log_info "Creating e2e namespaces..."
     kubectl create namespace e2e-dev
     kubectl create namespace e2e-nobind
+    kubectl create namespace e2e-nopsa
     kubectl label namespace e2e-dev pod-security.kubernetes.io/enforce=baseline
 }
 

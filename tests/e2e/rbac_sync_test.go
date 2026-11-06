@@ -101,6 +101,53 @@ func TestRBACSync_NeverProtectedNamespace(t *testing.T) {
 	assertOtherBindingsKept(t)
 }
 
+// TestRBACSync_RequiresPodSecurity grants the developer edit in e2e-nopsa,
+// which does not enforce Pod Security: the agent refuses until the namespace
+// is labelled baseline, then binds.
+func TestRBACSync_RequiresPodSecurity(t *testing.T) {
+	const ns = "e2e-nopsa"
+	ensureUser(t, developerEmail)
+	waitDeveloperBound(t)
+	withNopsaEdit(t, ns)
+	want := `binding kbridge-developer-edit: namespace "e2e-nopsa" must enforce pod-security baseline or restricted before edit can be granted there (kubectl label ns e2e-nopsa pod-security.kubernetes.io/enforce=baseline)`
+	waitSyncError(t, want)
+	if stdout, _, _ := runCLI(t, "admin", "rbac", "status"); !strings.Contains(stdout, want) {
+		t.Errorf("rbac status lacks the refusal: %s", stdout)
+	}
+	if bindingUsers(t, ns, developerBinding) != "" {
+		t.Fatalf("%s exists in %s before the namespace enforces pod security", developerBinding, ns)
+	}
+	t.Cleanup(func() { _ = exec.Command("kubectl", "label", "ns", ns, podSecurityLabel+"-").Run() })
+	if out, err := exec.Command("kubectl", "label", "ns", ns, podSecurityLabel+"=baseline").CombinedOutput(); err != nil {
+		t.Fatalf("label namespace: %v: %s", err, out)
+	}
+	if !poll(30*time.Second, func() bool { return strings.Contains(bindingUsers(t, ns, developerBinding), developerUser) }) {
+		t.Fatalf("%s not bound in %s 30s after labelling: %+v", developerBinding, ns, clusterSync(t))
+	}
+	t.Cleanup(func() { _ = exec.Command("kubectl", "delete", "configmap", "x", "-n", ns, "--ignore-not-found").Run() })
+	useDeveloperConfig(t)
+	if stdout, stderr, code := runCLI(t, "create", "configmap", "x", "-n", ns); code != 0 {
+		t.Fatalf("create configmap as developer: exit %d, stdout %q, stderr %q", code, stdout, stderr)
+	}
+}
+
+const podSecurityLabel = "pod-security.kubernetes.io/enforce"
+
+// withNopsaEdit lets the developer act in ns and binds it edit there; cleanup
+// restores the policy and waits for sync.
+func withNopsaEdit(t *testing.T, ns string) {
+	t.Helper()
+	const devRule = `        namespaces: ["e2e-dev"]
+        resources: ["*"]
+`
+	withPolicyEntry(t, fmt.Sprintf("      - clusters: [\"*\"]\n        clusterRole: edit\n        namespaces: [%q]\n", ns))
+	policy, err := os.ReadFile(*rbacPolicyPath)
+	if err != nil || !strings.Contains(string(policy), devRule) {
+		t.Fatalf("policy has no developer rule for e2e-dev (err %v):\n%s", err, policy)
+	}
+	writePolicy(t, strings.Replace(string(policy), devRule, fmt.Sprintf("        namespaces: [\"e2e-dev\", %q]\n        resources: [\"*\"]\n", ns), 1))
+}
+
 func assertOtherBindingsKept(t *testing.T) {
 	t.Helper()
 	if users := bindingUsers(t, devNamespace, developerBinding); !strings.Contains(users, developerUser) {

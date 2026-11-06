@@ -69,6 +69,11 @@ accessCeiling:
 # protected; add the control plane's namespace when it runs in this cluster.
 protectedNamespaces: []
 
+# How often the agent re-checks its bindings against kbridge policy when nothing
+# else triggers a sync (a policy change or a binding edit does at once).
+sync:
+  interval: 60s
+
 # The agent's own ServiceAccount token is projected at /var/run/kbridge/sa
 # (not the default path, which is left unmounted) and rotated by the kubelet.
 serviceAccountToken:

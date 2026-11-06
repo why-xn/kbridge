@@ -17,6 +17,8 @@ const (
 	managedByLabel = "app.kubernetes.io/managed-by"
 	managedByValue = "kbridge"
 	managedQuery   = "labelSelector=app.kubernetes.io%2Fmanaged-by%3Dkbridge"
+
+	podSecurityEnforce = "pod-security.kubernetes.io/enforce"
 )
 
 // managedCollections are the cluster-wide lists the agent reads and watches.
@@ -275,6 +277,20 @@ func (k *kubeAPI) delete(ctx context.Context, b binding) error {
 		opts["preconditions"] = map[string]string{"resourceVersion": b.ResourceVersion}
 	}
 	return k.do(ctx, http.MethodDelete, p, opts, nil)
+}
+
+// namespaceEnforce returns ns's pod-security enforce level, "" when unset.
+func (k *kubeAPI) namespaceEnforce(ctx context.Context, ns string) (string, error) {
+	if !dnsLabel.MatchString(ns) {
+		return "", fmt.Errorf("namespace %q is not a valid kubernetes namespace", ns)
+	}
+	var obj struct {
+		Metadata rbMeta `json:"metadata"`
+	}
+	if err := k.do(ctx, http.MethodGet, "/api/v1/namespaces/"+ns, nil, &obj); err != nil {
+		return "", err
+	}
+	return obj.Metadata.Labels[podSecurityEnforce], nil
 }
 
 // watchManaged calls onEvent (possibly concurrently) for each change to a

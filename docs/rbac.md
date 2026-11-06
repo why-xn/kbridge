@@ -159,7 +159,23 @@ What the agent refuses, reported per binding in `kb admin rbac status`:
   user;
 - anything above the chart's `accessCeiling`: Kubernetes answers `403` for a
   ClusterRole, namespace or cluster-wide binding the agent's ServiceAccount
-  may not grant. See [operations.md](operations.md#rbac-sync).
+  may not grant. See [operations.md](operations.md#rbac-sync);
+- any ClusterRole other than `view` in a namespace that does not enforce Pod
+  Security `baseline` or `restricted`. A role that can create pods could mount
+  the node's disk with a `hostPath` pod and read the agent's token there. The
+  agent reads the namespace's `pod-security.kubernetes.io/enforce` label before
+  it writes the binding; `privileged`, no label, or a level set only on `warn`
+  or `audit` is refused with
+  `namespace "<ns>" must enforce pod-security baseline or restricted before <clusterRole> can be granted there`.
+  Label the namespace and the agent binds on its next sync (within the chart's
+  `sync.interval`, 60s by default):
+
+  ```bash
+  kubectl label ns <ns> pod-security.kubernetes.io/enforce=baseline
+  ```
+
+  `view` is exempt: it cannot create pods. Cluster-wide bindings are not
+  checked; see [security.md](security.md#known-limits).
 
 A ClusterRoleBinding covers every namespace, including the protected ones; the
 agent's proxy still refuses every request into those.

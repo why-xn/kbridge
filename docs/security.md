@@ -335,6 +335,15 @@ match it to the Kubernetes audit event by email, cluster and time.
 - **`edit` lets users run pods as that namespace's ServiceAccounts**, and so
   use whatever those ServiceAccounts may do. Grant `edit` only where the
   namespace's ServiceAccounts hold no more than the user should.
+- **Cluster-wide `edit` or `admin` bindings are not checked for Pod
+  Security.** The agent refuses a namespaced binding to a role that can create
+  pods unless the namespace enforces `baseline` or `restricted`, but a
+  ClusterRoleBinding (`clusterWide: true`) reaches every namespace, including
+  ones that enforce nothing. A user who can create a `hostPath` pod in an
+  unguarded namespace can read any token on that node, the agent's included.
+  Enforce Pod Security cluster-wide (an `AdmissionConfiguration` with
+  `defaults.enforce: baseline`), or do not use `clusterWide` for roles that
+  can create pods.
 - **kubectl runs as the agent's uid.** The connection and file flag checks are
   what keep a command from reading the agent's token file. Running kubectl
   under a second uid is the planned fix.
