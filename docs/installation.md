@@ -27,7 +27,8 @@ KBRIDGE_VERSION=v0.3.0-alpha.1 curl -fsSL \
   https://raw.githubusercontent.com/why-xn/kbridge/master/install.sh | sh
 ```
 
-To install into a custom directory (default is `/usr/local/bin`):
+To install into a custom directory (default is `/usr/local/bin`; the installer
+creates it if it does not exist):
 
 ```bash
 KBRIDGE_INSTALL_DIR=~/.local/bin curl -fsSL \

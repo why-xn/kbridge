@@ -46,6 +46,7 @@ echo "Verifying checksum ..."
 
 tar -xzf "${tmp}/${archive}" -C "$tmp" kb || fail "extract failed"
 
+mkdir -p "$INSTALL_DIR" 2>/dev/null || true
 if [ -w "$INSTALL_DIR" ]; then
   install -m 0755 "${tmp}/kb" "${INSTALL_DIR}/kb"
 else
