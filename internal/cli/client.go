@@ -466,6 +466,9 @@ func (c *ControlPlaneClient) ListAgentTokens(cluster string) ([]AgentTokenInfo, 
 	return out.Tokens, nil
 }
 
+// errTokenNotFound is the control plane's 404 for revoking an unknown token id.
+var errTokenNotFound = errors.New("token not found")
+
 // RevokeAgentToken revokes an agent token by ID.
 func (c *ControlPlaneClient) RevokeAgentToken(id string) error {
 	req, err := http.NewRequest(http.MethodDelete, c.baseURL+"/api/v1/admin/agent-tokens/"+url.PathEscape(id), nil)
@@ -480,6 +483,9 @@ func (c *ControlPlaneClient) RevokeAgentToken(id string) error {
 
 	if resp.StatusCode == http.StatusForbidden {
 		return fmt.Errorf("admin role required")
+	}
+	if resp.StatusCode == http.StatusNotFound {
+		return errTokenNotFound
 	}
 	if resp.StatusCode != http.StatusOK {
 		b, _ := io.ReadAll(resp.Body)

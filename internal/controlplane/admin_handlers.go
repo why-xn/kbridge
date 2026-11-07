@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"log"
 	"net/http"
@@ -324,10 +325,16 @@ func parseTimeParam(s string) (*time.Time, error) {
 	return &t, nil
 }
 
-// HandleRevokeAgentToken revokes an agent token by ID. Revocation is idempotent.
+// HandleRevokeAgentToken revokes an agent token by ID. Revocation is
+// idempotent; an unknown ID is 404 so a mistyped one is not reported revoked.
 func (h *AdminHandlers) HandleRevokeAgentToken(c *gin.Context) {
 	id := c.Param("id")
-	if err := h.store.RevokeAgentToken(c.Request.Context(), id); err != nil {
+	err := h.store.RevokeAgentToken(c.Request.Context(), id)
+	if errors.Is(err, ErrAgentTokenNotFound) {
+		c.JSON(http.StatusNotFound, gin.H{"error": "token not found"})
+		return
+	}
+	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
 		return
 	}

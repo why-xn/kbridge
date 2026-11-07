@@ -2,6 +2,7 @@ package controlplane
 
 import (
 	"context"
+	"errors"
 	"sync"
 	"testing"
 	"time"
@@ -360,6 +361,14 @@ func TestSQLiteStore_AgentTokens(t *testing.T) {
 			got, _ := store.GetAgentTokenByHash(ctx, "revokeme")
 			if !got.IsRevoked {
 				t.Error("token should be revoked")
+			}
+			if err := store.RevokeAgentToken(ctx, tok.ID); err != nil {
+				t.Fatalf("revoking again should succeed: %v", err)
+			}
+		}},
+		{"revoke unknown token", func(t *testing.T) {
+			if err := store.RevokeAgentToken(ctx, "not-a-uuid"); !errors.Is(err, ErrAgentTokenNotFound) {
+				t.Fatalf("want ErrAgentTokenNotFound, got %v", err)
 			}
 		}},
 	}

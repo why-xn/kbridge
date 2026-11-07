@@ -2,6 +2,7 @@ package cli
 
 import (
 	"bufio"
+	"errors"
 	"fmt"
 	"os"
 	"strconv"
@@ -255,7 +256,11 @@ func runAdminTokensRevoke(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
-	if err := client.RevokeAgentToken(args[0]); err != nil {
+	err = client.RevokeAgentToken(args[0])
+	if errors.Is(err, errTokenNotFound) {
+		return err
+	}
+	if err != nil {
 		return fmt.Errorf("failed to revoke agent token: %w", err)
 	}
 	fmt.Printf("Agent token %q revoked.\n", args[0])

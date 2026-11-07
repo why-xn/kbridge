@@ -359,11 +359,20 @@ func (s *SQLiteStore) ListAgentTokensByCluster(ctx context.Context, clusterID st
 	return tokens, rows.Err()
 }
 
+// RevokeAgentToken marks a token revoked; revoking it again is not an error.
+// It returns ErrAgentTokenNotFound when no token has the id.
 func (s *SQLiteStore) RevokeAgentToken(ctx context.Context, id string) error {
-	_, err := s.db.ExecContext(ctx,
+	res, err := s.db.ExecContext(ctx,
 		`UPDATE agent_tokens SET is_revoked = 1 WHERE id = ?`, id)
 	if err != nil {
 		return fmt.Errorf("revoke agent token: %w", err)
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("revoke agent token: %w", err)
+	}
+	if n == 0 {
+		return ErrAgentTokenNotFound
 	}
 	return nil
 }

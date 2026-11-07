@@ -367,6 +367,16 @@ func TestAdminHandler_RevokeAgentToken(t *testing.T) {
 	}
 }
 
+// A mistyped id must not be reported as revoked while the real token stays live.
+func TestAdminHandler_RevokeUnknownAgentToken(t *testing.T) {
+	ah, _ := newTestAdminHandlers(t)
+	rw := doRequest(t, "DELETE", "/api/v1/admin/agent-tokens/:id", ah.HandleRevokeAgentToken,
+		"DELETE", "/api/v1/admin/agent-tokens/not-a-uuid", nil)
+	if rw.Code != http.StatusNotFound || !bytes.Contains(rw.Body.Bytes(), []byte(`"token not found"`)) {
+		t.Fatalf("want 404 token not found, got %d: %s", rw.Code, rw.Body.String())
+	}
+}
+
 func TestReportBindingSync_StoredAndListed(t *testing.T) {
 	eng := engineFor(t, accessPolicy)
 	grpcSrv, db, ids := newSyncServer(t, eng, "dev-1", "prod-1")

@@ -15,6 +15,8 @@ var (
 	ErrRevokedAgentToken = errors.New("agent token revoked")
 	ErrExpiredAgentToken = errors.New("agent token expired")
 	ErrClusterMismatch   = errors.New("token not valid for requested cluster")
+	// ErrAgentTokenNotFound is returned when revoking an id no token has.
+	ErrAgentTokenNotFound = errors.New("agent token not found")
 )
 
 // AgentAuthenticator validates agent registration tokens against the persistent
