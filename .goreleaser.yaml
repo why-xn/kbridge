@@ -30,5 +30,8 @@ release:
     name: kbridge
   draft: false
   prerelease: auto
+  # A re-pushed tag rewrites its release instead of failing on existing assets.
+  mode: replace
+  replace_existing_artifacts: true
 changelog:
   disable: true
