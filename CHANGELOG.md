@@ -147,7 +147,10 @@ agents' `controlPlane.url` at the new Service name.
   pod instead of re-registering and taking the cluster back from the new
   pod. A one-shot command running on the old pod finishes there (within the
   pod's termination grace period); a stream it serves (`logs -f`, `exec -it`,
-  `port-forward`) ends when the old pod stops.
+  `port-forward`) ends when the old pod stops. If the new agent dies first,
+  the standing-by agent registers again within 30 s and serves the cluster.
+- **A command for a known cluster whose agent is absent answers `agent is
+  disconnected`** (503, audited) instead of `cluster not found`.
 - **Revoking an unknown token id is an error** (`token not found`, exit 1)
   instead of a false success.
 - **Commands refused because the cluster is disconnected are audited** as
