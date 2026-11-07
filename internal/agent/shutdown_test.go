@@ -23,6 +23,34 @@ type commandService struct {
 	seconds string // how long the handed-out command sleeps; default 30
 	// replaceWhenHanded answers heartbeats as "replaced" once the command is out.
 	replaceWhenHanded bool
+	streamOpen        bool // the agent's OpenStream is being served
+	openAtSubmit      bool // streamOpen when the result was submitted
+}
+
+// OpenStream serves the agent's stream until the agent closes it.
+func (c *commandService) OpenStream(s agentpb.AgentService_OpenStreamServer) error {
+	if _, err := s.Recv(); err != nil {
+		return err
+	}
+	c.setStreamOpen(true)
+	defer c.setStreamOpen(false)
+	for {
+		if _, err := s.Recv(); err != nil {
+			return nil
+		}
+	}
+}
+
+func (c *commandService) setStreamOpen(open bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.streamOpen = open
+}
+
+func (c *commandService) isStreamOpen() bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.streamOpen
 }
 
 func (c *commandService) Heartbeat(ctx context.Context, req *agentpb.HeartbeatRequest) (*agentpb.HeartbeatResponse, error) {
@@ -52,6 +80,7 @@ func (c *commandService) SubmitCommandResult(ctx context.Context, req *agentpb.S
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.results = append(c.results, req)
+	c.openAtSubmit = c.streamOpen
 	return &agentpb.SubmitCommandResultResponse{Success: true}, nil
 }
 
@@ -137,4 +166,52 @@ func waitHandedOut(t *testing.T, svc *commandService) time.Time {
 		time.Sleep(20 * time.Millisecond)
 	}
 	return time.Now()
+}
+
+// The control plane treats a replaced agent with no stream as dead and fails
+// its running commands, so on shutdown the stream must stay open until the
+// command has reported, and close only once Run returns.
+func TestAgent_StreamOutlivesShutdownUntilCommandReports(t *testing.T) {
+	if _, err := exec.LookPath("sleep"); err != nil {
+		t.Skip("sleep not available")
+	}
+	svc := &commandService{seconds: "2"}
+	addr, stop := startCommandServer(t, svc)
+	defer stop()
+	a := New(&Config{
+		ControlPlane: ControlPlaneConfig{URL: addr, Token: "token"},
+		Cluster:      ClusterConfig{Name: "test"},
+		Kubernetes:   kubeFixture(t),
+	})
+	a.executor = windowedExecutor(t, "sleep")
+
+	ctx, cancel := context.WithCancel(context.Background())
+	runDone := make(chan error, 1)
+	go func() { runDone <- a.Run(ctx) }()
+	waitHandedOut(t, svc)
+	if !svc.isStreamOpen() {
+		t.Fatal("agent stream not open while the command runs")
+	}
+	cancel() // SIGTERM path
+	time.Sleep(300 * time.Millisecond)
+	if !svc.isStreamOpen() {
+		t.Fatal("agent closed its stream on shutdown while the command was still running")
+	}
+	a.Stop()
+	if err := <-runDone; err != nil {
+		t.Fatalf("Run = %v, want nil", err)
+	}
+	svc.mu.Lock()
+	reported, openAtSubmit := len(svc.results), svc.openAtSubmit
+	svc.mu.Unlock()
+	if reported != 1 || !openAtSubmit {
+		t.Fatalf("results %d, stream open at submit %v; want 1 result submitted with the stream open", reported, openAtSubmit)
+	}
+	deadline := time.Now().Add(2 * time.Second)
+	for svc.isStreamOpen() {
+		if time.Now().After(deadline) {
+			t.Fatal("agent stream still open after Run returned")
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
 }
