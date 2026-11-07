@@ -310,7 +310,11 @@ func (s *GRPCServer) failRunningIfGone(agentID string) int {
 	if s.sessions.HasAgentStream(agentID) {
 		return 0
 	}
-	return s.cmdQueue.FailForAgent(agentID, "agent shut down while the command was running; retry it")
+	n := s.cmdQueue.FailForAgent(agentID, "agent shut down while the command was running; retry it")
+	if n > 0 {
+		log.Printf("Replaced agent %s closed its stream: %d running command(s) failed", agentID, n)
+	}
+	return n
 }
 
 // notRegistered is the answer to a call from an id the store does not hold. An

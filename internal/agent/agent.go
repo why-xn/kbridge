@@ -151,9 +151,13 @@ func (a *Agent) Run(ctx context.Context) error {
 		pollErr = a.loopStopped(a.runCommandPollLoop(ctx), cancel)
 	}()
 
-	// Start persistent stream client. It stays open while standing by, so
-	// sessions running on it finish; the control plane sends it no new ones.
-	go a.runStream(ctx)
+	// Start persistent stream client. It outlives a shutdown signal: the control
+	// plane treats a replaced agent whose stream closed as dead and fails its
+	// running commands, so the stream stays open until the in-flight command has
+	// reported, and while standing by, so sessions running on it finish.
+	streamCtx, stopStream := context.WithCancel(context.WithoutCancel(ctx))
+	defer stopStream()
+	go a.runStream(streamCtx)
 
 	stopSync := a.startSync(ctx)
 
