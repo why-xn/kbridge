@@ -148,10 +148,13 @@ agents' `controlPlane.url` at the new Service name.
 - **Policy refusals say what was refused and who can help**, naming the verb,
   resource, namespace, cluster and user, and `kb` prints each error once
   without a usage block.
-- **A disconnected agent fails commands at once.** Commands queued when an
-  agent drops fail with `cluster "<name>": agent is disconnected`, the same
-  message and exit code (1) as a command sent afterwards, and a reconnecting
-  agent reports its sync state again so `kb admin rbac status` is current.
+- **A dropped agent fails its commands.** Commands queued when an agent drops
+  fail with `cluster "<name>": agent is disconnected` within the heartbeat
+  timeout, with the same message and exit code (1) as a command sent
+  afterwards; commands still running when the agent is replaced fail with
+  `agent shut down while the command was running; retry it` instead of waiting
+  for the command timeout. A reconnecting agent reports its sync state again
+  so `kb admin rbac status` is current.
 - **`kb -v=<n>` reaches kubectl**, viewers may run `kb auth can-i`, the
   `--from-file` refusal says how to send the object instead, and
   `kb admin rbac status` shows times in seconds.

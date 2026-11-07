@@ -223,7 +223,9 @@ valid until that command ends. The window:
 - refuses the kubelet node proxy, `/api/v1/nodes/<node>/proxy/...`, which
   reaches every pod on a node without a namespace in the path;
 - refuses `/api/v1/namespaces/<ns>/serviceaccounts/<name>/token`
-  (`kb create token`), so a user never receives a ServiceAccount token.
+  (`kb create token`), so the token API never hands a user a ServiceAccount
+  token. An `edit` user can still read one from a token Secret; see
+  [Known limits](#known-limits).
 
 The chart mounts the token as a projected volume at `/var/run/kbridge/sa`
 (default 10 minute expiry) and leaves nothing at the default ServiceAccount

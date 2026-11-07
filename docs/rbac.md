@@ -3,8 +3,9 @@
 kbridge authorization is **declarative**: a single YAML policy file defines roles
 and who they apply to. The file is pointed to by `rbac.policy_file` in
 `control-plane.yaml`. A change to the mounted file, or a `SIGHUP`, reloads it in
-place within 10 s; a change through Helm restarts the control plane, and `kb`
-fails for the 30 s or so the new pod takes to start — see
+place within 10 s of reaching the disk; a change through Helm restarts the
+control plane, and `kb` fails for about a minute while the old pod stops and
+the agent reconnects — see
 [Reloading](#reloading) below. When `rbac.policy_file` is empty, enforcement is
 disabled and every authenticated user is allowed.
 
@@ -195,19 +196,22 @@ agent's proxy still refuses every request into those.
 
 ## Reloading
 
-A change to the file is reloaded within 10 s, with no restart:
+A change to the file is reloaded within 10 s of reaching the disk, with no
+restart:
 
 - **File watch and poll** — the control plane reloads on a filesystem event for
   the policy file, and also re-reads the file every 10 s and reloads when its
   content changed. The poll covers what events miss: Kubernetes ConfigMap
   mounts (updated by a symlink swap) and filesystems such as 9p/NFS or WSL
-  `/mnt/*` that do not deliver inotify events.
+  `/mnt/*` that do not deliver inotify events. Kubernetes takes up to a minute
+  to copy an edited ConfigMap into the pod; the reload follows once it lands.
 - **Helm** — the control-plane chart renders `rbac.policy` into a ConfigMap,
   and a `helm upgrade` that changes `rbac.policy` restarts the control plane
   (`Recreate`), so the new policy applies once the new pod is ready; `kb`
-  fails for the 30 s or so in between.
+  fails for about a minute in between (the old pod's shutdown grace, then the
+  agent reconnecting).
 - **SIGHUP** — sending `SIGHUP` to the control plane process reloads the policy
-  at once:
+  at once from the file as it is on disk (it does not hurry a ConfigMap edit):
 
   ```bash
   kill -HUP "$(pidof kbridge-control-plane)"
