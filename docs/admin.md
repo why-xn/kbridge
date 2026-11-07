@@ -73,9 +73,9 @@ config (see [configuration](configuration.md)).
 
 ## Audit logs
 
-Every command attempt is recorded (status `success`, `failed`, `denied`, or
-`timeout`) with user, cluster, command, namespace, exit code, duration, and
-client IP. A command refused because the cluster's agent is disconnected is
+Every command attempt is recorded (status `success`, `failed`, `denied`,
+`timeout`, or `canceled`) with user, cluster, command, namespace, exit code,
+duration, and client IP. A command refused because the cluster's agent is disconnected is
 recorded as `failed` with the error `agent is disconnected` and no exit code.
 
 ```bash

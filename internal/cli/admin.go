@@ -119,7 +119,7 @@ func init() {
 
 	adminAuditCmd.Flags().StringVar(&auditUser, "user", "", "filter by user email")
 	adminAuditCmd.Flags().StringVar(&auditCluster, "cluster", "", "filter by cluster name")
-	adminAuditCmd.Flags().StringVar(&auditStatus, "status", "", "filter by status (success/failed/denied/timeout)")
+	adminAuditCmd.Flags().StringVar(&auditStatus, "status", "", "filter by status (success/failed/denied/timeout/canceled)")
 	adminAuditCmd.Flags().IntVar(&auditLimit, "limit", 50, "maximum number of entries to show")
 }
 
