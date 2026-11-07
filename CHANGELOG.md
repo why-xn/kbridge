@@ -151,6 +151,9 @@ agents' `controlPlane.url` at the new Service name.
   the standing-by agent registers again within 30 s and serves the cluster.
 - **A command for a known cluster whose agent is absent answers `agent is
   disconnected`** (503, audited) instead of `cluster not found`.
+- **A streaming command cut off by the agent going away says so**
+  (`Error: agent disconnected`, exit 1) instead of exiting silently; the
+  control plane sends the reason in an `X-Kbridge-Error` trailer.
 - **Revoking an unknown token id is an error** (`token not found`, exit 1)
   instead of a false success.
 - **Commands refused because the cluster is disconnected are audited** as
