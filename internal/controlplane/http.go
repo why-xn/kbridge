@@ -164,6 +164,9 @@ func (s *HTTPServer) handleListClusters(c *gin.Context) {
 			Status: agent.Status,
 		})
 	}
+	for _, name := range s.agentStore.RevokedClusters() {
+		clusters = append(clusters, ClusterResponse{Name: name, Status: AgentStatusDisconnected})
+	}
 
 	c.JSON(http.StatusOK, gin.H{
 		"clusters": clusters,

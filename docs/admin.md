@@ -58,8 +58,13 @@ curl -X POST https://control-plane:8080/api/v1/admin/agent-tokens \
 # revoke: DELETE /api/v1/admin/agent-tokens/{id}
 ```
 
-**Rotation:** issue a new token, update the agent, then revoke the old one. The
-agent re-registers on its next connection.
+**Revocation is immediate.** Revoking a token disconnects every agent using it
+at once: its queued commands fail with `agent is disconnected`, `kb clusters
+list` shows the cluster `disconnected`, and the agent cannot register again, so
+its pod stops (CrashLoopBackOff) until it is given a new token.
+
+**Rotation:** issue a new token, update the agent, then revoke the old one. In
+that order nothing is cut off: the agent already runs on the new token.
 
 For local development you can instead seed a token via the control plane's `bootstrap`
 config (see [configuration](configuration.md)).

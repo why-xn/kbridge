@@ -119,7 +119,7 @@ func TestHandleStreamCommand_ExitCodeTrailer(t *testing.T) {
 			snd := &fakeSender{}
 			sm.RegisterAgentStream("a1", snd)
 			srv := NewHTTPServer(agents, NewCommandQueue(), NewAuthHandlers(store, jm, time.Hour),
-				NewAdminHandlers(store, testPepper), nil, NewAuditRecorder(store), sm, jm)
+				NewAdminHandlers(store, testPepper, nil), nil, NewAuditRecorder(store), sm, jm)
 
 			go func() {
 				for i := 0; i < 400 && snd.lastStart() == nil; i++ {

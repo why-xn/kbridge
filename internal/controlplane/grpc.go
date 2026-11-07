@@ -60,7 +60,7 @@ func (s *GRPCServer) Register(ctx context.Context, req *agentpb.RegisterRequest)
 	}
 
 	// Validate agent token against the persistent store and resolve its cluster.
-	cluster, err := s.authn.Authenticate(ctx, req.GetAgentToken(), req.GetClusterName())
+	cluster, tokenID, err := s.authn.Authenticate(ctx, req.GetAgentToken(), req.GetClusterName())
 	if err != nil {
 		log.Printf("Agent token rejected for cluster=%s: %v", req.GetClusterName(), err)
 		return &agentpb.RegisterResponse{
@@ -81,6 +81,7 @@ func (s *GRPCServer) Register(ctx context.Context, req *agentpb.RegisterRequest)
 		ID:          agentID,
 		ClusterName: cluster.Name,
 		Token:       req.GetAgentToken(),
+		TokenID:     tokenID,
 		Capabilities: req.GetCapabilities(),
 	}
 

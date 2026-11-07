@@ -112,7 +112,7 @@ roles:
 	agents := NewAgentStore()
 	agents.Register(&AgentInfo{ID: "a1", ClusterName: "prod", Capabilities: []string{capImpersonation}})
 	srv := NewHTTPServer(agents, NewCommandQueue(),
-		NewAuthHandlers(store, jm, time.Hour), NewAdminHandlers(store, testPepper), eng, NewAuditRecorder(store), nil, jm)
+		NewAuthHandlers(store, jm, time.Hour), NewAdminHandlers(store, testPepper, nil), eng, NewAuditRecorder(store), nil, jm)
 
 	// The audited user must exist (audit_logs.user_id FK -> users.id).
 	user := &User{Email: "dev@x.com", Name: "Dev", PasswordHash: "h", IsActive: true}
@@ -167,7 +167,7 @@ roles:
 			agents.Register(&AgentInfo{ID: "a1", ClusterName: "prod", Capabilities: []string{capImpersonation}})
 			queue := NewCommandQueue()
 			srv := NewHTTPServer(agents, queue, NewAuthHandlers(store, jm, time.Hour),
-				NewAdminHandlers(store, testPepper), eng, NewAuditRecorder(store), NewSessionManager(10), jm)
+				NewAdminHandlers(store, testPepper, nil), eng, NewAuditRecorder(store), NewSessionManager(10), jm)
 			user := &User{Email: "dev@x.com", Name: "Dev", PasswordHash: "h", IsActive: true}
 			if err := store.CreateUser(context.Background(), user); err != nil {
 				t.Fatal(err)
@@ -217,7 +217,7 @@ roles:
 	agents := NewAgentStore()
 	agents.Register(&AgentInfo{ID: "a1", ClusterName: "prod", Capabilities: []string{capImpersonation}})
 	srv := NewHTTPServer(agents, NewCommandQueue(),
-		NewAuthHandlers(store, jm, time.Hour), NewAdminHandlers(store, testPepper), eng, NewAuditRecorder(store), nil, jm)
+		NewAuthHandlers(store, jm, time.Hour), NewAdminHandlers(store, testPepper, nil), eng, NewAuditRecorder(store), nil, jm)
 	user := &User{Email: "dev@x.com", Name: "Dev", PasswordHash: "h", IsActive: true}
 	if err := store.CreateUser(context.Background(), user); err != nil {
 		t.Fatalf("seed user: %v", err)

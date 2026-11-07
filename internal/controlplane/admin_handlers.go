@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
+	"log"
 	"net/http"
 	"strconv"
 	"time"
@@ -25,12 +26,14 @@ const ClusterStatusPending = "pending"
 type AdminHandlers struct {
 	store  Store
 	pepper string
+	agents *AgentStore
 }
 
 // NewAdminHandlers creates a new AdminHandlers instance. pepper is the
-// server-side secret used to HMAC agent tokens at rest.
-func NewAdminHandlers(store Store, pepper string) *AdminHandlers {
-	return &AdminHandlers{store: store, pepper: pepper}
+// server-side secret used to HMAC agent tokens at rest; agents is the live
+// agent registry a token revocation drops agents from.
+func NewAdminHandlers(store Store, pepper string, agents *AgentStore) *AdminHandlers {
+	return &AdminHandlers{store: store, pepper: pepper, agents: agents}
 }
 
 type createAgentTokenRequest struct {
@@ -328,6 +331,8 @@ func (h *AdminHandlers) HandleRevokeAgentToken(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
 		return
 	}
+	dropped := h.agents.DropByToken(id)
+	log.Printf("Agent token %s revoked: %d connected agent(s) dropped", id, len(dropped))
 	c.JSON(http.StatusOK, gin.H{"message": "token revoked"})
 }
 

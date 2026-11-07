@@ -238,7 +238,7 @@ func newCapabilityTestServer(t *testing.T, caps []string) (*HTTPServer, *Command
 	agents.Register(&AgentInfo{ID: "a1", ClusterName: "prod", Capabilities: caps})
 	queue, sm := NewCommandQueue(), NewSessionManager(10)
 	srv := NewHTTPServer(agents, queue, NewAuthHandlers(store, jm, time.Hour),
-		NewAdminHandlers(store, testPepper), nil, nil, sm, jm)
+		NewAdminHandlers(store, testPepper, nil), nil, nil, sm, jm)
 	token, _ := jm.GenerateAccessToken(&auth.UserClaims{UserID: "u1", Email: "alice@x"})
 	return srv, queue, sm, token
 }

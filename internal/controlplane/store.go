@@ -10,6 +10,9 @@ type AgentInfo struct {
 	ID          string
 	ClusterName string
 	Token       string
+	// TokenID is the id of the agent token it registered with, so revoking
+	// the token can find and drop it.
+	TokenID     string
 	Status      string
 	RegisteredAt time.Time
 	LastSeen    time.Time
@@ -35,9 +38,12 @@ type AgentStore struct {
 	// validTokens holds pre-configured agent tokens for validation.
 	// In production, this would be stored in a database.
 	validTokens map[string]bool
+	// revoked names clusters whose agent was dropped by token revocation, so
+	// the clusters list shows them disconnected until an agent registers again.
+	revoked map[string]bool
 	// OnDisconnect, when set, is called (outside the lock) for each agent
-	// MarkDisconnected flips, so queued commands can fail fast.
-	OnDisconnect func(agentID string)
+	// marked disconnected or dropped, so queued commands can fail fast.
+	OnDisconnect func(agentID, clusterName string)
 }
 
 // NewAgentStore creates a new agent store.
@@ -45,6 +51,7 @@ func NewAgentStore() *AgentStore {
 	return &AgentStore{
 		agents:      make(map[string]*AgentInfo),
 		validTokens: make(map[string]bool),
+		revoked:     make(map[string]bool),
 	}
 }
 
@@ -75,6 +82,7 @@ func (s *AgentStore) Register(info *AgentInfo) (replaced []string) {
 			replaced = append(replaced, id)
 		}
 	}
+	delete(s.revoked, info.ClusterName)
 	info.RegisteredAt = time.Now()
 	info.LastSeen = time.Now()
 	info.Status = AgentStatusConnected
@@ -141,21 +149,58 @@ func (s *AgentStore) List() []*AgentInfo {
 
 // MarkDisconnected marks agents without recent heartbeats as disconnected.
 func (s *AgentStore) MarkDisconnected() {
-	var dropped []string
+	var dropped []*AgentInfo
 	s.mu.Lock()
 	cutoff := time.Now().Add(-DisconnectTimeout)
-	for id, agent := range s.agents {
+	for _, agent := range s.agents {
 		if agent.Status == AgentStatusConnected && agent.LastSeen.Before(cutoff) {
 			agent.Status = AgentStatusDisconnected
-			dropped = append(dropped, id)
+			dropped = append(dropped, agent)
 		}
 	}
 	s.mu.Unlock()
+	s.notifyDisconnected(dropped)
+}
 
-	if s.OnDisconnect != nil {
-		for _, id := range dropped {
-			s.OnDisconnect(id)
+// DropByToken removes every agent registered with the given agent token and
+// returns their ids. Their next call gets NotFound, so they re-register and
+// are refused if the token is revoked.
+func (s *AgentStore) DropByToken(tokenID string) []string {
+	var dropped []*AgentInfo
+	var ids []string
+	s.mu.Lock()
+	for id, agent := range s.agents {
+		if agent.TokenID == tokenID {
+			delete(s.agents, id)
+			s.revoked[agent.ClusterName] = true
+			dropped = append(dropped, agent)
+			ids = append(ids, id)
 		}
+	}
+	s.mu.Unlock()
+	s.notifyDisconnected(dropped)
+	return ids
+}
+
+// RevokedClusters lists clusters whose agent was dropped by DropByToken and
+// has not registered again.
+func (s *AgentStore) RevokedClusters() []string {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	names := make([]string, 0, len(s.revoked))
+	for name := range s.revoked {
+		names = append(names, name)
+	}
+	return names
+}
+
+// notifyDisconnected fires OnDisconnect for each agent; call without the lock.
+func (s *AgentStore) notifyDisconnected(agents []*AgentInfo) {
+	if s.OnDisconnect == nil {
+		return
+	}
+	for _, a := range agents {
+		s.OnDisconnect(a.ID, a.ClusterName)
 	}
 }
 

@@ -156,6 +156,10 @@ kb admin agent-tokens list --cluster <cluster-name>  # the old token's ID
 kb admin agent-tokens revoke <old-token-id>
 ```
 
+Revoke only after the agent is back on the new token: revocation disconnects
+any agent still using the old one at once, and that agent stops
+(CrashLoopBackOff) until it gets a new token.
+
 If the control plane's `auth.token_pepper` (or `jwt_secret`) is rotated, all existing
 agent tokens become invalid and must be re-issued.
 
