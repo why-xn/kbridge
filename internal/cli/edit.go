@@ -207,9 +207,13 @@ func (h *EditHandler) createTempFile(content string) (string, error) {
 
 // openEditor opens the specified file in the user's preferred editor.
 func (h *EditHandler) openEditor(filepath string) error {
-	editor := getEditor()
+	// Like kubectl: split on spaces, no quoting, so "code --wait" works.
+	words := strings.Fields(getEditor())
+	if len(words) == 0 {
+		words = []string{"vi"}
+	}
 
-	cmd := exec.Command(editor, filepath)
+	cmd := exec.Command(words[0], append(words[1:], filepath)...)
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr

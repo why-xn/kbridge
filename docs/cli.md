@@ -54,6 +54,10 @@ kb edit configmap app-config
 kb get nodes
 ```
 
+**Editing (`kb edit`).** The editor comes from `KUBE_EDITOR`, `EDITOR` or
+`VISUAL` (default `vi`). It may take arguments (`KUBE_EDITOR="code --wait"`);
+the value is split on spaces, with no quoting.
+
 **Local manifests (`-f`).** kubectl runs on the agent, so the CLI reads local
 `-f` inputs — files, directories (`-R` to recurse) and `-` (stdin) — and sends
 their contents along. `http(s)` URLs are fetched by the CLI (10 MiB limit).

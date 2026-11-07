@@ -2,6 +2,8 @@ package cli
 
 import (
 	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -311,4 +313,23 @@ func containsHelper(s, substr string) bool {
 		}
 	}
 	return false
+}
+
+func TestOpenEditorSplitsArguments(t *testing.T) {
+	dir := t.TempDir()
+	script := filepath.Join(dir, "ed.sh")
+	out := filepath.Join(dir, "out")
+	body := "#!/bin/sh\necho \"$@\" > " + out + "\n"
+	if err := os.WriteFile(script, []byte(body), 0755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("KUBE_EDITOR", script+" --flag -x")
+
+	if err := (&EditHandler{}).openEditor("/the/file"); err != nil {
+		t.Fatal(err)
+	}
+	got, _ := os.ReadFile(out)
+	if strings.TrimSpace(string(got)) != "--flag -x /the/file" {
+		t.Errorf("editor args = %q", got)
+	}
 }
