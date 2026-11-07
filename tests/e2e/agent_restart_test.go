@@ -57,6 +57,90 @@ func TestAgentRestart_FailsRunningCommand(t *testing.T) {
 	waitAgentBack(t)
 }
 
+// TestAgentRollout_NoOutage runs commands throughout a rolling restart of the
+// agent. The replaced pod must not take the cluster back from the new one, so
+// at most the one request in flight as the old pod goes away may fail.
+func TestAgentRollout_NoOutage(t *testing.T) {
+	if _, stderr, code := runCLI(t, "clusters", "use", *clusterName); code != 0 {
+		t.Fatalf("clusters use: %s", stderr)
+	}
+	rolledOut := make(chan time.Time, 1)
+	go func() {
+		defer func() { rolledOut <- time.Now() }()
+		time.Sleep(3 * time.Second)
+		if out, err := exec.Command("kubectl", "-n", agentNamespace, "rollout", "restart", agentDeployment).CombinedOutput(); err != nil {
+			t.Errorf("rollout restart: %v: %s", err, out)
+			return
+		}
+		if out, err := exec.Command("kubectl", "-n", agentNamespace, "rollout", "status", agentDeployment, "--timeout=90s").CombinedOutput(); err != nil {
+			t.Errorf("rollout status: %v: %s", err, out)
+		}
+	}()
+
+	failures := runThroughRollout(t, 75*time.Second, rolledOut)
+	if failures > 1 {
+		t.Errorf("%d failed calls during the rollout, want at most 1", failures)
+	}
+	if got := cliClusterStatus(t, *clusterName); got != "connected" {
+		t.Errorf("kb clusters list shows %q after the rollout, want connected", got)
+	}
+	waitOneAgentPod(t, 90*time.Second)
+}
+
+// runThroughRollout runs `kb get pods` every 500 ms for d and returns how many
+// calls failed. Two failures in a row, or a failure in a call started after
+// the rollout finished (rolledOut fired), fail the test.
+func runThroughRollout(t *testing.T, d time.Duration, rolledOut <-chan time.Time) int {
+	t.Helper()
+	begin := time.Now()
+	var done time.Time
+	failures, prevFailed := 0, false
+	for time.Since(begin) < d {
+		select {
+		case done = <-rolledOut:
+		default:
+		}
+		started := time.Now()
+		_, stderr, code := runCLI(t, "get", "pods", "-n", "default")
+		failed := code != 0
+		if failed {
+			failures++
+			t.Logf("call at +%s failed (exit %d): %s", started.Sub(begin).Round(time.Millisecond), code, stderr)
+			if prevFailed {
+				t.Errorf("two consecutive failed calls")
+			}
+			if !done.IsZero() && started.After(done) {
+				t.Errorf("call failed after rollout status returned")
+			}
+		}
+		prevFailed = failed
+		time.Sleep(500 * time.Millisecond)
+	}
+	if done.IsZero() {
+		done = <-rolledOut // the rollout goroutine always sends; it must finish before the test ends
+	}
+	return failures
+}
+
+// waitOneAgentPod waits until exactly one agent pod exists: the replaced pod
+// has terminated and no second agent is serving the cluster.
+func waitOneAgentPod(t *testing.T, within time.Duration) {
+	t.Helper()
+	deadline := time.Now().Add(within)
+	for {
+		out, err := exec.Command("kubectl", "-n", agentNamespace, "get", "pods",
+			"-l", "app.kubernetes.io/name=kbridge-agent", "-o", "name").CombinedOutput()
+		pods := strings.Fields(string(out))
+		if err == nil && len(pods) == 1 {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("agent pods after %s: %v (err %v), want exactly one", within, pods, err)
+		}
+		time.Sleep(2 * time.Second)
+	}
+}
+
 // killAgentPod SIGKILLs the agent process from the Kind node, so the agent
 // cannot report the command itself; kubelet restarts the container.
 func killAgentPod(t *testing.T) {

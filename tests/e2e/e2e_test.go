@@ -764,6 +764,29 @@ data:
 	}
 }
 
+// TestKubectlEditQuotedEditor uses an editor value with an escaped space, which
+// kubectl runs through the shell; kb edit must do the same so it stays one
+// sed argument.
+func TestKubectlEditQuotedEditor(t *testing.T) {
+	if _, stderr, code := runCLI(t, "clusters", "use", *clusterName); code != 0 {
+		t.Fatalf("clusters use: %s", stderr)
+	}
+	const name = "test-edit-quoted-cm"
+	if _, stderr, code := runCLI(t, "create", "configmap", name, "-n", "default", "--from-literal=k=a b"); code != 0 {
+		t.Fatalf("create configmap: %s", stderr)
+	}
+	t.Cleanup(func() { runCLI(t, "delete", "configmap", name, "-n", "default", "--ignore-not-found") })
+
+	env := map[string]string{"KUBE_EDITOR": `sed -i s/a\ b/c\ d/`}
+	if stdout, stderr, code := runCLIWithEnv(t, env, "edit", "configmap", name, "-n", "default"); code != 0 {
+		t.Fatalf("kb edit: exit %d, stdout %s, stderr %s", code, stdout, stderr)
+	}
+	stdout, stderr, code := runCLI(t, "get", "configmap", name, "-n", "default", "-o", "jsonpath={.data.k}")
+	if code != 0 || stdout != "c d" {
+		t.Errorf("data.k = %q (exit %d, stderr %s), want %q", stdout, code, stderr, "c d")
+	}
+}
+
 // Test: kubectl edit deployment
 // waitForRollout blocks until a deployment has fully rolled out, so its
 // resourceVersion stops churning. Editing a still-progressing deployment races
