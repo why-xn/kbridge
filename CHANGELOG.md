@@ -153,6 +153,8 @@ agents' `controlPlane.url` at the new Service name.
   ask the cluster owner to raise it` instead of the raw API server 403.
 - **`-o go-template-file` and friends get their own refusal**, pointing at
   the inline `-o go-template='...'` form rather than the `--from-file` hint.
+- **The agent token message names the Helm value** (`controlPlane.token`)
+  next to the config key.
 - **`install.sh` creates a custom `KBRIDGE_INSTALL_DIR`** instead of falling
   back to `sudo` when it does not exist yet.
 - **Policy changes reach the running control plane.** A `helm upgrade` that
