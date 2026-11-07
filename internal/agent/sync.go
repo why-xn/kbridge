@@ -113,9 +113,18 @@ func applyOne(ctx context.Context, k *kubeAPI, b binding, protected []string) er
 		return err
 	}
 	if err := k.apply(ctx, b); err != nil {
-		return fmt.Errorf("binding %s: %w", b.Name, err)
+		return applyError(b, err)
 	}
 	return nil
+}
+
+// applyError names the binding, and turns the API server's escalation refusal
+// (the chart's accessCeiling) into what to do about it.
+func applyError(b binding, err error) error {
+	if isForbidden(err) && strings.Contains(err.Error(), "attempting to grant RBAC permissions not currently held") {
+		return fmt.Errorf("binding %s: clusterRole %s is outside this cluster's accessCeiling (agent chart value accessCeiling.clusterRoles); ask the cluster owner to raise it", b.Name, b.ClusterRole)
+	}
+	return fmt.Errorf("binding %s: %w", b.Name, err)
 }
 
 // revokeError is a refusal that also removes an existing grant: the binding

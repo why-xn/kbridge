@@ -173,7 +173,10 @@ What the agent refuses, reported per binding in `kb admin rbac status`:
   user;
 - anything above the chart's `accessCeiling`: Kubernetes answers `403` for a
   ClusterRole, namespace or cluster-wide binding the agent's ServiceAccount
-  may not grant. See [operations.md](operations.md#rbac-sync);
+  may not grant. A ClusterRole outside `accessCeiling.clusterRoles` is
+  reported as `binding <name>: clusterRole <clusterRole> is outside this
+  cluster's accessCeiling (agent chart value accessCeiling.clusterRoles); ask
+  the cluster owner to raise it`. See [operations.md](operations.md#rbac-sync);
 - any ClusterRole other than `view` in a namespace that does not enforce Pod
   Security `baseline` or `restricted`. A role that can create pods could mount
   the node's disk with a `hostPath` pod and read the agent's token there. The

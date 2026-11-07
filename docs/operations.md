@@ -177,7 +177,7 @@ kb admin rbac status
 # CLUSTER   VERSION   STATE    ERRORS  REPORTED
 # prod      426e2298  in sync  0       2026-11-05T20:09:44Z
 # staging   1c9b07aa  drift    1       2026-11-05T20:09:41Z
-#     binding kbridge-developer-admin: POST /apis/rbac.authorization.k8s.io/v1/namespaces/team-a/rolebindings: 403 ...
+#     binding kbridge-developer-admin: clusterRole admin is outside this cluster's accessCeiling (agent chart value accessCeiling.clusterRoles); ask the cluster owner to raise it
 ```
 
 | State | Meaning |
@@ -189,10 +189,13 @@ kb admin rbac status
 Someone editing a managed binding by hand is not drift for long: the agent
 puts it back within a few seconds. Common errors:
 
-- `403` on create or update: the binding needs more than the agent chart's
-  `accessCeiling` allows. Either raise the ceiling (`accessCeiling.clusterRoles`,
-  `accessCeiling.namespaces`, `accessCeiling.clusterWide`) with
-  `helm upgrade`, or change the policy.
+- `clusterRole <name> is outside this cluster's accessCeiling`: policy binds a
+  ClusterRole the agent chart's `accessCeiling.clusterRoles` does not list.
+  The cluster owner adds it with `helm upgrade`, or you change the policy.
+- any other `403` on create or update: the binding is in a namespace outside
+  `accessCeiling.namespaces`, or is cluster-wide while
+  `accessCeiling.clusterWide` is false. Raise that value with `helm upgrade`,
+  or change the policy.
 - `namespace "<ns>" is reserved for the kbridge agent`: policy names the
   agent's own namespace or a `protectedNamespaces` entry. Remove it from the
   policy; the agent never writes there.

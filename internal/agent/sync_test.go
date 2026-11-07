@@ -94,11 +94,35 @@ func TestReconcile_ReportsCeiling(t *testing.T) {
 		rb("team-a", "kbridge-dev-view", "view", "kbridge:a@x"),
 	}
 	errs := reconcile(context.Background(), k, desired, nil)
-	if len(errs) != 1 || !strings.Contains(errs[0], "403") || !strings.HasPrefix(errs[0], "binding kbridge-root-cluster-admin: ") {
-		t.Errorf("errors = %v, want one 403 for kbridge-root-cluster-admin", errs)
+	want := "binding kbridge-root-cluster-admin: clusterRole cluster-admin is outside this cluster's accessCeiling (agent chart value accessCeiling.clusterRoles); ask the cluster owner to raise it"
+	if len(errs) != 1 || errs[0] != want {
+		t.Errorf("errors = %v, want [%s]", errs, want)
 	}
 	if _, ok := f.get("team-a", "kbridge-dev-view"); !ok {
 		t.Error("allowed binding not applied")
+	}
+}
+
+func TestApplyError(t *testing.T) {
+	b := rb("", "kbridge-root-cluster-admin", "cluster-admin")
+	tests := []struct {
+		name string
+		err  error
+		want string
+	}{
+		{"ceiling 403 explained", &apiError{code: 403, msg: `clusterrolebindings "x" is forbidden: user "sa" is attempting to grant RBAC permissions not currently held:`},
+			"binding kbridge-root-cluster-admin: clusterRole cluster-admin is outside this cluster's accessCeiling (agent chart value accessCeiling.clusterRoles); ask the cluster owner to raise it"},
+		{"other 403 kept", &apiError{code: 403, msg: "cannot create clusterrolebindings"},
+			"binding kbridge-root-cluster-admin: 403 cannot create clusterrolebindings"},
+		{"phrase without 403 kept", &apiError{code: 500, msg: "attempting to grant RBAC permissions not currently held"},
+			"binding kbridge-root-cluster-admin: 500 attempting to grant RBAC permissions not currently held"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := applyError(b, tt.err).Error(); got != tt.want {
+				t.Errorf("got %q, want %q", got, tt.want)
+			}
+		})
 	}
 }
 
