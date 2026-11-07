@@ -4,7 +4,6 @@ import (
 	"context"
 	"net"
 	"os/exec"
-	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -74,91 +73,68 @@ func (c *commandService) handedOut() bool {
 	return c.handed
 }
 
-// A command running when the agent shuts down (e.g. a rollout) must be
-// reported as failed before the agent disconnects, not silently dropped.
-func TestAgent_ShutdownReportsInFlightCommand(t *testing.T) {
+// A command running when the agent is told to shut down (SIGTERM, e.g. the
+// old pod of a rollout) must finish and be reported with its real result,
+// whether or not the agent has learned yet that a newer one replaced it.
+func TestAgent_ShutdownLetsInFlightCommandFinish(t *testing.T) {
 	if _, err := exec.LookPath("sleep"); err != nil {
 		t.Skip("sleep not available")
 	}
-	svc := &commandService{}
-	addr, stop := startCommandServer(t, svc)
-	defer stop()
-
-	a := New(&Config{
-		ControlPlane: ControlPlaneConfig{URL: addr, Token: "token"},
-		Cluster:      ClusterConfig{Name: "test"},
-		Kubernetes:   kubeFixture(t),
-	})
-	a.executor = windowedExecutor(t, "sleep") // "kubectl 30" -> sleep 30; Run swaps in the agent's window
-
-	ctx, cancel := context.WithCancel(context.Background())
-	runDone := make(chan error, 1)
-	go func() { runDone <- a.Run(ctx) }()
-
-	deadline := time.Now().Add(5 * time.Second)
-	for !svc.handedOut() && time.Now().Before(deadline) {
-		time.Sleep(20 * time.Millisecond)
-	}
-	if !svc.handedOut() {
-		t.Fatal("agent never picked up the command")
-	}
-	time.Sleep(200 * time.Millisecond) // let the command start running
-
-	cancel() // same order as cmd/agent: cancel, then Stop
-	stopped := make(chan struct{})
-	go func() { a.Stop(); close(stopped) }()
-	select {
-	case <-stopped:
-	case <-time.After(15 * time.Second):
-		t.Fatal("agent did not stop")
-	}
-	<-runDone
-
-	svc.mu.Lock()
-	defer svc.mu.Unlock()
-	if len(svc.results) != 1 {
-		t.Fatalf("submitted %d results, want 1", len(svc.results))
-	}
-	if got := svc.results[0]; got.GetRequestId() != "req-1" || !strings.Contains(got.GetErrorMessage(), "shut down") {
-		t.Fatalf("unexpected result: %+v", got)
-	}
-}
-
-// The old pod of a rollout is replaced before Kubernetes stops it. A command
-// it is still running must finish and be reported as run, not be cut off by
-// that stop: the new agent already serves the cluster.
-func TestAgent_ReplacedFinishesInFlightCommandOnShutdown(t *testing.T) {
-	if _, err := exec.LookPath("sleep"); err != nil {
-		t.Skip("sleep not available")
+	tests := []struct {
+		name     string
+		replaced bool
+	}{
+		{"not yet told it was replaced", false},
+		{"replaced first", true},
 	}
 	defer func(d time.Duration) { initialHeartbeatInterval = d }(initialHeartbeatInterval)
 	initialHeartbeatInterval = 50 * time.Millisecond
-	svc := &commandService{seconds: "3", replaceWhenHanded: true}
-	addr, stop := startCommandServer(t, svc)
-	defer stop()
-	a := New(&Config{
-		ControlPlane: ControlPlaneConfig{URL: addr, Token: "token"},
-		Cluster:      ClusterConfig{Name: "test"},
-		Kubernetes:   kubeFixture(t),
-	})
-	a.executor = windowedExecutor(t, "sleep")
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			svc := &commandService{seconds: "3", replaceWhenHanded: tt.replaced}
+			addr, stop := startCommandServer(t, svc)
+			defer stop()
+			a := New(&Config{
+				ControlPlane: ControlPlaneConfig{URL: addr, Token: "token"},
+				Cluster:      ClusterConfig{Name: "test"},
+				Kubernetes:   kubeFixture(t),
+			})
+			a.executor = windowedExecutor(t, "sleep") // "kubectl 3" -> sleep 3; Run swaps in the agent's window
 
-	ctx, cancel := context.WithCancel(context.Background())
-	runDone := make(chan error, 1)
-	go func() { runDone <- a.Run(ctx) }()
-	select {
-	case <-a.replaced:
-	case <-time.After(5 * time.Second):
-		t.Fatal("agent never learned it was replaced")
+			ctx, cancel := context.WithCancel(context.Background())
+			runDone := make(chan error, 1)
+			go func() { runDone <- a.Run(ctx) }()
+			handed := waitHandedOut(t, svc)
+			if tt.replaced {
+				<-a.replaced
+			}
+			cancel() // same order as cmd/agent: cancel, then Stop
+			a.Stop()
+			if err := <-runDone; err != nil {
+				t.Fatalf("Run = %v, want nil", err)
+			}
+			if took := time.Since(handed); took < 2500*time.Millisecond {
+				t.Fatalf("Run returned %s after the command started, before it could finish", took)
+			}
+			svc.mu.Lock()
+			defer svc.mu.Unlock()
+			if len(svc.results) != 1 || svc.results[0].GetRequestId() != "req-1" ||
+				svc.results[0].GetErrorMessage() != "" || svc.results[0].GetExitCode() != 0 {
+				t.Fatalf("results = %+v, want req-1 reported as run (exit 0, no error)", svc.results)
+			}
+		})
 	}
-	cancel() // SIGTERM while the command runs; same order as cmd/agent
-	a.Stop()
-	if err := <-runDone; err != nil {
-		t.Fatalf("Run = %v, want nil", err)
+}
+
+// waitHandedOut waits until the agent has picked up the command and returns when.
+func waitHandedOut(t *testing.T, svc *commandService) time.Time {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for !svc.handedOut() {
+		if time.Now().After(deadline) {
+			t.Fatal("agent never picked up the command")
+		}
+		time.Sleep(20 * time.Millisecond)
 	}
-	svc.mu.Lock()
-	defer svc.mu.Unlock()
-	if len(svc.results) != 1 || svc.results[0].GetErrorMessage() != "" || svc.results[0].GetExitCode() != 0 {
-		t.Fatalf("results = %+v, want the command reported as run", svc.results)
-	}
+	return time.Now()
 }

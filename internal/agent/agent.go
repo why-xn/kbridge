@@ -137,19 +137,18 @@ func (a *Agent) Run(ctx context.Context) error {
 	// liveness initialDelaySeconds window doesn't race a slow first heartbeat.
 	a.touchHealthFile()
 
-	// A refused re-registration cancels ctx so the loops below stop. Being
-	// replaced does not: commands already running finish and report first.
+	// A refused re-registration cancels ctx so the loops below stop; being
+	// replaced stops them through a.replaced. Neither, nor shutdown, cancels a
+	// running command (see executeAndSubmit).
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
 	// Start command polling loop in goroutine
 	pollDone := make(chan struct{})
 	var pollErr error
-	cmdCtx, cmdCancel := a.commandContext(ctx)
-	defer cmdCancel()
 	go func() {
 		defer close(pollDone)
-		pollErr = a.loopStopped(a.runCommandPollLoop(cmdCtx), cancel)
+		pollErr = a.loopStopped(a.runCommandPollLoop(ctx), cancel)
 	}()
 
 	// Start persistent stream client. It stays open while standing by, so
@@ -174,27 +173,6 @@ func (a *Agent) Run(ctx context.Context) error {
 		return hbErr
 	}
 	return pollErr
-}
-
-// commandContext is the context commands run under: ctx, except that once
-// this agent is replaced, stopping it no longer cancels the command it is
-// running. In a rollout the old pod is replaced before it is stopped, and the
-// command finishes within the pod's termination grace period.
-func (a *Agent) commandContext(ctx context.Context) (context.Context, context.CancelFunc) {
-	cmdCtx, cancel := context.WithCancel(context.WithoutCancel(ctx))
-	go func() {
-		select {
-		case <-ctx.Done():
-			select {
-			case <-a.replaced:
-			default:
-				cancel()
-			}
-		case <-a.replaced:
-		case <-cmdCtx.Done():
-		}
-	}()
-	return cmdCtx, cancel
 }
 
 // loopStopped handles the error a heartbeat or poll loop stopped with:
@@ -577,7 +555,12 @@ func (a *Agent) pollAndExecuteCommands(ctx context.Context) error {
 }
 
 // executeAndSubmit executes a command and submits the result to control plane.
+// Shutdown never cancels it: a stopping agent (the old pod of a rollout) lets
+// the command finish and reports its real result. The pod's termination grace
+// period bounds that; if SIGKILL comes first, the control plane fails the
+// command when the agent's stream closes.
 func (a *Agent) executeAndSubmit(ctx context.Context, cmd *agentpb.CommandRequest) {
+	ctx = context.WithoutCancel(ctx)
 	// Determine timeout
 	timeout := time.Duration(cmd.TimeoutSeconds) * time.Second
 	if timeout == 0 {
@@ -597,17 +580,13 @@ func (a *Agent) executeAndSubmit(ctx context.Context, cmd *agentpb.CommandReques
 	if result.Error != nil {
 		submitReq.ErrorMessage = result.Error.Error()
 	}
-	if ctx.Err() != nil {
-		submitReq.ErrorMessage = "agent shut down while the command was running; retry it"
-	}
 
 	// Submit result to control plane
 	a.mu.RLock()
 	client := a.client
 	a.mu.RUnlock()
 
-	// Not tied to ctx: a command interrupted by shutdown must still be reported.
-	submitCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
+	submitCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 
 	_, err := client.SubmitCommandResult(submitCtx, submitReq)
