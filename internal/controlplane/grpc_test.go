@@ -624,3 +624,36 @@ func waitPendingCommand(t *testing.T, srv *GRPCServer, agentID string) *agentpb.
 	t.Fatal("no command was queued")
 	return nil
 }
+
+func TestGRPCServer_Register_ReplacedAgentCommands(t *testing.T) {
+	srv, _, cmdQueue := newTestGRPCServer(t)
+	ctx := context.Background()
+	req := &agentpb.RegisterRequest{AgentToken: testAgentToken, ClusterName: testClusterName}
+
+	first, err := srv.Register(ctx, req)
+	if err != nil || !first.Success {
+		t.Fatalf("first register: %v %s", err, first.GetErrorMessage())
+	}
+	running, _ := cmdQueue.Enqueue(first.AgentId, testClusterName, "u@x", []string{"get", "pods"}, "", 30, nil)
+	cmdQueue.MarkRunning(running)
+	pending, _ := cmdQueue.Enqueue(first.AgentId, testClusterName, "u@x", []string{"get", "pods"}, "", 30, nil)
+
+	second, err := srv.Register(ctx, req)
+	if err != nil || !second.Success {
+		t.Fatalf("second register: %v %s", err, second.GetErrorMessage())
+	}
+
+	waitCtx, cancel := context.WithTimeout(ctx, time.Second)
+	defer cancel()
+	res, err := cmdQueue.WaitForResult(waitCtx, running)
+	if err != nil {
+		t.Fatalf("running command was not failed: %v", err)
+	}
+	if want := "agent shut down while the command was running; retry it"; res.ErrorMessage != want || res.ExitCode != -1 {
+		t.Errorf("got (%q, %d), want (%q, -1)", res.ErrorMessage, res.ExitCode, want)
+	}
+	p, _ := cmdQueue.Get(pending)
+	if p.AgentID != second.AgentId || p.Status != CommandStatusPending {
+		t.Errorf("pending command: agent %s status %s, want moved to %s and still pending", p.AgentID, p.Status, second.AgentId)
+	}
+}

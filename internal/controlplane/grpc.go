@@ -91,7 +91,9 @@ func (s *GRPCServer) Register(ctx context.Context, req *agentpb.RegisterRequest)
 	log.Printf("Agent registered: id=%s, cluster=%s, capabilities=%v", agentID, cluster.Name, info.Capabilities)
 	for _, old := range replaced {
 		moved := s.cmdQueue.Reassign(old, agentID)
-		log.Printf("Agent %s replaces previous agent %s for cluster=%s (%d queued command(s) moved)", agentID, old, cluster.Name, moved)
+		// Only running commands remain on the old agent; it will never report them.
+		failed := s.cmdQueue.FailForAgent(old, "agent shut down while the command was running; retry it")
+		log.Printf("Agent %s replaces previous agent %s for cluster=%s (%d queued command(s) moved, %d running failed)", agentID, old, cluster.Name, moved, failed)
 	}
 
 	return &agentpb.RegisterResponse{
