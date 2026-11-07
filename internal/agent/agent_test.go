@@ -748,7 +748,7 @@ func TestAgent_Poll_Replaced(t *testing.T) {
 			if err := a.register(ctx); err != nil {
 				t.Fatalf("register: %v", err)
 			}
-			if err := a.pollAndExecuteCommands(ctx); !errors.Is(err, tt.wantErr) {
+			if err := a.pollAndExecuteCommands(ctx, ctx); !errors.Is(err, tt.wantErr) {
 				t.Fatalf("poll = %v, want %v", err, tt.wantErr)
 			}
 		})

@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"errors"
 	"net"
 	"os/exec"
 	"sync"
@@ -23,6 +24,9 @@ type commandService struct {
 	seconds string // how long the handed-out command sleeps; default 30
 	// replaceWhenHanded answers heartbeats as "replaced" once the command is out.
 	replaceWhenHanded bool
+	// revokeWhenHanded answers heartbeats NotFound once the command is out, as
+	// after a revocation; set rejectAfter to refuse the re-registration.
+	revokeWhenHanded bool
 	streamOpen        bool // the agent's OpenStream is being served
 	openAtSubmit      bool // streamOpen when the result was submitted
 }
@@ -57,7 +61,46 @@ func (c *commandService) Heartbeat(ctx context.Context, req *agentpb.HeartbeatRe
 	if c.replaceWhenHanded && c.handedOut() {
 		return nil, status.Error(codes.FailedPrecondition, "agent replaced by a newer registration for this cluster")
 	}
+	if c.revokeWhenHanded && c.handedOut() {
+		return nil, status.Error(codes.NotFound, "agent not registered")
+	}
 	return c.mockAgentService.Heartbeat(ctx, req)
+}
+
+// A revoked agent must stop at once, even mid-command: the control plane has
+// already told the user the cluster is disconnected, so the command must not
+// go on to take effect.
+func TestAgent_RevokedKillsInFlightCommand(t *testing.T) {
+	if _, err := exec.LookPath("sleep"); err != nil {
+		t.Skip("sleep not available")
+	}
+	defer func(d time.Duration) { initialHeartbeatInterval = d }(initialHeartbeatInterval)
+	initialHeartbeatInterval = 50 * time.Millisecond
+	svc := &commandService{seconds: "3", revokeWhenHanded: true}
+	svc.rejectAfter = 1
+	addr, stop := startCommandServer(t, svc)
+	defer stop()
+	a := New(&Config{
+		ControlPlane: ControlPlaneConfig{URL: addr, Token: "token"},
+		Cluster:      ClusterConfig{Name: "test"},
+		Kubernetes:   kubeFixture(t),
+	})
+	a.executor = windowedExecutor(t, "sleep")
+
+	runDone := make(chan error, 1)
+	go func() { runDone <- a.Run(context.Background()) }()
+	handed := waitHandedOut(t, svc)
+	select {
+	case err := <-runDone:
+		if !errors.Is(err, errRegistrationRejected) {
+			t.Fatalf("Run = %v, want the registration rejection", err)
+		}
+		if took := time.Since(handed); took > 2500*time.Millisecond {
+			t.Fatalf("Run returned %s after the command started; it waited for the command", took)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("revoked agent did not exit")
+	}
 }
 
 func (c *commandService) GetPendingCommands(ctx context.Context, req *agentpb.GetPendingCommandsRequest) (*agentpb.GetPendingCommandsResponse, error) {

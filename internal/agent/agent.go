@@ -194,17 +194,21 @@ func (a *Agent) Run(ctx context.Context) error {
 // standing-by agent should register again.
 func (a *Agent) serve(ctx context.Context) error {
 	// A refused re-registration cancels ctx so the loops below stop; being
-	// replaced stops them through a.replaced. Neither, nor shutdown, cancels a
-	// running command (see executeAndSubmit).
+	// replaced stops them through a.replaced. A running command runs under
+	// cmdCtx instead: shutdown and being replaced let it finish (see
+	// executeAndSubmit), and only a refused registration (a revoked token)
+	// kills it, so a revoked agent exits at once.
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
+	cmdCtx, kill := context.WithCancel(context.WithoutCancel(ctx))
+	defer kill()
 
 	// Start command polling loop in goroutine
 	pollDone := make(chan struct{})
 	var pollErr error
 	go func() {
 		defer close(pollDone)
-		pollErr = a.loopStopped(a.runCommandPollLoop(ctx), cancel)
+		pollErr = a.loopStopped(a.runCommandPollLoop(ctx, cmdCtx), cancel, kill)
 	}()
 
 	// Start persistent stream client. It outlives a shutdown signal: the control
@@ -222,7 +226,7 @@ func (a *Agent) serve(ctx context.Context) error {
 	stopSync := a.startSync(ctx)
 
 	// Run heartbeat loop (blocks until stopped)
-	hbErr := a.loopStopped(a.runHeartbeatLoop(ctx), cancel)
+	hbErr := a.loopStopped(a.runHeartbeatLoop(ctx), cancel, kill)
 	stopSync()
 
 	// Let an in-flight command report its result before the connection closes,
@@ -240,11 +244,15 @@ func (a *Agent) serve(ctx context.Context) error {
 }
 
 // loopStopped handles the error a heartbeat or poll loop stopped with:
-// replaced stops the other loop, anything else cancels everything.
-func (a *Agent) loopStopped(err error, cancel context.CancelFunc) error {
+// replaced stops the other loop, anything else cancels everything, and a
+// refused registration also kills the running command.
+func (a *Agent) loopStopped(err error, cancel, kill context.CancelFunc) error {
 	if errors.Is(err, errReplaced) {
 		a.markReplaced()
 		return nil
+	}
+	if errors.Is(err, errRegistrationRejected) {
+		kill()
 	}
 	if err != nil {
 		cancel()
@@ -559,16 +567,17 @@ func (a *Agent) reconnect(ctx context.Context) error {
 	return fmt.Errorf("failed to reconnect after %d attempts", maxRetries)
 }
 
-// runCommandPollLoop polls control plane for pending commands and executes
-// them. It returns an error only when this agent was replaced.
-func (a *Agent) runCommandPollLoop(ctx context.Context) error {
+// runCommandPollLoop polls control plane for pending commands until ctx ends
+// and executes them under cmdCtx. It returns an error only when this agent
+// was replaced.
+func (a *Agent) runCommandPollLoop(ctx, cmdCtx context.Context) error {
 	ticker := time.NewTicker(DefaultPollInterval)
 	defer ticker.Stop()
 
 	for {
 		select {
 		case <-ticker.C:
-			if err := a.pollAndExecuteCommands(ctx); err != nil {
+			if err := a.pollAndExecuteCommands(ctx, cmdCtx); err != nil {
 				return err
 			}
 
@@ -588,7 +597,7 @@ func (a *Agent) runCommandPollLoop(ctx context.Context) error {
 
 // pollAndExecuteCommands polls for pending commands and executes them. It
 // returns errReplaced when a newer agent replaced this one.
-func (a *Agent) pollAndExecuteCommands(ctx context.Context) error {
+func (a *Agent) pollAndExecuteCommands(ctx, cmdCtx context.Context) error {
 	a.mu.RLock()
 	agentID := a.agentID
 	client := a.client
@@ -613,18 +622,18 @@ func (a *Agent) pollAndExecuteCommands(ctx context.Context) error {
 	// Execute each command
 	for _, cmd := range resp.Commands {
 		log.Printf("Executing command %s: %v", cmd.RequestId, cmd.Command)
-		a.executeAndSubmit(ctx, cmd)
+		a.executeAndSubmit(cmdCtx, cmd)
 	}
 	return nil
 }
 
-// executeAndSubmit executes a command and submits the result to control plane.
-// Shutdown never cancels it: a stopping agent (the old pod of a rollout) lets
-// the command finish and reports its real result. The pod's termination grace
-// period bounds that; if SIGKILL comes first, the control plane fails the
-// command when the agent's stream closes.
+// executeAndSubmit executes a command under ctx and submits the result to
+// control plane. ctx is the serve loop's cmdCtx, which shutdown never cancels:
+// a stopping agent (the old pod of a rollout) lets the command finish and
+// reports its real result. The pod's termination grace period bounds that; if
+// SIGKILL comes first, the control plane fails the command when the agent's
+// stream closes. Only a revoked token cancels ctx and kills the command.
 func (a *Agent) executeAndSubmit(ctx context.Context, cmd *agentpb.CommandRequest) {
-	ctx = context.WithoutCancel(ctx)
 	// Determine timeout
 	timeout := time.Duration(cmd.TimeoutSeconds) * time.Second
 	if timeout == 0 {
