@@ -143,9 +143,11 @@ agents' `controlPlane.url` at the new Service name.
 
 - **A rolling update of the agent no longer causes an outage.** An agent
   that a newer registration replaced is told so (`agent replaced by a newer
-  registration for this cluster`), finishes the command it is running, and
-  stands by until Kubernetes stops its pod instead of re-registering and
-  taking the cluster back from the new pod.
+  registration for this cluster`) and stands by until Kubernetes stops its
+  pod instead of re-registering and taking the cluster back from the new
+  pod. A one-shot command running on the old pod finishes there (within the
+  pod's termination grace period); a stream it serves (`logs -f`, `exec -it`,
+  `port-forward`) ends when the old pod stops.
 - **Revoking an unknown token id is an error** (`token not found`, exit 1)
   instead of a false success.
 - **Commands refused because the cluster is disconnected are audited** as
