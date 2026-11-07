@@ -141,12 +141,27 @@ agents' `controlPlane.url` at the new Service name.
 
 ### Fixed
 
+- **A rolling update of the agent no longer causes an outage.** An agent
+  that a newer registration replaced is told so (`agent replaced by a newer
+  registration for this cluster`) and exits instead of re-registering and
+  taking the cluster back from the new pod.
+- **Revoking an unknown token id is an error** (`token not found`, exit 1)
+  instead of a false success.
+- **Commands refused because the cluster is disconnected are audited** as
+  `failed` with `agent is disconnected`, so every attempt is recorded.
+- **`kb clusters list` shows every cluster the control plane knows**, sorted
+  by name, with `disconnected` for one whose agent is not registered, for
+  example right after a control plane restart.
+- **`make docker` works without arguments** (`VERSION` defaults to
+  `git describe`), and the installer docs put `KBRIDGE_VERSION` on the `sh`
+  side of the pipe where it is read.
 - **A dead agent shows as disconnected within seconds.** The control plane
   marks an agent disconnected the moment its gRPC stream closes and pings it
   every 5 s, so `kb clusters list` and queued commands no longer wait up to
   60 s for the heartbeat timeout.
 - **`kb edit` accepts an editor with arguments** (`KUBE_EDITOR="code --wait"`),
-  split on spaces like kubectl does.
+  and, like kubectl, runs a value with quotes or backslashes through `sh`
+  (`KUBE_EDITOR='sed -i s/replicas:\ 1/replicas:\ 2/'`).
 - **`kb admin rbac status` explains an `accessCeiling` refusal.** A binding
   to a ClusterRole outside the agent chart's `accessCeiling.clusterRoles`
   now reads `clusterRole <name> is outside this cluster's accessCeiling ...;
