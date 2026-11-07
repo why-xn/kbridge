@@ -37,13 +37,17 @@ Runs a kubectl command. Body:
 { "command": ["get","pods"], "namespace": "default", "timeout": 30, "stdin": "" }
 ```
 
-Returns `{output, exit_code, error}`. Status codes:
+Returns `{output, exit_code, error}`. The cluster's agent runs these one-shot
+commands one at a time, so a long command (for example `exec ... -- sleep 60`)
+delays every other one-shot command on that cluster until it ends; interactive
+exec, `logs -f`, `get -w` and port-forward use the agent's stream and are not
+delayed. Status codes:
 
 | Code | Meaning |
 |------|---------|
 | 200 | Command executed (check `exit_code`) |
 | 403 | Denied by RBAC policy, or an argument kbridge refuses (see below) |
-| 404 | Cluster not found |
+| 404 | Cluster not found (a known cluster whose agent is not connected is 503) |
 | 503 | Cluster agent disconnected, or the agent does not support impersonation |
 | 504 | Command timed out |
 

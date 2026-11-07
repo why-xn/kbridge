@@ -287,6 +287,11 @@ node vanished, keepalive pings (every 5 s, 5 s to answer) close it within
 about 10 s. An agent that is still alive reconnects and its next heartbeat
 shows it `connected` again.
 
+The agent runs one-shot commands (`get`, `apply`, `exec` without `-it`, ...)
+one at a time, so a long one delays the others on the same cluster, for every
+user, until it ends. Interactive exec, `logs -f`, `get -w` and `port-forward`
+run on the agent's stream and are not delayed.
+
 View agent logs:
 
 ```bash
