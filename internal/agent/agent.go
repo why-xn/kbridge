@@ -64,8 +64,11 @@ var standByTouchInterval = 30 * time.Second
 
 // standByTimeout bounds the stand-by: a rollout stops the old pod within its
 // termination grace period, so a replaced agent still running after this is
-// a second replica for the same cluster, and exiting makes that visible
-// (CrashLoopBackOff) without flapping fast. A var so tests need not wait.
+// a second replica for the same cluster. It exits; Kubernetes restarts it, it
+// registers and takes the cluster over, and the other one stands by in turn,
+// so two replicas swap the cluster about every 10 minutes (each swap can cut
+// a stream) instead of flapping fast. Run one replica (replicaCount: 1). A var
+// so tests need not wait.
 var standByTimeout = 10 * time.Minute
 
 // errTakeOver tells Run that the agent that replaced this one is gone, so this

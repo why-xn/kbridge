@@ -128,10 +128,11 @@ command running on the old pod finishes there, within the pod's termination
 grace period (`terminationGracePeriodSeconds`, 30 s by default); a longer one
 is killed with the pod and fails with `agent shut down while the command was
 running; retry it`. A stream the old pod serves (`logs -f`, `exec -it`,
-`port-forward`) ends when it stops. A replaced agent that
-is never stopped (two replicas for one cluster) exits after 10 minutes with
-`replaced by a newer agent and never stopped: exiting`. Issue the new token
-first:
+`port-forward`) ends when it stops. A replaced agent that is never stopped
+exits after 10 minutes with `replaced by a newer agent and never stopped:
+exiting`; Kubernetes restarts it and it takes the cluster over, so two
+replicas for one cluster swap it about every 10 minutes. Run one agent replica
+per cluster (`replicaCount: 1`, the chart default). Issue the new token first:
 
 ```bash
 kb admin agent-tokens create --cluster <cluster-name>
