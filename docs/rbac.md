@@ -16,6 +16,7 @@ identity comes from the JWT; permissions come from this file.
 
 ```yaml
 default: viewer          # optional: role for any user with no matching binding
+                         # (a bound user holds only their binding's roles)
 
 roles:
   - name: <role-name>
@@ -104,7 +105,10 @@ bindings:
 
 With this policy: `admin@corp.com` can do anything; anyone at `dev.corp.com`
 gets developer access on dev/staging; everyone else falls back to read-only
-`viewer`. The chart's default policy and `configs/rbac.yaml` give `admin` a
+`viewer`. Every user with no binding holds `default`; a bound user holds only
+their roles, so the `dev.corp.com` users above cannot read prod. List the
+default role in a binding (`roles: ["viewer", "developer"]`) if its users
+should keep it. The chart's default policy and `configs/rbac.yaml` give `admin` a
 cluster-wide `cluster-admin` binding and `viewer` a cluster-wide `view` binding,
 so a fresh install works without edits.
 
@@ -151,9 +155,10 @@ What the agent creates:
   underscores, or a ClusterRole such as `system:...`, is refused by the agent
   (`name is not a valid kubernetes name`).
 - **Subjects:** the users `kbridge:<email>` of every active kbridge user who
-  holds the role, through a binding or `default`. Patterns in `bindings` match
+  holds the role, through a binding or, when no binding matches them,
+  `default`. Patterns in `bindings` match
   users that exist in kbridge; creating, disabling or deleting a user changes
-  the binding. Users who hold the role through `default` get its
+  the binding. Unbound users, who hold the role through `default`, get its
   `clusterAccess` too, so keep the default role's `clusterAccess` narrow.
 - **Label:** `app.kubernetes.io/managed-by=kbridge`. The agent deletes labelled
   `kbridge-` bindings that policy no longer asks for, and never touches a
@@ -226,6 +231,8 @@ stays active, so a bad edit never takes down enforcement.
   `denied` — useful for spotting over-broad expectations.
 - Validation runs at load time: a binding or `default` that names an undefined
   role is rejected.
-- Keep `default` least-privilege (or omit it to deny unbound users entirely).
+- `default` applies only to users no binding matches; a bound user does not
+  inherit it. Keep it least-privilege (or omit it to deny unbound users
+  entirely).
 - A policy change reaches each cluster within one agent heartbeat (30s) plus a
   reconcile; `kb admin rbac status` shows when it has.

@@ -62,7 +62,7 @@ func TestHeartbeat_CarriesBindingsVersion(t *testing.T) {
 func TestGetDesiredBindings(t *testing.T) {
 	alice := []string{"kbridge:alice"}
 	want := []*agentpb.DesiredBinding{
-		{Name: "kbridge-viewer-view", ClusterRole: "view", Users: []string{"kbridge:alice", "kbridge:bob"}},
+		{Name: "kbridge-viewer-view", ClusterRole: "view", Users: []string{"kbridge:bob"}},
 		{Name: "kbridge-developer-edit", Namespace: "dev", ClusterRole: "edit", Users: alice},
 		{Name: "kbridge-developer-view", Namespace: "prod", ClusterRole: "view", Users: alice},
 		{Name: "kbridge-developer-edit", Namespace: "staging", ClusterRole: "edit", Users: alice},
