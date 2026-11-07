@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"os"
@@ -16,6 +17,14 @@ import (
 
 // DefaultPollInterval is how often the agent polls for pending commands.
 const DefaultPollInterval = 2 * time.Second
+
+// initialHeartbeatInterval is the wait before the first heartbeat; each
+// heartbeat reply then sets the interval. A var so tests need not wait 30s.
+var initialHeartbeatInterval = 30 * time.Second
+
+// errRegistrationRejected marks a registration the control plane refused (e.g.
+// a revoked token), as opposed to one that never reached it.
+var errRegistrationRejected = errors.New("registration rejected")
 
 // Agent represents the kbridge agent that connects to control plane.
 type Agent struct {
@@ -67,6 +76,10 @@ func (a *Agent) Run(ctx context.Context) error {
 	// liveness initialDelaySeconds window doesn't race a slow first heartbeat.
 	a.touchHealthFile()
 
+	// A refused re-registration cancels ctx so the loops below stop.
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
 	// Start command polling loop in goroutine
 	pollDone := make(chan struct{})
 	go func() {
@@ -80,12 +93,18 @@ func (a *Agent) Run(ctx context.Context) error {
 	stopSync := a.startSync(ctx)
 
 	// Run heartbeat loop (blocks until stopped)
-	a.runHeartbeatLoop(ctx)
+	hbErr := a.runHeartbeatLoop(ctx)
+	if hbErr != nil {
+		cancel()
+	}
 	stopSync()
 
 	// Let an in-flight command report its result before the connection closes,
 	// so its caller gets an answer instead of waiting for the command timeout.
 	<-pollDone
+	if hbErr != nil {
+		return fmt.Errorf("registering with control plane: %w", hbErr)
+	}
 	return nil
 }
 
@@ -233,7 +252,7 @@ func (a *Agent) register(ctx context.Context) error {
 	}
 
 	if !resp.Success {
-		return fmt.Errorf("registration rejected: %s", resp.ErrorMessage)
+		return fmt.Errorf("%w: %s", errRegistrationRejected, resp.ErrorMessage)
 	}
 
 	a.mu.Lock()
@@ -248,9 +267,10 @@ func (a *Agent) register(ctx context.Context) error {
 	return nil
 }
 
-func (a *Agent) runHeartbeatLoop(ctx context.Context) {
-	// Default to 30 second interval, will be updated from server response
-	interval := 30 * time.Second
+// runHeartbeatLoop sends heartbeats until stopped. It returns an error only
+// when the control plane refused re-registration.
+func (a *Agent) runHeartbeatLoop(ctx context.Context) error {
+	interval := initialHeartbeatInterval
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 
@@ -259,10 +279,8 @@ func (a *Agent) runHeartbeatLoop(ctx context.Context) {
 		case <-ticker.C:
 			nextInterval, err := a.sendHeartbeat(ctx)
 			if err != nil {
-				log.Printf("Heartbeat failed: %v", err)
-				// Try to reconnect on heartbeat failure
-				if reconnectErr := a.reconnect(ctx); reconnectErr != nil {
-					log.Printf("Reconnect failed: %v", reconnectErr)
+				if err := a.recoverHeartbeat(ctx, err); err != nil {
+					return err
 				}
 				continue
 			}
@@ -276,13 +294,29 @@ func (a *Agent) runHeartbeatLoop(ctx context.Context) {
 
 		case <-a.stopCh:
 			log.Printf("Heartbeat loop stopping")
-			return
+			return nil
 
 		case <-ctx.Done():
 			log.Printf("Context cancelled, stopping heartbeat loop")
-			return
+			return nil
 		}
 	}
+}
+
+// recoverHeartbeat reconnects after a failed heartbeat. It returns the error
+// only for a refused registration: every retry would be refused too, so the
+// agent exits instead of waiting for the liveness probe to restart it.
+func (a *Agent) recoverHeartbeat(ctx context.Context, hbErr error) error {
+	log.Printf("Heartbeat failed: %v", hbErr)
+	err := a.reconnect(ctx)
+	if errors.Is(err, errRegistrationRejected) {
+		log.Printf("%v; exiting", err)
+		return err
+	}
+	if err != nil {
+		log.Printf("Reconnect failed: %v", err)
+	}
+	return nil
 }
 
 func (a *Agent) sendHeartbeat(ctx context.Context) (time.Duration, error) {
@@ -358,8 +392,11 @@ func (a *Agent) reconnect(ctx context.Context) error {
 
 		// Re-register after successful connection
 		if err := a.register(ctx); err != nil {
-			log.Printf("Re-registration failed: %v", err)
 			a.disconnect()
+			if errors.Is(err, errRegistrationRejected) {
+				return err
+			}
+			log.Printf("Re-registration failed: %v", err)
 			time.Sleep(backoff)
 			continue
 		}

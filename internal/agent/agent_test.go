@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"encoding/pem"
+	"errors"
 	"net"
 	"os"
 	"path/filepath"
@@ -24,6 +25,10 @@ type mockAgentService struct {
 	heartbeatCalled  int
 	rejectRegister   bool
 	rejectHeartbeat  bool
+	// rejectAfter / unavailableAfter, when set, refuse every registration
+	// after that many with a rejection / a transport error.
+	rejectAfter      int
+	unavailableAfter int
 	lastClusterName  string
 	lastAgentToken   string
 	lastCapabilities []string
@@ -35,7 +40,10 @@ func (m *mockAgentService) Register(ctx context.Context, req *agentpb.RegisterRe
 	m.lastAgentToken = req.GetAgentToken()
 	m.lastCapabilities = req.GetCapabilities()
 
-	if m.rejectRegister {
+	if m.unavailableAfter > 0 && m.registerCalled > m.unavailableAfter {
+		return nil, status.Error(codes.Unavailable, "control plane unavailable")
+	}
+	if m.rejectRegister || (m.rejectAfter > 0 && m.registerCalled > m.rejectAfter) {
 		return &agentpb.RegisterResponse{
 			Success:      false,
 			ErrorMessage: "rejected",
@@ -497,5 +505,44 @@ func TestRun_TriggersSyncAfterRegister(t *testing.T) {
 	case <-a.sync.kick:
 	default:
 		t.Error("register did not trigger a sync")
+	}
+}
+
+// A control plane that refuses re-registration (e.g. the token was revoked)
+// will refuse every retry, so the agent exits; an unreachable one is retried.
+func TestAgent_Run_ReRegistration(t *testing.T) {
+	tests := []struct {
+		name       string
+		mock       *mockAgentService
+		wantReturn bool
+	}{
+		{"rejection exits", &mockAgentService{rejectHeartbeat: true, rejectAfter: 1}, true},
+		{"transport error keeps retrying", &mockAgentService{rejectHeartbeat: true, unavailableAfter: 1}, false},
+	}
+	defer func(d time.Duration) { initialHeartbeatInterval = d }(initialHeartbeatInterval)
+	initialHeartbeatInterval = 50 * time.Millisecond
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			addr, cleanup := startMockServer(t, tt.mock)
+			defer cleanup()
+			a := New(&Config{
+				ControlPlane: ControlPlaneConfig{URL: addr, Token: "token"},
+				Cluster:      ClusterConfig{Name: "test"},
+				Kubernetes:   kubeFixture(t),
+			})
+			errCh := make(chan error, 1)
+			go func() { errCh <- a.Run(context.Background()) }()
+			select {
+			case err := <-errCh:
+				if !tt.wantReturn || !errors.Is(err, errRegistrationRejected) || !strings.Contains(err.Error(), "rejected") {
+					t.Fatalf("Run returned %v, want it to exit only on a rejection", err)
+				}
+			case <-time.After(1500 * time.Millisecond):
+				if tt.wantReturn {
+					t.Fatal("Run kept going after registration was rejected")
+				}
+				a.Stop()
+			}
+		})
 	}
 }
