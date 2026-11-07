@@ -12,11 +12,22 @@ import (
 	"github.com/why-xn/kbridge/api/proto/agentpb"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/keepalive"
 	"google.golang.org/grpc/status"
 )
 
 // DefaultHeartbeatInterval is the default interval between heartbeats in seconds.
 const DefaultHeartbeatInterval = 30
+
+// agentKeepalive makes a vanished agent's stream end within about 10s. A pod
+// that dies has its TCP connection closed by the kernel, but a node that
+// disappears closes nothing, and without pings the stream would only be
+// noticed dead at the 60s heartbeat timeout. MinTime matches Time so agent
+// pings at that rate are not rejected as abuse.
+var agentKeepalive = []grpc.ServerOption{
+	grpc.KeepaliveParams(keepalive.ServerParameters{Time: 5 * time.Second, Timeout: 5 * time.Second}),
+	grpc.KeepaliveEnforcementPolicy(keepalive.EnforcementPolicy{MinTime: 5 * time.Second, PermitWithoutStream: true}),
+}
 
 // GRPCServer handles gRPC requests from agents.
 type GRPCServer struct {
@@ -240,7 +251,7 @@ func (s *GRPCServer) OpenStream(stream agentpb.AgentService_OpenStreamServer) er
 	}
 
 	s.sessions.RegisterAgentStream(reg.GetAgentId(), stream)
-	defer s.sessions.UnregisterAgentStream(reg.GetAgentId())
+	defer s.streamClosed(reg.GetAgentId(), stream)
 	log.Printf("Agent stream opened: id=%s", reg.GetAgentId())
 
 	for {
@@ -249,6 +260,15 @@ func (s *GRPCServer) OpenStream(stream agentpb.AgentService_OpenStreamServer) er
 			return err
 		}
 		s.sessions.Route(msg)
+	}
+}
+
+// streamClosed unregisters an agent's stream and, if it was still the agent's
+// current one, marks the agent disconnected: a dead agent's stream ends long
+// before its heartbeat times out.
+func (s *GRPCServer) streamClosed(agentID string, stream streamSender) {
+	if s.sessions.UnregisterAgentStream(agentID, stream) && s.agents.MarkAgentDisconnected(agentID) {
+		log.Printf("Agent stream closed: id=%s marked disconnected", agentID)
 	}
 }
 

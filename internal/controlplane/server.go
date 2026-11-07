@@ -99,7 +99,7 @@ func NewServer(cfg *Config) (*Server, error) {
 		dbStore.Close()
 		return nil, fmt.Errorf("configuring grpc tls: %w", err)
 	}
-	grpcSrv := grpc.NewServer(grpcOpts...)
+	grpcSrv := grpc.NewServer(append(grpcOpts, agentKeepalive...)...)
 	grpcHandler.RegisterWithServer(grpcSrv)
 
 	var httpHandlerFunc http.Handler = httpHandler.Handler()

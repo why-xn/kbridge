@@ -61,7 +61,9 @@ curl -X POST https://control-plane:8080/api/v1/admin/agent-tokens \
 **Revocation is immediate.** Revoking a token disconnects every agent using it
 at once: its queued commands fail with `agent is disconnected`, `kb clusters
 list` shows the cluster `disconnected`, and the agent cannot register again, so
-its pod stops (CrashLoopBackOff) until it is given a new token.
+its pod stops (CrashLoopBackOff) until it is given a new token. A dead agent
+shows `disconnected` within seconds too; see
+[operations](operations.md#agent).
 
 **Rotation:** issue a new token, update the agent, then revoke the old one. In
 that order nothing is cut off: the agent already runs on the new token.

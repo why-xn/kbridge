@@ -114,22 +114,27 @@ func (m *SessionManager) RegisterAgentStream(agentID string, s streamSender) {
 	m.agents[agentID] = &agentConn{sender: s, sessions: make(map[string]*Session)}
 }
 
-// UnregisterAgentStream drops an agent and closes all of its sessions.
-func (m *SessionManager) UnregisterAgentStream(agentID string) {
+// UnregisterAgentStream drops an agent's stream s and closes all of its
+// sessions. It does nothing and returns false when the agent has since opened
+// another stream, so an old handler exiting cannot cut off the new one.
+func (m *SessionManager) UnregisterAgentStream(agentID string, s streamSender) bool {
 	m.mu.Lock()
 	conn := m.agents[agentID]
+	if conn == nil || conn.sender != s {
+		m.mu.Unlock()
+		return false
+	}
 	delete(m.agents, agentID)
 	var dead []*Session
-	if conn != nil {
-		for id, sess := range conn.sessions {
-			dead = append(dead, sess)
-			delete(m.sessions, id)
-		}
+	for id, sess := range conn.sessions {
+		dead = append(dead, sess)
+		delete(m.sessions, id)
 	}
 	m.mu.Unlock()
 	for _, sess := range dead {
 		sess.close(-1, "agent disconnected")
 	}
+	return true
 }
 
 // Start opens a non-interactive session (logs -f / get -w).

@@ -266,6 +266,14 @@ livenessProbe:
 If the agent stops sending heartbeats (e.g., the gRPC stream to the control plane drops),
 the file goes stale and Kubernetes will restart the pod.
 
+The control plane notices a dead agent within seconds, without waiting for
+heartbeats: when the agent's gRPC stream closes, `kb clusters list` shows the
+cluster `disconnected` and its queued commands fail with `agent is
+disconnected`. If the agent's process died the stream closes at once; if its
+node vanished, keepalive pings (every 5 s, 5 s to answer) close it within
+about 10 s. An agent that is still alive reconnects and its next heartbeat
+shows it `connected` again.
+
 View agent logs:
 
 ```bash

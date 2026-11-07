@@ -111,11 +111,39 @@ func TestSessionManager_CancelSendsCancel(t *testing.T) {
 
 func TestSessionManager_AgentDisconnectClosesSessions(t *testing.T) {
 	m := NewSessionManager(10)
-	m.RegisterAgentStream("a", &fakeSender{})
+	snd := &fakeSender{}
+	m.RegisterAgentStream("a", snd)
 	sess, _ := m.Start("a", "", []string{"logs"}, "")
-	m.UnregisterAgentStream("a")
+	m.UnregisterAgentStream("a", snd)
 	if _, ok := <-sess.Output; ok {
 		t.Error("expected output channel closed after disconnect")
+	}
+}
+
+// An agent that reopened its stream keeps it when the old handler exits.
+func TestSessionManager_UnregisterOnlyCurrentStream(t *testing.T) {
+	old, current := &fakeSender{}, &fakeSender{}
+	tests := []struct {
+		name       string
+		unregister streamSender
+		want       bool
+	}{
+		{"current stream is removed", current, true},
+		{"stale stream leaves the current one", old, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			m := NewSessionManager(10)
+			m.RegisterAgentStream("a", old)
+			m.RegisterAgentStream("a", current)
+			if got := m.UnregisterAgentStream("a", tt.unregister); got != tt.want {
+				t.Fatalf("UnregisterAgentStream = %v, want %v", got, tt.want)
+			}
+			_, err := m.Start("a", "", []string{"logs"}, "")
+			if (err == nil) == tt.want {
+				t.Fatalf("start after unregister: err=%v, want stream kept=%v", err, !tt.want)
+			}
+		})
 	}
 }
 

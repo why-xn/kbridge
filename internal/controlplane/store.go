@@ -162,6 +162,23 @@ func (s *AgentStore) MarkDisconnected() {
 	s.notifyDisconnected(dropped)
 }
 
+// MarkAgentDisconnected marks one connected agent disconnected now, without
+// waiting for DisconnectTimeout, and reports whether it did. A later
+// heartbeat marks it connected again.
+func (s *AgentStore) MarkAgentDisconnected(agentID string) bool {
+	s.mu.Lock()
+	agent, ok := s.agents[agentID]
+	ok = ok && agent.Status == AgentStatusConnected
+	if ok {
+		agent.Status = AgentStatusDisconnected
+	}
+	s.mu.Unlock()
+	if ok {
+		s.notifyDisconnected([]*AgentInfo{agent})
+	}
+	return ok
+}
+
 // DropByToken removes every agent registered with the given agent token and
 // returns their ids. Their next call gets NotFound, so they re-register and
 // are refused if the token is revoked.
