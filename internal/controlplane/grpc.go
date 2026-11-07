@@ -107,11 +107,34 @@ func (s *GRPCServer) Register(ctx context.Context, req *agentpb.RegisterRequest)
 		failed := s.cmdQueue.FailForAgent(old, "agent shut down while the command was running; retry it")
 		log.Printf("Agent %s replaces previous agent %s for cluster=%s (%d queued command(s) moved, %d running failed)", agentID, old, cluster.Name, moved, failed)
 	}
+	if err := s.recheckToken(ctx, req.GetAgentToken(), tokenID); err != nil {
+		return &agentpb.RegisterResponse{Success: false, ErrorMessage: registrationErrorMessage(err)}, nil
+	}
 
 	return &agentpb.RegisterResponse{
 		Success: true,
 		AgentId: agentID,
 	}, nil
+}
+
+// recheckToken re-reads the token once the agent is tracked and drops the agent
+// if it is no longer valid. A revoke writes the DB before dropping agents, so
+// a revoke racing this Register is seen either by its drop or by this check.
+func (s *GRPCServer) recheckToken(ctx context.Context, plaintext, tokenID string) error {
+	tok, err := s.authn.store.GetAgentTokenByHash(ctx, hashAgentToken(s.authn.pepper, plaintext))
+	switch {
+	case err != nil:
+		err = fmt.Errorf("re-reading agent token: %w", err)
+	case tok == nil:
+		err = ErrInvalidAgentToken
+	case tok.IsRevoked:
+		err = ErrRevokedAgentToken
+	default:
+		return nil
+	}
+	s.agents.DropByToken(tokenID)
+	log.Printf("Agent registration for token %s refused after insert: %v", tokenID, err)
+	return err
 }
 
 // markClusterConnected updates the persisted cluster record to reflect a freshly

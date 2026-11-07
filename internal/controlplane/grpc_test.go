@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -112,6 +113,46 @@ func TestGRPCServer_Register_RevokedToken(t *testing.T) {
 	}
 	if resp.ErrorMessage != "agent token revoked" {
 		t.Errorf("want 'agent token revoked', got %q", resp.ErrorMessage)
+	}
+}
+
+// revokeDuringRegister revokes the agent token the way HandleRevokeAgentToken
+// does (DB first, then drop) when Register persists the cluster: after
+// Authenticate passed and before the agent is tracked.
+type revokeDuringRegister struct {
+	*SQLiteStore
+	agents *AgentStore
+	hash   string
+}
+
+func (r *revokeDuringRegister) UpdateCluster(ctx context.Context, c *Cluster) error {
+	tok, err := r.GetAgentTokenByHash(ctx, r.hash)
+	if err != nil || tok == nil {
+		return fmt.Errorf("finding token: %v", err)
+	}
+	if err := r.RevokeAgentToken(ctx, tok.ID); err != nil {
+		return err
+	}
+	r.agents.DropByToken(tok.ID)
+	return r.SQLiteStore.UpdateCluster(ctx, c)
+}
+
+func TestGRPCServer_Register_RevokedDuringRegister(t *testing.T) {
+	db := newTestStore(t)
+	seedClusterToken(t, db, testClusterName, testAgentToken, nil)
+	agents := NewAgentStore()
+	hook := &revokeDuringRegister{SQLiteStore: db, agents: agents, hash: hashAgentToken(testPepper, testAgentToken)}
+	srv := NewGRPCServer(agents, NewCommandQueue(), NewAgentAuthenticator(hook, testPepper), NewSessionManager(10))
+
+	resp, err := srv.Register(context.Background(), &agentpb.RegisterRequest{AgentToken: testAgentToken, ClusterName: testClusterName})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if resp.Success || resp.ErrorMessage != "agent token revoked" {
+		t.Fatalf("resp = %+v, want refused with 'agent token revoked'", resp)
+	}
+	if _, ok := agents.GetByClusterName(testClusterName); ok {
+		t.Fatal("agent registered with a token revoked during registration")
 	}
 }
 
