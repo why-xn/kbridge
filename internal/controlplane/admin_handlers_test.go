@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"testing"
 	"time"
 
@@ -486,6 +487,38 @@ func assertRevokedAgentCutOff(t *testing.T, srv *GRPCServer, agentID string, reg
 	resp, _ := srv.Register(context.Background(), reg)
 	if resp.Success || resp.ErrorMessage != "agent token revoked" {
 		t.Fatalf("re-register = %+v, want refused as revoked", resp)
+	}
+}
+
+// Right after a control plane restart no agent has registered yet; the list
+// still shows every known cluster, as disconnected, sorted by name.
+func TestHTTPServer_ListClusters_IncludesPersisted(t *testing.T) {
+	db := newTestStore(t)
+	ctx := context.Background()
+	// The persisted status is stale after a restart and must not be trusted.
+	for _, name := range []string{"prod", "dev"} {
+		if err := db.CreateCluster(ctx, &Cluster{Name: name, Status: AgentStatusConnected}); err != nil {
+			t.Fatalf("seed cluster: %v", err)
+		}
+	}
+	agents := NewAgentStore()
+	agents.Register(&AgentInfo{ID: "a1", ClusterName: "stage"})
+	agents.Register(&AgentInfo{ID: "a2", ClusterName: "dev"})
+	srv := NewHTTPServer(agents, NewCommandQueue(), nil, NewAdminHandlers(db, testPepper, agents), nil, nil, nil, nil)
+
+	w := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/api/v1/clusters", nil))
+	var out struct {
+		Clusters []ClusterResponse `json:"clusters"`
+	}
+	json.Unmarshal(w.Body.Bytes(), &out)
+	want := []ClusterResponse{
+		{Name: "dev", Status: AgentStatusConnected},
+		{Name: "prod", Status: AgentStatusDisconnected},
+		{Name: "stage", Status: AgentStatusConnected},
+	}
+	if !slices.Equal(out.Clusters, want) {
+		t.Fatalf("clusters = %+v, want %+v", out.Clusters, want)
 	}
 }
 

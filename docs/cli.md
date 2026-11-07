@@ -27,7 +27,9 @@ Invalidates the refresh token on the server and clears the local token.
 ## Clusters
 
 ### `kb clusters list` (alias `ls`)
-Lists clusters registered with the control plane and their status.
+Lists every cluster the control plane knows, sorted by name, and its status.
+A cluster with no agent registered (for example right after a control plane
+restart, until its agent reconnects) shows `disconnected`.
 
 ```bash
 kb clusters list

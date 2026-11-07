@@ -154,24 +154,44 @@ func (s *HTTPServer) handleHealth(c *gin.Context) {
 	})
 }
 
-// handleListClusters returns a list of registered clusters.
+// handleListClusters returns every known cluster, sorted by name.
 func (s *HTTPServer) handleListClusters(c *gin.Context) {
-	agents := s.agentStore.List()
+	statuses, err := s.clusterStatuses(c.Request.Context())
+	if err != nil {
+		log.Printf("listing clusters: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
+		return
+	}
+	clusters := make([]ClusterResponse, 0, len(statuses))
+	for name, status := range statuses {
+		clusters = append(clusters, ClusterResponse{Name: name, Status: status})
+	}
+	slices.SortFunc(clusters, func(a, b ClusterResponse) int { return strings.Compare(a.Name, b.Name) })
+	c.JSON(http.StatusOK, gin.H{"clusters": clusters})
+}
 
-	clusters := make([]ClusterResponse, 0, len(agents))
-	for _, agent := range agents {
-		clusters = append(clusters, ClusterResponse{
-			Name:   agent.ClusterName,
-			Status: agent.Status,
-		})
+// clusterStatuses maps each known cluster to its status. A persisted cluster
+// (after a control plane restart, all of them until their agents register
+// again) or a revoked one is disconnected unless an agent is registered for
+// it; the persisted status is not used, it is stale after a restart.
+func (s *HTTPServer) clusterStatuses(ctx context.Context) (map[string]string, error) {
+	statuses := make(map[string]string)
+	if s.adminHandlers != nil {
+		persisted, err := s.adminHandlers.store.ListClusters(ctx)
+		if err != nil {
+			return nil, err
+		}
+		for _, cl := range persisted {
+			statuses[cl.Name] = AgentStatusDisconnected
+		}
 	}
 	for _, name := range s.agentStore.RevokedClusters() {
-		clusters = append(clusters, ClusterResponse{Name: name, Status: AgentStatusDisconnected})
+		statuses[name] = AgentStatusDisconnected
 	}
-
-	c.JSON(http.StatusOK, gin.H{
-		"clusters": clusters,
-	})
+	for _, agent := range s.agentStore.List() {
+		statuses[agent.ClusterName] = agent.Status
+	}
+	return statuses, nil
 }
 
 // connectedAgent returns the cluster's agent if it is connected, or answers
