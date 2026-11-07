@@ -121,9 +121,13 @@ func TestHTTPServer_ListClusters_WithAgents(t *testing.T) {
 	}
 }
 
+// getPodsBody is a valid exec body: the body is parsed before the cluster is
+// looked up, so a disconnected cluster's refusal can audit the command.
+var getPodsBody = []byte(`{"command":["get","pods"]}`)
+
 func TestHTTPServer_ExecCommand_ClusterNotFound(t *testing.T) {
 	srv, _, _ := newTestHTTPServer()
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/clusters/nonexistent/exec", nil)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/clusters/nonexistent/exec", bytes.NewReader(getPodsBody))
 	rec := httptest.NewRecorder()
 
 	srv.Handler().ServeHTTP(rec, req)
@@ -149,7 +153,7 @@ func TestHTTPServer_ExecCommand_RevokedCluster(t *testing.T) {
 	store.Register(&AgentInfo{ID: "agent-1", ClusterName: "test-cluster", TokenID: "tok-1"})
 	store.DropByToken("tok-1")
 
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/clusters/test-cluster/exec", nil)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/clusters/test-cluster/exec", bytes.NewReader(getPodsBody))
 	rec := httptest.NewRecorder()
 	srv.Handler().ServeHTTP(rec, req)
 
@@ -173,7 +177,7 @@ func TestHTTPServer_ExecCommand_AgentDisconnected(t *testing.T) {
 	store.agents["agent-1"].Status = AgentStatusDisconnected
 	store.mu.Unlock()
 
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/clusters/test-cluster/exec", nil)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/clusters/test-cluster/exec", bytes.NewReader(getPodsBody))
 	rec := httptest.NewRecorder()
 
 	srv.Handler().ServeHTTP(rec, req)

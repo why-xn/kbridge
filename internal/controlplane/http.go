@@ -176,14 +176,16 @@ func (s *HTTPServer) handleListClusters(c *gin.Context) {
 
 // connectedAgent returns the cluster's agent if it is connected, or answers
 // 404 or 503. A cluster whose agent was dropped by token revocation is
-// disconnected, as the clusters list shows it, not unknown.
-func (s *HTTPServer) connectedAgent(c *gin.Context, clusterName string) (*AgentInfo, bool) {
+// disconnected, as the clusters list shows it, not unknown. A 503 is audited
+// as a failed attempt of req, so every command attempt is recorded.
+func (s *HTTPServer) connectedAgent(c *gin.Context, clusterName string, req ExecRequest) (*AgentInfo, bool) {
 	agent, exists := s.agentStore.GetByClusterName(clusterName)
 	if !exists && !slices.Contains(s.agentStore.RevokedClusters(), clusterName) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "cluster not found"})
 		return nil, false
 	}
 	if !exists || agent.Status != AgentStatusConnected {
+		s.recordExecAudit(c, clusterName, req, AuditStatusFailed, nil, nil, "agent is disconnected")
 		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "cluster agent is disconnected"})
 		return nil, false
 	}
@@ -193,11 +195,6 @@ func (s *HTTPServer) connectedAgent(c *gin.Context, clusterName string) (*AgentI
 // handleExecCommand executes a kubectl command on a cluster.
 func (s *HTTPServer) handleExecCommand(c *gin.Context) {
 	clusterName := c.Param("name")
-
-	agent, ok := s.connectedAgent(c, clusterName)
-	if !ok {
-		return
-	}
 
 	// Parse request body
 	var req ExecRequest
@@ -213,6 +210,11 @@ func (s *HTTPServer) handleExecCommand(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"error": "command is required",
 		})
+		return
+	}
+
+	agent, ok := s.connectedAgent(c, clusterName, req)
+	if !ok {
 		return
 	}
 
@@ -375,11 +377,6 @@ func (s *HTTPServer) recordExecResult(c *gin.Context, cluster string, req ExecRe
 // to the client over a chunked HTTP response.
 func (s *HTTPServer) handleStreamCommand(c *gin.Context) {
 	clusterName := c.Param("name")
-	agent, ok := s.connectedAgent(c, clusterName)
-	if !ok {
-		return
-	}
-
 	var req ExecRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request: " + err.Error()})
@@ -387,6 +384,10 @@ func (s *HTTPServer) handleStreamCommand(c *gin.Context) {
 	}
 	if len(req.Command) == 0 {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "command is required"})
+		return
+	}
+	agent, ok := s.connectedAgent(c, clusterName, req)
+	if !ok {
 		return
 	}
 	if !requireImpersonation(c, agent) || !s.authorizeExec(c, clusterName, &req) {

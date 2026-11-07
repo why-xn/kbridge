@@ -98,11 +98,6 @@ func buildExecArgs(pod, container string, command []string, tty bool) []string {
 // bidirectional stream.
 func (s *HTTPServer) handleExecAttach(c *gin.Context) {
 	clusterName := c.Param("name")
-	agent, ok := s.connectedAgent(c, clusterName)
-	if !ok {
-		return
-	}
-
 	pod := c.Query("pod")
 	if pod == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "pod is required"})
@@ -121,6 +116,10 @@ func (s *HTTPServer) handleExecAttach(c *gin.Context) {
 
 	args := buildExecArgs(pod, container, command, tty)
 	req := ExecRequest{Command: args, Namespace: namespace}
+	agent, ok := s.connectedAgent(c, clusterName, req)
+	if !ok {
+		return
+	}
 	if !requireImpersonation(c, agent) || !s.authorizeExec(c, clusterName, &req) {
 		return // 503/403 + denied audit already written
 	}

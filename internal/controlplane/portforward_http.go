@@ -75,11 +75,6 @@ func runPortForwardBridge(ctx context.Context, upstream io.Reader, downstream io
 // handlePortForward runs `kubectl port-forward` over an HTTP/2 bidi stream.
 func (s *HTTPServer) handlePortForward(c *gin.Context) {
 	clusterName := c.Param("name")
-	agent, ok := s.connectedAgent(c, clusterName)
-	if !ok {
-		return
-	}
-
 	pod := c.Query("pod")
 	if pod == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "pod is required"})
@@ -101,6 +96,10 @@ func (s *HTTPServer) handlePortForward(c *gin.Context) {
 	}
 
 	req := ExecRequest{Command: []string{"port-forward", pod}, Namespace: namespace}
+	agent, ok := s.connectedAgent(c, clusterName, req)
+	if !ok {
+		return
+	}
 	if !requireImpersonation(c, agent) || !s.authorizeExec(c, clusterName, &req) {
 		return
 	}
