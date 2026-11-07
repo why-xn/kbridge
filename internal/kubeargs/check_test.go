@@ -47,6 +47,7 @@ func TestCheck(t *testing.T) {
 		{"create configmap x --from-file=/var/run/kbridge/sa/token", sprintf(fileMsg, "--from-file")},
 		{"create secret tls x --cert=/a --key=/b", sprintf(fileMsg, "--cert")},
 		{"get pods -o go-template-file=/t", sprintf(outMsg, "-o", "go-template-file", "go-template")},
+		{"get pods -o=go-template-file=/t", sprintf(outMsg, "-o", "go-template-file", "go-template")},
 		{"get pods -ojsonpath-file=/t", sprintf(outMsg, "-o", "jsonpath-file", "jsonpath")},
 		{"get pods --output=custom-columns-file=/t", sprintf(outMsg, "--output", "custom-columns-file", "custom-columns")},
 		{"patch deploy x --patch-file /p", sprintf(fileMsg, "--patch-file")},

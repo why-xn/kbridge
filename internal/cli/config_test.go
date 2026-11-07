@@ -20,8 +20,11 @@ func TestSaveConfigPermissions(t *testing.T) {
 	}
 	for path, want := range map[string]os.FileMode{configDir(): 0700, configFile(): 0600} {
 		fi, err := os.Stat(path)
-		if err != nil || fi.Mode().Perm() != want {
-			t.Errorf("%s mode = %v (err %v), want %v", path, fi.Mode().Perm(), err, want)
+		if err != nil {
+			t.Fatalf("stat %s: %v", path, err)
+		}
+		if fi.Mode().Perm() != want {
+			t.Errorf("%s mode = %v, want %v", path, fi.Mode().Perm(), want)
 		}
 	}
 }

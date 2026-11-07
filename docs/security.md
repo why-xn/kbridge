@@ -297,10 +297,11 @@ cluster owner can lower the ceiling, for example to `[view, edit]` with
 The agent's ServiceAccount gets `bind` on those ClusterRoles only, write
 access to RoleBindings (cluster-wide, or in the listed namespaces), write
 access to ClusterRoleBindings only with `clusterWide`, and list and watch on
-both kinds everywhere. Kubernetes enforces this: a policy that asks for a
-ClusterRole outside the ceiling gets a `403` for that binding, which
-`kb admin rbac status` reports as `clusterRole <name> is outside this
-cluster's accessCeiling`, and the other bindings still apply. The agent, not Kubernetes, refuses the release
+both kinds everywhere. Kubernetes enforces this: a policy that asks for more
+than the ceiling allows gets a `403` for that binding, and the other bindings
+still apply. A ClusterRole outside the ceiling is reported by
+`kb admin rbac status` as `clusterRole <name> is outside this cluster's
+accessCeiling`. The agent, not Kubernetes, refuses the release
 namespace and `protectedNamespaces`, bindings not named `kbridge-`, and
 subjects that are not `kbridge:` users. The chart refuses to render with an
 empty `clusterRoles` or with the release namespace in `namespaces`.

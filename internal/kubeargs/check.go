@@ -52,7 +52,7 @@ func fileErr(flag string) error {
 
 // outputFileErr refuses -o <kind>-file=... with the inline form that would work.
 func outputFileErr(flag, val string) error {
-	kind, _, _ := strings.Cut(val, "=")
+	kind, _, _ := strings.Cut(strings.TrimPrefix(val, "="), "=")
 	return fmt.Errorf("flag %s %s is not allowed: the agent does not read local files; write the template inline with -o %s='...'", flag, kind, strings.TrimSuffix(kind, "-file"))
 }
 
