@@ -142,6 +142,24 @@ func TestHTTPServer_ExecCommand_ClusterNotFound(t *testing.T) {
 	}
 }
 
+// A cluster whose agent was dropped by token revocation reads disconnected,
+// as `kb clusters list` shows it, not unknown.
+func TestHTTPServer_ExecCommand_RevokedCluster(t *testing.T) {
+	srv, store, _ := newTestHTTPServer()
+	store.Register(&AgentInfo{ID: "agent-1", ClusterName: "test-cluster", TokenID: "tok-1"})
+	store.DropByToken("tok-1")
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/clusters/test-cluster/exec", nil)
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+
+	var resp map[string]string
+	_ = json.Unmarshal(rec.Body.Bytes(), &resp)
+	if rec.Code != http.StatusServiceUnavailable || resp["error"] != "cluster agent is disconnected" {
+		t.Fatalf("got %d %q, want 503 'cluster agent is disconnected'", rec.Code, resp["error"])
+	}
+}
+
 func TestHTTPServer_ExecCommand_AgentDisconnected(t *testing.T) {
 	srv, store, _ := newTestHTTPServer()
 

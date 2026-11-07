@@ -5,6 +5,7 @@ import (
 	"log"
 	"log/slog"
 	"net/http"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -173,23 +174,28 @@ func (s *HTTPServer) handleListClusters(c *gin.Context) {
 	})
 }
 
+// connectedAgent returns the cluster's agent if it is connected, or answers
+// 404 or 503. A cluster whose agent was dropped by token revocation is
+// disconnected, as the clusters list shows it, not unknown.
+func (s *HTTPServer) connectedAgent(c *gin.Context, clusterName string) (*AgentInfo, bool) {
+	agent, exists := s.agentStore.GetByClusterName(clusterName)
+	if !exists && !slices.Contains(s.agentStore.RevokedClusters(), clusterName) {
+		c.JSON(http.StatusNotFound, gin.H{"error": "cluster not found"})
+		return nil, false
+	}
+	if !exists || agent.Status != AgentStatusConnected {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "cluster agent is disconnected"})
+		return nil, false
+	}
+	return agent, true
+}
+
 // handleExecCommand executes a kubectl command on a cluster.
 func (s *HTTPServer) handleExecCommand(c *gin.Context) {
 	clusterName := c.Param("name")
 
-	// Check if agent exists and is connected
-	agent, exists := s.agentStore.GetByClusterName(clusterName)
-	if !exists {
-		c.JSON(http.StatusNotFound, gin.H{
-			"error": "cluster not found",
-		})
-		return
-	}
-
-	if agent.Status != AgentStatusConnected {
-		c.JSON(http.StatusServiceUnavailable, gin.H{
-			"error": "cluster agent is disconnected",
-		})
+	agent, ok := s.connectedAgent(c, clusterName)
+	if !ok {
 		return
 	}
 
@@ -369,13 +375,8 @@ func (s *HTTPServer) recordExecResult(c *gin.Context, cluster string, req ExecRe
 // to the client over a chunked HTTP response.
 func (s *HTTPServer) handleStreamCommand(c *gin.Context) {
 	clusterName := c.Param("name")
-	agent, exists := s.agentStore.GetByClusterName(clusterName)
-	if !exists {
-		c.JSON(http.StatusNotFound, gin.H{"error": "cluster not found"})
-		return
-	}
-	if agent.Status != AgentStatusConnected {
-		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "cluster agent is disconnected"})
+	agent, ok := s.connectedAgent(c, clusterName)
+	if !ok {
 		return
 	}
 

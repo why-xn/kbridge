@@ -75,13 +75,8 @@ func runPortForwardBridge(ctx context.Context, upstream io.Reader, downstream io
 // handlePortForward runs `kubectl port-forward` over an HTTP/2 bidi stream.
 func (s *HTTPServer) handlePortForward(c *gin.Context) {
 	clusterName := c.Param("name")
-	agent, exists := s.agentStore.GetByClusterName(clusterName)
-	if !exists {
-		c.JSON(http.StatusNotFound, gin.H{"error": "cluster not found"})
-		return
-	}
-	if agent.Status != AgentStatusConnected {
-		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "cluster agent is disconnected"})
+	agent, ok := s.connectedAgent(c, clusterName)
+	if !ok {
 		return
 	}
 
