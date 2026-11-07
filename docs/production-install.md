@@ -44,7 +44,7 @@ kubectl -n kbridge create secret generic kbridge-control-plane-secrets \
 
 ```bash
 helm install kbridge-control-plane oci://ghcr.io/why-xn/charts/kbridge-control-plane \
-  -n kbridge --version 0.2.2-alpha.1 \
+  -n kbridge --version 0.3.0-alpha.1 \
   --set auth.existingSecret=kbridge-control-plane-secrets \
   --set auth.adminEmail=admin@example.com \
   --set persistence.enabled=true \
@@ -229,7 +229,7 @@ at `/etc/kbridge-token/token`, passing it via `KBRIDGE_AGENT_TOKEN_FILE`.
 ```bash
 # Still in the target cluster context
 helm install kbridge-agent oci://ghcr.io/why-xn/charts/kbridge-agent \
-  -n kbridge --version 0.2.2-alpha.1 \
+  -n kbridge --version 0.3.0-alpha.1 \
   --set controlPlane.url=kbridge-grpc.example.com:9090 \
   --set controlPlane.existingSecret=kbridge-agent-secrets \
   --set controlPlane.tls.enabled=true \

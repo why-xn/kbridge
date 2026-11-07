@@ -23,7 +23,7 @@ newest pre-release (with a warning) when no stable release exists — which is t
 case while kbridge is in alpha. To pin a version:
 
 ```bash
-KBRIDGE_VERSION=v0.2.2-alpha.1 curl -fsSL \
+KBRIDGE_VERSION=v0.3.0-alpha.1 curl -fsSL \
   https://raw.githubusercontent.com/why-xn/kbridge/master/install.sh | sh
 ```
 
@@ -73,7 +73,7 @@ Multi-stage, CGO-free images (the agent image bundles `kubectl`):
 
 ```bash
 make docker                                  # builds all three images
-make docker IMAGE_PREFIX=ghcr.io/acme VERSION=v0.2.2-alpha.1
+make docker IMAGE_PREFIX=ghcr.io/acme VERSION=v0.3.0-alpha.1
 ```
 
 Images produced (with defaults): `kbridge-control-plane:latest`,
@@ -109,7 +109,7 @@ kubectl label namespace kbridge pod-security.kubernetes.io/enforce=restricted
 # Change the secrets for any real deployment; note the admin password
 ADMIN_PASSWORD="$(openssl rand -hex 12)"; echo "admin password: $ADMIN_PASSWORD"
 helm install kbridge-control-plane oci://ghcr.io/why-xn/charts/kbridge-control-plane \
-  -n kbridge --version 0.2.2-alpha.1 \
+  -n kbridge --version 0.3.0-alpha.1 \
   --set auth.jwtSecret="$(openssl rand -hex 32)" \
   --set auth.adminPassword="$ADMIN_PASSWORD"
 kubectl -n kbridge rollout status deploy/kbridge-control-plane
@@ -150,7 +150,7 @@ seeded through the control plane's `bootstrap` config (see the
 
 ```bash
 helm install kbridge-agent oci://ghcr.io/why-xn/charts/kbridge-agent \
-  -n kbridge --version 0.2.2-alpha.1 \
+  -n kbridge --version 0.3.0-alpha.1 \
   --set controlPlane.url=kbridge-control-plane.kbridge.svc:9090 \
   --set controlPlane.token=kbat_xxxxxxxxxxxxxxxxxxxx \
   --set cluster.name=prod-us-east

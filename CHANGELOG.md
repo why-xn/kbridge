@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0-alpha.1] - 2026-11-06
+
 ### Added
 
 - **The agent keeps cluster RBAC in step with kbridge policy.** A role's new
@@ -268,7 +270,8 @@ paths — may still change before 1.0.0.
 - **Agent token storage** — tokens are stored only as HMAC-SHA256 digests keyed by a server-side pepper; a stolen database alone cannot be used to verify guessed tokens.
 - mTLS between agents and control plane is planned but deferred; the channel is currently protected by server-authenticated TLS only.
 
-[Unreleased]: https://github.com/why-xn/kbridge/compare/v0.2.2-alpha.1...HEAD
+[Unreleased]: https://github.com/why-xn/kbridge/compare/v0.3.0-alpha.1...HEAD
+[0.3.0-alpha.1]: https://github.com/why-xn/kbridge/compare/v0.2.2-alpha.1...v0.3.0-alpha.1
 [0.2.2-alpha.1]: https://github.com/why-xn/kbridge/compare/v0.2.1-alpha.1...v0.2.2-alpha.1
 [0.2.1-alpha.1]: https://github.com/why-xn/kbridge/compare/v0.2.0-alpha.1...v0.2.1-alpha.1
 [0.2.0-alpha.1]: https://github.com/why-xn/kbridge/compare/v0.1.0-alpha.1...v0.2.0-alpha.1
