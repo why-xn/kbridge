@@ -11,6 +11,8 @@ import (
 
 	"github.com/why-xn/kbridge/api/proto/agentpb"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 // commandService hands out one long-running command and records the result.
@@ -19,6 +21,16 @@ type commandService struct {
 	mu      sync.Mutex
 	handed  bool
 	results []*agentpb.SubmitCommandResultRequest
+	seconds string // how long the handed-out command sleeps; default 30
+	// replaceWhenHanded answers heartbeats as "replaced" once the command is out.
+	replaceWhenHanded bool
+}
+
+func (c *commandService) Heartbeat(ctx context.Context, req *agentpb.HeartbeatRequest) (*agentpb.HeartbeatResponse, error) {
+	if c.replaceWhenHanded && c.handedOut() {
+		return nil, status.Error(codes.FailedPrecondition, "agent replaced by a newer registration for this cluster")
+	}
+	return c.mockAgentService.Heartbeat(ctx, req)
 }
 
 func (c *commandService) GetPendingCommands(ctx context.Context, req *agentpb.GetPendingCommandsRequest) (*agentpb.GetPendingCommandsResponse, error) {
@@ -28,8 +40,12 @@ func (c *commandService) GetPendingCommands(ctx context.Context, req *agentpb.Ge
 		return &agentpb.GetPendingCommandsResponse{}, nil
 	}
 	c.handed = true
+	seconds := c.seconds
+	if seconds == "" {
+		seconds = "30"
+	}
 	return &agentpb.GetPendingCommandsResponse{Commands: []*agentpb.CommandRequest{
-		{RequestId: "req-1", Command: []string{"30"}, TimeoutSeconds: 60, Identity: &agentpb.Identity{User: "kbridge:alice@example.com"}},
+		{RequestId: "req-1", Command: []string{seconds}, TimeoutSeconds: 60, Identity: &agentpb.Identity{User: "kbridge:alice@example.com"}},
 	}}, nil
 }
 
@@ -105,5 +121,44 @@ func TestAgent_ShutdownReportsInFlightCommand(t *testing.T) {
 	}
 	if got := svc.results[0]; got.GetRequestId() != "req-1" || !strings.Contains(got.GetErrorMessage(), "shut down") {
 		t.Fatalf("unexpected result: %+v", got)
+	}
+}
+
+// The old pod of a rollout is replaced before Kubernetes stops it. A command
+// it is still running must finish and be reported as run, not be cut off by
+// that stop: the new agent already serves the cluster.
+func TestAgent_ReplacedFinishesInFlightCommandOnShutdown(t *testing.T) {
+	if _, err := exec.LookPath("sleep"); err != nil {
+		t.Skip("sleep not available")
+	}
+	defer func(d time.Duration) { initialHeartbeatInterval = d }(initialHeartbeatInterval)
+	initialHeartbeatInterval = 50 * time.Millisecond
+	svc := &commandService{seconds: "3", replaceWhenHanded: true}
+	addr, stop := startCommandServer(t, svc)
+	defer stop()
+	a := New(&Config{
+		ControlPlane: ControlPlaneConfig{URL: addr, Token: "token"},
+		Cluster:      ClusterConfig{Name: "test"},
+		Kubernetes:   kubeFixture(t),
+	})
+	a.executor = windowedExecutor(t, "sleep")
+
+	ctx, cancel := context.WithCancel(context.Background())
+	runDone := make(chan error, 1)
+	go func() { runDone <- a.Run(ctx) }()
+	select {
+	case <-a.replaced:
+	case <-time.After(5 * time.Second):
+		t.Fatal("agent never learned it was replaced")
+	}
+	cancel() // SIGTERM while the command runs; same order as cmd/agent
+	a.Stop()
+	if err := <-runDone; err != nil {
+		t.Fatalf("Run = %v, want nil", err)
+	}
+	svc.mu.Lock()
+	defer svc.mu.Unlock()
+	if len(svc.results) != 1 || svc.results[0].GetErrorMessage() != "" || svc.results[0].GetExitCode() != 0 {
+		t.Fatalf("results = %+v, want the command reported as run", svc.results)
 	}
 }

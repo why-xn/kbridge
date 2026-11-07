@@ -66,7 +66,11 @@ shows `disconnected` within seconds too; see
 [operations](operations.md#agent).
 
 **Rotation:** issue a new token, update the agent, then revoke the old one. In
-that order nothing is cut off: the agent already runs on the new token.
+that order nothing is cut off: the agent already runs on the new token. The
+update rolls the agent pod; the new pod takes over the cluster as soon as it
+registers, and the old one stands by until Kubernetes stops it, finishing any
+command it was running. A stream it was serving (`logs -f`, `exec -it`,
+`port-forward`) ends when the old pod stops; run it again.
 
 For local development you can instead seed a token via the control plane's `bootstrap`
 config (see [configuration](configuration.md)).

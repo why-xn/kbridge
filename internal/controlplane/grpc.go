@@ -103,8 +103,7 @@ func (s *GRPCServer) Register(ctx context.Context, req *agentpb.RegisterRequest)
 	log.Printf("Agent registered: id=%s, cluster=%s, capabilities=%v", agentID, cluster.Name, info.Capabilities)
 	for _, old := range replaced {
 		moved := s.cmdQueue.Reassign(old, agentID)
-		// Only running commands remain on the old agent; it will never report them.
-		failed := s.cmdQueue.FailForAgent(old, "agent shut down while the command was running; retry it")
+		failed := s.failRunningIfGone(old)
 		log.Printf("Agent %s replaces previous agent %s for cluster=%s (%d queued command(s) moved, %d running failed)", agentID, old, cluster.Name, moved, failed)
 	}
 	if err := s.recheckToken(ctx, req.GetAgentToken(), tokenID); err != nil {
@@ -292,9 +291,26 @@ func (s *GRPCServer) OpenStream(stream agentpb.AgentService_OpenStreamServer) er
 // current one, marks the agent disconnected: a dead agent's stream ends long
 // before its heartbeat times out.
 func (s *GRPCServer) streamClosed(agentID string, stream streamSender) {
-	if s.sessions.UnregisterAgentStream(agentID, stream) && s.agents.MarkAgentDisconnected(agentID) {
-		log.Printf("Agent stream closed: id=%s marked disconnected", agentID)
+	if !s.sessions.UnregisterAgentStream(agentID, stream) {
+		return
 	}
+	if s.agents.MarkAgentDisconnected(agentID) {
+		log.Printf("Agent stream closed: id=%s marked disconnected", agentID)
+	} else if s.agents.WasReplaced(agentID) {
+		s.failRunningIfGone(agentID)
+	}
+}
+
+// failRunningIfGone fails the commands still running on a replaced agent once
+// it has no open stream, so it cannot report them. A replaced agent with its
+// stream open is standing by and finishes them; its stream closing then
+// fails what is left. Only running commands remain: Register moved the queued
+// ones.
+func (s *GRPCServer) failRunningIfGone(agentID string) int {
+	if s.sessions.HasAgentStream(agentID) {
+		return 0
+	}
+	return s.cmdQueue.FailForAgent(agentID, "agent shut down while the command was running; retry it")
 }
 
 // notRegistered is the answer to a call from an id the store does not hold. An

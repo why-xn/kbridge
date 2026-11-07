@@ -288,3 +288,53 @@ func TestGRPCServer_ReplacedAgentRefused(t *testing.T) {
 		t.Fatalf("cluster routes to %+v, want connected %s", got, current.AgentId)
 	}
 }
+
+// A replaced agent whose stream is still open is alive and standing by: the
+// command it is running must finish and be reported, not be failed when the
+// new agent registers. Once its stream closes it never will report, so the
+// command fails then.
+func TestGRPCServer_ReplacedAgentFinishesRunningCommand(t *testing.T) {
+	tests := []struct {
+		name      string
+		closeOld  bool
+		wantError string
+	}{
+		{"result reported while standing by", false, ""},
+		{"stream closes before the result", true, "agent shut down while the command was running; retry it"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			srv, _, queue := newTestGRPCServer(t)
+			ctx := context.Background()
+			req := &agentpb.RegisterRequest{AgentToken: testAgentToken, ClusterName: testClusterName}
+			old, _ := srv.Register(ctx, req)
+			fs := newFakeOpenStream(old.AgentId)
+			streamDone := make(chan struct{})
+			go func() { _ = srv.OpenStream(fs); close(streamDone) }()
+			fs.waitRegistered(t)
+			running, _ := queue.Enqueue(old.AgentId, testClusterName, "u@x", []string{"get", "pods"}, "", 30, nil)
+			queue.MarkRunning(running)
+
+			srv.Register(ctx, req)
+			if c, _ := queue.Get(running); c.Status != CommandStatusRunning {
+				t.Fatalf("running command became %s when the new agent registered", c.Status)
+			}
+			if tt.closeOld {
+				close(fs.incoming)
+				<-streamDone
+			} else {
+				srv.SubmitCommandResult(ctx, &agentpb.SubmitCommandResultRequest{RequestId: running, Stdout: []byte("ok")})
+			}
+			waitCtx, cancel := context.WithTimeout(ctx, time.Second)
+			defer cancel()
+			res, err := queue.WaitForResult(waitCtx, running)
+			if err != nil || res.ErrorMessage != tt.wantError {
+				t.Fatalf("result = %+v, %v; want error %q", res, err, tt.wantError)
+			}
+			if !tt.closeOld {
+				close(fs.incoming)
+				<-streamDone
+			}
+		})
+	}
+}

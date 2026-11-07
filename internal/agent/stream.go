@@ -19,10 +19,16 @@ func outputTypeFor(stdout bool) agentpb.OutputType {
 }
 
 // runStream maintains the persistent OpenStream connection, reconnecting until
-// ctx is cancelled.
+// ctx is cancelled or the control plane refuses it because a newer agent
+// replaced this one.
 func (a *Agent) runStream(ctx context.Context) {
 	for ctx.Err() == nil {
-		if err := a.openAndServeStream(ctx); err != nil && ctx.Err() == nil {
+		err := a.openAndServeStream(ctx)
+		if replacedErr(err) != nil {
+			a.markReplaced()
+			return
+		}
+		if err != nil && ctx.Err() == nil {
 			log.Printf("stream closed: %v; reconnecting in %s", err, streamReconnectDelay)
 			select {
 			case <-time.After(streamReconnectDelay):

@@ -114,6 +114,13 @@ func (m *SessionManager) RegisterAgentStream(agentID string, s streamSender) {
 	m.agents[agentID] = &agentConn{sender: s, sessions: make(map[string]*Session)}
 }
 
+// HasAgentStream reports whether the agent has an open stream.
+func (m *SessionManager) HasAgentStream(agentID string) bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.agents[agentID] != nil
+}
+
 // UnregisterAgentStream drops an agent's stream s and closes all of its
 // sessions. It does nothing and returns false when the agent has since opened
 // another stream, so an old handler exiting cannot cut off the new one.

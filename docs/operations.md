@@ -118,8 +118,15 @@ chart version rather than overriding the image tag. From a clone, use
 
 ## Agent-Token Rotation
 
-Hot rotation (no reconnect) is not implemented; each rotation costs one brief
-agent reconnect. Issue the new token first:
+Hot rotation (no reconnect) is not implemented; each rotation rolls the agent
+pod. That costs no outage: the new pod serves the cluster as soon as it
+registers, and the old one, once replaced, stands by until Kubernetes stops it
+(it does not exit or register again, so it never takes the cluster back). A
+command running on the old pod finishes there; a stream it serves (`logs -f`,
+`exec -it`, `port-forward`) ends when the old pod stops. A replaced agent that
+is never stopped (two replicas for one cluster) exits after 10 minutes with
+`replaced by a newer agent and never stopped: exiting`. Issue the new token
+first:
 
 ```bash
 kb admin agent-tokens create --cluster <cluster-name>

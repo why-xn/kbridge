@@ -33,18 +33,54 @@ var errRegistrationRejected = errors.New("registration rejected")
 var errReplaced = errors.New("replaced by a newer agent")
 
 // replacedErr returns errReplaced if err is the control plane saying a newer
-// agent replaced this one, nil otherwise. The agent exits rather than
-// re-register, which would take the cluster back from the new pod. In a
-// rollout this pod is terminating anyway; if it is not, Kubernetes restarts
-// it, it registers fresh and replaces the other agent once, and that one
-// then exits the same way. Only two agents left running for one cluster
-// (replicaCount above 1) would keep taking it from each other.
+// agent replaced this one, nil otherwise. The agent then stands by (see
+// standBy): re-registering would take the cluster back from the new pod, and
+// exiting would too, because during a RollingUpdate the old pod is not yet
+// terminating and the kubelet restarts its container, which registers again.
 func replacedErr(err error) error {
 	if status.Code(err) != codes.FailedPrecondition {
 		return nil
 	}
-	log.Printf("%v; exiting", errReplaced)
 	return errReplaced
+}
+
+// standByTouchInterval keeps the health file well inside the chart's
+// readiness (60 s) and liveness (180 s) windows while standing by. A var so
+// tests need not wait.
+var standByTouchInterval = 30 * time.Second
+
+// standByTimeout bounds the stand-by: a rollout stops the old pod within its
+// termination grace period, so a replaced agent still running after this is
+// a second replica for the same cluster, and exiting makes that visible
+// (CrashLoopBackOff) without flapping fast. A var so tests need not wait.
+var standByTimeout = 10 * time.Minute
+
+// standBy keeps a replaced agent alive and live, without serving or
+// registering, until it is stopped; it gives up after standByTimeout.
+func (a *Agent) standBy(ctx context.Context) error {
+	log.Printf("%v; standing by until this pod is stopped", errReplaced)
+	touch := time.NewTicker(standByTouchInterval)
+	defer touch.Stop()
+	timeout := time.NewTimer(standByTimeout)
+	defer timeout.Stop()
+	for {
+		select {
+		case <-touch.C:
+			a.touchHealthFile()
+		case <-a.stopCh:
+			return nil
+		case <-ctx.Done():
+			return nil
+		case <-timeout.C:
+			return fmt.Errorf("%v and never stopped: exiting", errReplaced)
+		}
+	}
+}
+
+// markReplaced records that a newer agent replaced this one, which stops the
+// heartbeat and poll loops; safe to call more than once.
+func (a *Agent) markReplaced() {
+	a.replacedOnce.Do(func() { close(a.replaced) })
 }
 
 // Agent represents the kbridge agent that connects to control plane.
@@ -62,6 +98,9 @@ type Agent struct {
 	mu        sync.RWMutex
 	stopCh    chan struct{}
 	stoppedCh chan struct{}
+	// replaced is closed once a newer agent replaced this one.
+	replaced     chan struct{}
+	replacedOnce sync.Once
 }
 
 // New creates a new agent with the given configuration.
@@ -71,6 +110,7 @@ func New(cfg *Config) *Agent {
 		executor:  NewKubectlExecutor(nil), // Run opens the window
 		stopCh:    make(chan struct{}),
 		stoppedCh: make(chan struct{}),
+		replaced:  make(chan struct{}),
 	}
 }
 
@@ -97,40 +137,77 @@ func (a *Agent) Run(ctx context.Context) error {
 	// liveness initialDelaySeconds window doesn't race a slow first heartbeat.
 	a.touchHealthFile()
 
-	// A refused re-registration or a replaced agent cancels ctx so the loops
-	// below stop.
+	// A refused re-registration cancels ctx so the loops below stop. Being
+	// replaced does not: commands already running finish and report first.
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
 	// Start command polling loop in goroutine
 	pollDone := make(chan struct{})
 	var pollErr error
+	cmdCtx, cmdCancel := a.commandContext(ctx)
+	defer cmdCancel()
 	go func() {
 		defer close(pollDone)
-		if pollErr = a.runCommandPollLoop(ctx); pollErr != nil {
-			cancel()
-		}
+		pollErr = a.loopStopped(a.runCommandPollLoop(cmdCtx), cancel)
 	}()
 
-	// Start persistent stream client
+	// Start persistent stream client. It stays open while standing by, so
+	// sessions running on it finish; the control plane sends it no new ones.
 	go a.runStream(ctx)
 
 	stopSync := a.startSync(ctx)
 
 	// Run heartbeat loop (blocks until stopped)
-	hbErr := a.runHeartbeatLoop(ctx)
-	if hbErr != nil {
-		cancel()
-	}
+	hbErr := a.loopStopped(a.runHeartbeatLoop(ctx), cancel)
 	stopSync()
 
 	// Let an in-flight command report its result before the connection closes,
 	// so its caller gets an answer instead of waiting for the command timeout.
 	<-pollDone
+	select {
+	case <-a.replaced:
+		return a.standBy(ctx)
+	default:
+	}
 	if hbErr != nil {
 		return hbErr
 	}
 	return pollErr
+}
+
+// commandContext is the context commands run under: ctx, except that once
+// this agent is replaced, stopping it no longer cancels the command it is
+// running. In a rollout the old pod is replaced before it is stopped, and the
+// command finishes within the pod's termination grace period.
+func (a *Agent) commandContext(ctx context.Context) (context.Context, context.CancelFunc) {
+	cmdCtx, cancel := context.WithCancel(context.WithoutCancel(ctx))
+	go func() {
+		select {
+		case <-ctx.Done():
+			select {
+			case <-a.replaced:
+			default:
+				cancel()
+			}
+		case <-a.replaced:
+		case <-cmdCtx.Done():
+		}
+	}()
+	return cmdCtx, cancel
+}
+
+// loopStopped handles the error a heartbeat or poll loop stopped with:
+// replaced stops the other loop, anything else cancels everything.
+func (a *Agent) loopStopped(err error, cancel context.CancelFunc) error {
+	if errors.Is(err, errReplaced) {
+		a.markReplaced()
+		return nil
+	}
+	if err != nil {
+		cancel()
+	}
+	return err
 }
 
 // openWindow builds the window from config and hands it to the executor;
@@ -321,6 +398,9 @@ func (a *Agent) runHeartbeatLoop(ctx context.Context) error {
 			log.Printf("Heartbeat loop stopping")
 			return nil
 
+		case <-a.replaced:
+			return nil
+
 		case <-ctx.Done():
 			log.Printf("Context cancelled, stopping heartbeat loop")
 			return nil
@@ -329,9 +409,9 @@ func (a *Agent) runHeartbeatLoop(ctx context.Context) error {
 }
 
 // recoverHeartbeat reconnects after a failed heartbeat. It returns an error
-// only when this agent was replaced or its registration is refused: every
-// retry would be refused too, so the agent exits instead of waiting for the
-// liveness probe to restart it.
+// only when this agent was replaced (it then stands by, see standBy) or its
+// registration is refused: every retry would be refused too, so the agent
+// exits instead of waiting for the liveness probe to restart it.
 func (a *Agent) recoverHeartbeat(ctx context.Context, hbErr error) error {
 	log.Printf("Heartbeat failed: %v", hbErr)
 	if err := replacedErr(hbErr); err != nil {
@@ -452,6 +532,9 @@ func (a *Agent) runCommandPollLoop(ctx context.Context) error {
 
 		case <-a.stopCh:
 			log.Printf("Command poll loop stopping")
+			return nil
+
+		case <-a.replaced:
 			return nil
 
 		case <-ctx.Done():

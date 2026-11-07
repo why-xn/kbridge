@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/pem"
 	"errors"
+	"fmt"
 	"net"
 	"os"
 	"path/filepath"
@@ -535,7 +536,6 @@ func TestAgent_Run_ReRegistration(t *testing.T) {
 		{"rejection exits", &mockAgentService{rejectHeartbeat: true, rejectAfter: 1}, errRegistrationRejected, 2},
 		{"transport error keeps retrying", &mockAgentService{rejectHeartbeat: true, unavailableAfter: 1}, nil, 2},
 		{"not found re-registers", &mockAgentService{rejectHeartbeat: true}, nil, 2},
-		{"replaced exits", &mockAgentService{heartbeatCode: codes.FailedPrecondition}, errReplaced, 1},
 	}
 	defer func(d time.Duration) { initialHeartbeatInterval = d }(initialHeartbeatInterval)
 	initialHeartbeatInterval = 50 * time.Millisecond
@@ -562,10 +562,75 @@ func TestAgent_Run_ReRegistration(t *testing.T) {
 				<-errCh
 			}
 			cleanup() // waits for handlers, so registerCalled is safe to read
-			if tt.mock.registerCalled < tt.wantRegisters || (tt.wantErr == errReplaced && tt.mock.registerCalled != 1) {
+			if tt.mock.registerCalled < tt.wantRegisters {
 				t.Fatalf("registered %d times, want %d", tt.mock.registerCalled, tt.wantRegisters)
 			}
 		})
+	}
+}
+
+// A replaced agent must neither exit (the kubelet would restart it and it
+// would take the cluster back) nor re-register: it stands by, keeping its
+// liveness file fresh, until it is stopped, or gives up after standByTimeout.
+func TestAgent_Run_ReplacedStandsBy(t *testing.T) {
+	tests := []struct {
+		name    string
+		timeout time.Duration
+		stop    bool
+		wantErr string
+	}{
+		{"stopped while standing by", time.Minute, true, ""},
+		{"never stopped", 200 * time.Millisecond, false, "replaced by a newer agent and never stopped: exiting"},
+	}
+	defer func(h, i, d time.Duration) { initialHeartbeatInterval, standByTouchInterval, standByTimeout = h, i, d }(
+		initialHeartbeatInterval, standByTouchInterval, standByTimeout)
+	initialHeartbeatInterval, standByTouchInterval = 50*time.Millisecond, 100*time.Millisecond
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			standByTimeout = tt.timeout
+			mock := &mockAgentService{heartbeatCode: codes.FailedPrecondition}
+			addr, cleanup := startMockServer(t, mock)
+			health := filepath.Join(t.TempDir(), "healthy")
+			a := New(&Config{
+				ControlPlane: ControlPlaneConfig{URL: addr, Token: "token"},
+				Cluster:      ClusterConfig{Name: "test"},
+				Kubernetes:   kubeFixture(t),
+				HealthFile:   health,
+			})
+			errCh := make(chan error, 1)
+			go func() { errCh <- a.Run(context.Background()) }()
+			if tt.stop {
+				assertStandingBy(t, errCh, health)
+				a.Stop()
+			}
+			err := <-errCh
+			if got := fmt.Sprint(err); (tt.wantErr == "" && err != nil) || (tt.wantErr != "" && got != tt.wantErr) {
+				t.Fatalf("Run returned %v, want %q", err, tt.wantErr)
+			}
+			cleanup() // waits for handlers, so registerCalled is safe to read
+			if mock.registerCalled != 1 {
+				t.Fatalf("registered %d times, want 1 (no re-registration once replaced)", mock.registerCalled)
+			}
+		})
+	}
+}
+
+// assertStandingBy checks that Run keeps going and keeps touching health.
+func assertStandingBy(t *testing.T, errCh <-chan error, health string) {
+	t.Helper()
+	time.Sleep(700 * time.Millisecond)
+	first, err := os.Stat(health)
+	if err != nil {
+		t.Fatalf("health file: %v", err)
+	}
+	select {
+	case err := <-errCh:
+		t.Fatalf("Run returned %v while standing by", err)
+	case <-time.After(800 * time.Millisecond):
+	}
+	second, _ := os.Stat(health)
+	if !second.ModTime().After(first.ModTime()) {
+		t.Fatalf("health file not touched while standing by: %v then %v", first.ModTime(), second.ModTime())
 	}
 }
 
