@@ -3,8 +3,10 @@ package agent
 
 import (
 	"fmt"
+	"net"
 	"os"
 	"strings"
+	"time"
 
 	"gopkg.in/yaml.v3"
 )
@@ -14,6 +16,38 @@ type Config struct {
 	ControlPlane ControlPlaneConfig `yaml:"control_plane"`
 	Cluster    ClusterConfig `yaml:"cluster"`
 	HealthFile string        `yaml:"health_file"`
+
+	Kubernetes          KubernetesConfig `yaml:"kubernetes"`
+	ProtectedNamespaces []string         `yaml:"protected_namespaces"`
+	Sync                SyncConfig       `yaml:"sync"`
+}
+
+// SyncConfig controls how the agent keeps cluster role bindings in step with policy.
+type SyncConfig struct {
+	Interval time.Duration `yaml:"interval"` // full re-check period; default 60s
+}
+
+// KubernetesConfig describes how the window reaches the API server.
+type KubernetesConfig struct {
+	Server     string `yaml:"server"`     // default: https://$KUBERNETES_SERVICE_HOST:$KUBERNETES_SERVICE_PORT
+	CAFile     string `yaml:"ca_file"`    // default: /var/run/kbridge/sa/ca.crt
+	TokenFile  string `yaml:"token_file"` // default: /var/run/kbridge/sa/token
+	Kubeconfig string `yaml:"kubeconfig"` // when set, overrides the three above (dev and e2e)
+}
+
+func defaultKubernetesConfig() KubernetesConfig {
+	k := KubernetesConfig{
+		CAFile:    "/var/run/kbridge/sa/ca.crt",
+		TokenFile: "/var/run/kbridge/sa/token",
+	}
+	if host := os.Getenv("KUBERNETES_SERVICE_HOST"); host != "" {
+		port := os.Getenv("KUBERNETES_SERVICE_PORT")
+		if port == "" {
+			port = "443"
+		}
+		k.Server = "https://" + net.JoinHostPort(host, port)
+	}
+	return k
 }
 
 // ControlPlaneConfig holds the control plane connection configuration.
@@ -51,6 +85,8 @@ func DefaultConfig() *Config {
 			Name: "default",
 		},
 		HealthFile: "/tmp/kbridge-agent-healthy",
+		Kubernetes: defaultKubernetesConfig(),
+		Sync:       SyncConfig{Interval: DefaultSyncInterval},
 	}
 }
 
@@ -149,6 +185,38 @@ func applyEnvOverrides(cfg *Config) {
 	if name := os.Getenv("KBRIDGE_CLUSTER_NAME"); name != "" {
 		cfg.Cluster.Name = name
 	}
+	applyKubernetesEnv(cfg)
+	applySyncEnv(cfg)
+}
+
+// applySyncEnv reads KBRIDGE_SYNC_INTERVAL; an unparsable value zeroes the
+// interval so Validate refuses it rather than silently keeping the default.
+func applySyncEnv(cfg *Config) {
+	v := os.Getenv("KBRIDGE_SYNC_INTERVAL")
+	if v == "" {
+		return
+	}
+	d, err := time.ParseDuration(v)
+	if err != nil {
+		d = 0
+	}
+	cfg.Sync.Interval = d
+}
+
+func applyKubernetesEnv(cfg *Config) {
+	for env, dst := range map[string]*string{
+		"KBRIDGE_KUBERNETES_SERVER":     &cfg.Kubernetes.Server,
+		"KBRIDGE_KUBERNETES_CA_FILE":    &cfg.Kubernetes.CAFile,
+		"KBRIDGE_KUBERNETES_TOKEN_FILE": &cfg.Kubernetes.TokenFile,
+		"KBRIDGE_KUBECONFIG":            &cfg.Kubernetes.Kubeconfig,
+	} {
+		if v := os.Getenv(env); v != "" {
+			*dst = v
+		}
+	}
+	if v := os.Getenv("KBRIDGE_PROTECTED_NAMESPACES"); v != "" {
+		cfg.ProtectedNamespaces = strings.Split(v, ",")
+	}
 }
 
 // Validate checks if the configuration is valid.
@@ -161,6 +229,25 @@ func (c *Config) Validate() error {
 	}
 	if c.Cluster.Name == "" {
 		return fmt.Errorf("cluster.name is required")
+	}
+	if err := c.Kubernetes.validate(); err != nil {
+		return err
+	}
+	if c.Sync.Interval <= 0 {
+		return fmt.Errorf("sync.interval must be a positive duration such as 60s")
+	}
+	return nil
+}
+
+func (k KubernetesConfig) validate() error {
+	if k.Kubeconfig != "" {
+		return nil
+	}
+	if k.Server == "" {
+		return fmt.Errorf("kubernetes.server is required when no kubeconfig is set")
+	}
+	if k.TokenFile == "" {
+		return fmt.Errorf("kubernetes.token_file is required")
 	}
 	return nil
 }

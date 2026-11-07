@@ -22,24 +22,7 @@ func approvalPolicy(subjects ...string) string {
 	for _, s := range subjects {
 		fmt.Fprintf(&bindings, "  - subject: %s\n    roles: [\"admin\"]\n", s)
 	}
-	return `default: viewer
-roles:
-  - name: admin
-    rules:
-      - clusters: ["*"]
-        namespaces: ["*"]
-        resources: ["*"]
-        verbs: ["*"]
-  - name: viewer
-    rules:
-      - clusters: ["*"]
-        namespaces: ["*"]
-        resources: ["*"]
-        verbs: ["get", "list", "watch", "describe", "logs"]
-bindings:
-  - subject: admin@e2e.test
-    roles: ["admin"]
-` + bindings.String() + `guardrails:
+	return harnessRoles + bindings.String() + `guardrails:
   - name: e2e-writes-need-approval
     match:
       verbs: ["delete", "apply"]

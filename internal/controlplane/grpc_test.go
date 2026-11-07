@@ -1,13 +1,18 @@
 package controlplane
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"io"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/why-xn/kbridge/api/proto/agentpb"
+	"github.com/why-xn/kbridge/internal/auth"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -343,8 +348,8 @@ func TestGRPCServer_GetPendingCommands_Success(t *testing.T) {
 	agentID := regResp.AgentId
 
 	// Queue some commands
-	cmdQueue.Enqueue(agentID, "test-cluster", []string{"get", "pods"}, "default", 30, nil)
-	cmdQueue.Enqueue(agentID, "test-cluster", []string{"get", "services"}, "", 30, nil)
+	cmdQueue.Enqueue(agentID, "test-cluster", "", []string{"get", "pods"}, "default", 30, nil)
+	cmdQueue.Enqueue(agentID, "test-cluster", "", []string{"get", "services"}, "", 30, nil)
 
 	// Get pending commands
 	req := &agentpb.GetPendingCommandsRequest{
@@ -424,7 +429,7 @@ func TestGRPCServer_SubmitCommandResult_Success(t *testing.T) {
 	ctx := context.Background()
 
 	// Queue a command
-	requestID, _ := cmdQueue.Enqueue("agent-1", "test-cluster", []string{"get", "pods"}, "", 30, nil)
+	requestID, _ := cmdQueue.Enqueue("agent-1", "test-cluster", "", []string{"get", "pods"}, "", 30, nil)
 	cmdQueue.MarkRunning(requestID)
 
 	// Submit result
@@ -456,7 +461,7 @@ func TestGRPCServer_SubmitCommandResult_WithError(t *testing.T) {
 	ctx := context.Background()
 
 	// Queue a command
-	requestID, _ := cmdQueue.Enqueue("agent-1", "test-cluster", []string{"get", "pods"}, "", 30, nil)
+	requestID, _ := cmdQueue.Enqueue("agent-1", "test-cluster", "", []string{"get", "pods"}, "", 30, nil)
 	cmdQueue.MarkRunning(requestID)
 
 	// Submit result with error
@@ -519,7 +524,7 @@ func TestGRPCServer_OpenStream_RegistersAndRoutes(t *testing.T) {
 	fs.waitRegistered(t)
 
 	// Once registered, the manager can start a session for this agent.
-	if _, err := sm.Start(resp.AgentId, []string{"logs", "-f"}, ""); err != nil {
+	if _, err := sm.Start(resp.AgentId, "", []string{"logs", "-f"}, ""); err != nil {
 		t.Fatalf("start after OpenStream: %v", err)
 	}
 }
@@ -561,4 +566,94 @@ func (f *fakeOpenStream) waitRegistered(t *testing.T) {
 	t.Helper()
 	// Give the handler a moment to process the Register message.
 	time.Sleep(100 * time.Millisecond)
+}
+
+func TestExec_SendsIdentity(t *testing.T) {
+	t.Run("queued command", func(t *testing.T) {
+		grpcSrv, agents, queue := newTestGRPCServer(t)
+		reg, _ := grpcSrv.Register(context.Background(), &agentpb.RegisterRequest{
+			AgentToken: testAgentToken, ClusterName: testClusterName, Capabilities: []string{"impersonation"},
+		})
+		jm := auth.NewJWTManager("test-secret-at-least-32-chars!!", time.Hour)
+		httpSrv := NewHTTPServer(agents, queue, nil, nil, nil, nil, nil, jm)
+		token, _ := jm.GenerateAccessToken(&auth.UserClaims{UserID: "u1", Email: "alice@x"})
+		body, _ := json.Marshal(ExecRequest{Command: []string{"get", "pods"}, Timeout: 1})
+		ctx, cancel := context.WithCancel(context.Background())
+		t.Cleanup(cancel)
+		req, _ := http.NewRequestWithContext(ctx, http.MethodPost, "/api/v1/clusters/"+testClusterName+"/exec", bytes.NewReader(body))
+		req.Header.Set("Authorization", "Bearer "+token)
+		req.Header.Set("Content-Type", "application/json")
+		go httpSrv.Handler().ServeHTTP(httptest.NewRecorder(), req)
+
+		cmd := waitPendingCommand(t, grpcSrv, reg.AgentId)
+		if got := cmd.GetIdentity().GetUser(); got != "kbridge:alice@x" {
+			t.Errorf("identity user = %q, want kbridge:alice@x", got)
+		}
+	})
+	t.Run("stream start", func(t *testing.T) {
+		sm, snd := NewSessionManager(10), &fakeSender{}
+		sm.RegisterAgentStream("a1", snd)
+		if _, err := sm.Start("a1", "alice@x", []string{"logs", "-f"}, ""); err != nil {
+			t.Fatalf("start: %v", err)
+		}
+		if got := snd.lastStart().GetIdentity().GetUser(); got != "kbridge:alice@x" {
+			t.Errorf("identity user = %q, want kbridge:alice@x", got)
+		}
+	})
+	t.Run("port-forward start", func(t *testing.T) {
+		sm, snd := NewSessionManager(10), &fakeSender{}
+		sm.RegisterAgentStream("a1", snd)
+		if _, err := sm.StartPortForward("a1", "alice@x", "pod", "ns", []uint32{80}); err != nil {
+			t.Fatalf("start: %v", err)
+		}
+		if got := snd.sentMessages()[0].GetPfStart().GetIdentity().GetUser(); got != "kbridge:alice@x" {
+			t.Errorf("identity user = %q, want kbridge:alice@x", got)
+		}
+	})
+}
+
+// waitPendingCommand polls the agent's queue until the handler has enqueued a command.
+func waitPendingCommand(t *testing.T, srv *GRPCServer, agentID string) *agentpb.CommandRequest {
+	t.Helper()
+	for deadline := time.Now().Add(2 * time.Second); time.Now().Before(deadline); time.Sleep(5 * time.Millisecond) {
+		resp, err := srv.GetPendingCommands(context.Background(), &agentpb.GetPendingCommandsRequest{AgentId: agentID})
+		if err == nil && len(resp.Commands) > 0 {
+			return resp.Commands[0]
+		}
+	}
+	t.Fatal("no command was queued")
+	return nil
+}
+
+func TestGRPCServer_Register_ReplacedAgentCommands(t *testing.T) {
+	srv, _, cmdQueue := newTestGRPCServer(t)
+	ctx := context.Background()
+	req := &agentpb.RegisterRequest{AgentToken: testAgentToken, ClusterName: testClusterName}
+
+	first, err := srv.Register(ctx, req)
+	if err != nil || !first.Success {
+		t.Fatalf("first register: %v %s", err, first.GetErrorMessage())
+	}
+	running, _ := cmdQueue.Enqueue(first.AgentId, testClusterName, "u@x", []string{"get", "pods"}, "", 30, nil)
+	cmdQueue.MarkRunning(running)
+	pending, _ := cmdQueue.Enqueue(first.AgentId, testClusterName, "u@x", []string{"get", "pods"}, "", 30, nil)
+
+	second, err := srv.Register(ctx, req)
+	if err != nil || !second.Success {
+		t.Fatalf("second register: %v %s", err, second.GetErrorMessage())
+	}
+
+	waitCtx, cancel := context.WithTimeout(ctx, time.Second)
+	defer cancel()
+	res, err := cmdQueue.WaitForResult(waitCtx, running)
+	if err != nil {
+		t.Fatalf("running command was not failed: %v", err)
+	}
+	if want := "agent shut down while the command was running; retry it"; res.ErrorMessage != want || res.ExitCode != -1 {
+		t.Errorf("got (%q, %d), want (%q, -1)", res.ErrorMessage, res.ExitCode, want)
+	}
+	p, _ := cmdQueue.Get(pending)
+	if p.AgentID != second.AgentId || p.Status != CommandStatusPending {
+		t.Errorf("pending command: agent %s status %s, want moved to %s and still pending", p.AgentID, p.Status, second.AgentId)
+	}
 }

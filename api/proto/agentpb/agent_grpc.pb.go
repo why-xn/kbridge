@@ -24,6 +24,8 @@ const (
 	AgentService_OpenStream_FullMethodName          = "/kbridge.agent.v1.AgentService/OpenStream"
 	AgentService_GetPendingCommands_FullMethodName  = "/kbridge.agent.v1.AgentService/GetPendingCommands"
 	AgentService_SubmitCommandResult_FullMethodName = "/kbridge.agent.v1.AgentService/SubmitCommandResult"
+	AgentService_GetDesiredBindings_FullMethodName  = "/kbridge.agent.v1.AgentService/GetDesiredBindings"
+	AgentService_ReportBindingSync_FullMethodName   = "/kbridge.agent.v1.AgentService/ReportBindingSync"
 )
 
 // AgentServiceClient is the client API for AgentService service.
@@ -49,6 +51,11 @@ type AgentServiceClient interface {
 	// SubmitCommandResult is called by the agent after executing a command.
 	// Submits the command output and exit code back to control plane.
 	SubmitCommandResult(ctx context.Context, in *SubmitCommandResultRequest, opts ...grpc.CallOption) (*SubmitCommandResultResponse, error)
+	// GetDesiredBindings returns the bindings the calling agent's own cluster
+	// should carry. An agent can never read another cluster's bindings.
+	GetDesiredBindings(ctx context.Context, in *GetDesiredBindingsRequest, opts ...grpc.CallOption) (*GetDesiredBindingsResponse, error)
+	// ReportBindingSync records the outcome of the agent's last reconcile.
+	ReportBindingSync(ctx context.Context, in *ReportBindingSyncRequest, opts ...grpc.CallOption) (*ReportBindingSyncResponse, error)
 }
 
 type agentServiceClient struct {
@@ -112,6 +119,26 @@ func (c *agentServiceClient) SubmitCommandResult(ctx context.Context, in *Submit
 	return out, nil
 }
 
+func (c *agentServiceClient) GetDesiredBindings(ctx context.Context, in *GetDesiredBindingsRequest, opts ...grpc.CallOption) (*GetDesiredBindingsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetDesiredBindingsResponse)
+	err := c.cc.Invoke(ctx, AgentService_GetDesiredBindings_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *agentServiceClient) ReportBindingSync(ctx context.Context, in *ReportBindingSyncRequest, opts ...grpc.CallOption) (*ReportBindingSyncResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ReportBindingSyncResponse)
+	err := c.cc.Invoke(ctx, AgentService_ReportBindingSync_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // AgentServiceServer is the server API for AgentService service.
 // All implementations must embed UnimplementedAgentServiceServer
 // for forward compatibility.
@@ -135,6 +162,11 @@ type AgentServiceServer interface {
 	// SubmitCommandResult is called by the agent after executing a command.
 	// Submits the command output and exit code back to control plane.
 	SubmitCommandResult(context.Context, *SubmitCommandResultRequest) (*SubmitCommandResultResponse, error)
+	// GetDesiredBindings returns the bindings the calling agent's own cluster
+	// should carry. An agent can never read another cluster's bindings.
+	GetDesiredBindings(context.Context, *GetDesiredBindingsRequest) (*GetDesiredBindingsResponse, error)
+	// ReportBindingSync records the outcome of the agent's last reconcile.
+	ReportBindingSync(context.Context, *ReportBindingSyncRequest) (*ReportBindingSyncResponse, error)
 	mustEmbedUnimplementedAgentServiceServer()
 }
 
@@ -159,6 +191,12 @@ func (UnimplementedAgentServiceServer) GetPendingCommands(context.Context, *GetP
 }
 func (UnimplementedAgentServiceServer) SubmitCommandResult(context.Context, *SubmitCommandResultRequest) (*SubmitCommandResultResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method SubmitCommandResult not implemented")
+}
+func (UnimplementedAgentServiceServer) GetDesiredBindings(context.Context, *GetDesiredBindingsRequest) (*GetDesiredBindingsResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetDesiredBindings not implemented")
+}
+func (UnimplementedAgentServiceServer) ReportBindingSync(context.Context, *ReportBindingSyncRequest) (*ReportBindingSyncResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ReportBindingSync not implemented")
 }
 func (UnimplementedAgentServiceServer) mustEmbedUnimplementedAgentServiceServer() {}
 func (UnimplementedAgentServiceServer) testEmbeddedByValue()                      {}
@@ -260,6 +298,42 @@ func _AgentService_SubmitCommandResult_Handler(srv interface{}, ctx context.Cont
 	return interceptor(ctx, in, info, handler)
 }
 
+func _AgentService_GetDesiredBindings_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetDesiredBindingsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AgentServiceServer).GetDesiredBindings(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AgentService_GetDesiredBindings_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AgentServiceServer).GetDesiredBindings(ctx, req.(*GetDesiredBindingsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _AgentService_ReportBindingSync_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ReportBindingSyncRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AgentServiceServer).ReportBindingSync(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AgentService_ReportBindingSync_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AgentServiceServer).ReportBindingSync(ctx, req.(*ReportBindingSyncRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // AgentService_ServiceDesc is the grpc.ServiceDesc for AgentService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -282,6 +356,14 @@ var AgentService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "SubmitCommandResult",
 			Handler:    _AgentService_SubmitCommandResult_Handler,
+		},
+		{
+			MethodName: "GetDesiredBindings",
+			Handler:    _AgentService_GetDesiredBindings_Handler,
+		},
+		{
+			MethodName: "ReportBindingSync",
+			Handler:    _AgentService_ReportBindingSync_Handler,
 		},
 	},
 	Streams: []grpc.StreamDesc{

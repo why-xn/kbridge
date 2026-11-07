@@ -55,7 +55,7 @@ func newJITServer(t *testing.T, now time.Time) *jitServer {
 	grants.now = func() time.Time { return now }
 
 	agents := NewAgentStore()
-	agents.Register(&AgentInfo{ID: "a1", ClusterName: "prod"})
+	agents.Register(&AgentInfo{ID: "a1", ClusterName: "prod", Capabilities: []string{capImpersonation}})
 
 	srv := NewHTTPServer(agents, NewCommandQueue(),
 		NewAuthHandlers(store, jm, time.Hour), NewAdminHandlers(store, testPepper), eng,
@@ -384,7 +384,7 @@ func TestGrantHTTP_DisabledWhenNotWired(t *testing.T) {
 	jm := auth.NewJWTManager("test-secret-at-least-32-chars!!", time.Hour)
 	eng := mustPolicyEngine(t, approvalPolicyYAML)
 	agents := NewAgentStore()
-	agents.Register(&AgentInfo{ID: "a1", ClusterName: "prod"})
+	agents.Register(&AgentInfo{ID: "a1", ClusterName: "prod", Capabilities: []string{capImpersonation}})
 	srv := NewHTTPServer(agents, NewCommandQueue(),
 		NewAuthHandlers(store, jm, time.Hour), NewAdminHandlers(store, testPepper), eng,
 		NewAuditRecorder(store), nil, jm)
@@ -402,5 +402,33 @@ func TestGrantHTTP_DisabledWhenNotWired(t *testing.T) {
 	srv.Handler().ServeHTTP(rec, req)
 	if rec.Code != http.StatusNotFound {
 		t.Errorf("status = %d, want 404 when grants are not wired", rec.Code)
+	}
+}
+
+// TestGrantHTTP_EveryManifestNamespaceNeedsAGrant pins that a manifest writing
+// to two namespaces is admitted only when a grant covers each of them: the
+// guardrail is checked per access request, not once per command.
+func TestGrantHTTP_EveryManifestNamespaceNeedsAGrant(t *testing.T) {
+	now := time.Date(2026, 9, 3, 12, 0, 0, 0, time.UTC)
+	j := newJITServer(t, now)
+	const manifest = "apiVersion: v1\nkind: ConfigMap\nmetadata: {name: a, namespace: payments}\n---\napiVersion: v1\nkind: ConfigMap\nmetadata: {name: b, namespace: billing}\n"
+	apply := func() (map[string]any, int) {
+		return j.do(t, http.MethodPost, "/api/v1/clusters/prod/exec", j.user,
+			ExecRequest{Command: []string{"apply", "-f", "-"}, Stdin: manifest, Timeout: 1})
+	}
+	approve := func(ns string) {
+		id := j.requestGrant(t, "prod", ns)
+		if _, code := j.do(t, http.MethodPost, "/api/v1/admin/grants/"+id+"/approve", j.admin, nil); code != http.StatusOK {
+			t.Fatalf("approve %s: status %d", ns, code)
+		}
+	}
+
+	approve("payments")
+	if body, code := apply(); code != http.StatusForbidden || body["approval_required"] != true {
+		t.Fatalf("with one namespace granted: status %d body %v, want 403 approval_required", code, body)
+	}
+	approve("billing")
+	if _, code := apply(); code == http.StatusForbidden {
+		t.Error("with both namespaces granted the command should be admitted")
 	}
 }

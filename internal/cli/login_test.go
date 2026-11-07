@@ -1,9 +1,12 @@
 package cli
 
 import (
+	"bufio"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"strings"
 	"testing"
 )
 
@@ -123,5 +126,37 @@ func TestControlPlaneClient_Unauthorized_Response(t *testing.T) {
 	_, err := client.ListClusters()
 	if err == nil {
 		t.Fatal("expected error for 401 response")
+	}
+}
+
+func TestPromptControlPlaneURL(t *testing.T) {
+	tests := []struct{ name, in, want, wantErr string }{
+		{"value", " http://cp:8080 \n", "http://cp:8080", ""},
+		{"empty", "\n", "", "control plane URL is required"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var out strings.Builder
+			got, err := promptControlPlaneURL(bufio.NewReader(strings.NewReader(tt.in)), &out)
+			if got != tt.want || (err != nil) != (tt.wantErr != "") || (err != nil && err.Error() != tt.wantErr) {
+				t.Errorf("got %q, %v; want %q, %q", got, err, tt.want, tt.wantErr)
+			}
+			if out.String() != "Control plane URL: " {
+				t.Errorf("prompt = %q", out.String())
+			}
+		})
+	}
+}
+
+func TestReadPassword_NonTerminal(t *testing.T) {
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer r.Close()
+	defer w.Close()
+	got, err := readPassword(bufio.NewReader(strings.NewReader("secret\n")), int(r.Fd()))
+	if err != nil || got != "secret" {
+		t.Errorf("got %q, %v; want secret", got, err)
 	}
 }

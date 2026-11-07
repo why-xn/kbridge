@@ -25,6 +25,8 @@ type GRPCServer struct {
 	cmdQueue *CommandQueue
 	authn    *AgentAuthenticator
 	sessions *SessionManager
+	// policy computes desired cluster bindings; nil means no policy is loaded.
+	policy *PolicyEngine
 }
 
 // NewGRPCServer creates a new gRPC server. agents tracks live agent state for
@@ -79,16 +81,19 @@ func (s *GRPCServer) Register(ctx context.Context, req *agentpb.RegisterRequest)
 		ID:          agentID,
 		ClusterName: cluster.Name,
 		Token:       req.GetAgentToken(),
+		Capabilities: req.GetCapabilities(),
 	}
 
 	// Persist the cluster's connected state, then track the agent in memory
 	// for live command routing.
 	s.markClusterConnected(ctx, cluster, agentID, info)
 	replaced := s.agents.Register(info)
-	log.Printf("Agent registered: id=%s, cluster=%s", agentID, cluster.Name)
+	log.Printf("Agent registered: id=%s, cluster=%s, capabilities=%v", agentID, cluster.Name, info.Capabilities)
 	for _, old := range replaced {
 		moved := s.cmdQueue.Reassign(old, agentID)
-		log.Printf("Agent %s replaces previous agent %s for cluster=%s (%d queued command(s) moved)", agentID, old, cluster.Name, moved)
+		// Only running commands remain on the old agent; it will never report them.
+		failed := s.cmdQueue.FailForAgent(old, "agent shut down while the command was running; retry it")
+		log.Printf("Agent %s replaces previous agent %s for cluster=%s (%d queued command(s) moved, %d running failed)", agentID, old, cluster.Name, moved, failed)
 	}
 
 	return &agentpb.RegisterResponse{
@@ -142,8 +147,9 @@ func (s *GRPCServer) Heartbeat(ctx context.Context, req *agentpb.HeartbeatReques
 	}
 
 	return &agentpb.HeartbeatResponse{
-		Acknowledged:         true,
-		NextHeartbeatSeconds: DefaultHeartbeatInterval,
+		Acknowledged:           true,
+		NextHeartbeatSeconds:   DefaultHeartbeatInterval,
+		DesiredBindingsVersion: s.heartbeatVersion(ctx, req.GetAgentId()),
 	}, nil
 }
 
@@ -175,6 +181,7 @@ func (s *GRPCServer) GetPendingCommands(ctx context.Context, req *agentpb.GetPen
 			Namespace:      cmd.Namespace,
 			TimeoutSeconds: cmd.TimeoutSeconds,
 			Stdin:          cmd.Stdin,
+			Identity:       identityFor(cmd.User),
 		})
 	}
 

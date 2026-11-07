@@ -2,6 +2,7 @@ package cli
 
 import (
 	"fmt"
+	"io"
 	"os"
 
 	"github.com/spf13/cobra"
@@ -28,9 +29,9 @@ status, clusters, policy, request, grants, and admin.
 
 Use 'kb kubectl ...' (or 'kb k ...') to force kubectl explicitly.`,
 	Version: version.String(),
-	// Execute below prints the error itself; without this cobra prints its own
-	// copy first.
+	// Execute prints the error once; cobra would print it again with usage.
 	SilenceErrors: true,
+	SilenceUsage:  true,
 }
 
 // Execute adds all child commands to the root command and sets flags appropriately.
@@ -38,15 +39,24 @@ Use 'kb kubectl ...' (or 'kb k ...') to force kubectl explicitly.`,
 func Execute() {
 	// kubectl-by-default: rewrite the arguments so non-management commands are
 	// dispatched to kubectl. See rewriteArgs.
-	rootCmd.SetArgs(rewriteArgs(os.Args[1:]))
+	os.Exit(execute(rewriteArgs(os.Args[1:]), os.Stderr))
+}
+
+// execute runs the root command with args and returns the process exit code.
+func execute(args []string, stderr io.Writer) int {
+	rootCmd.SetArgs(args)
 	if err := rootCmd.Execute(); err != nil {
-		fmt.Fprintln(os.Stderr, "Error:", err)
-		os.Exit(1)
+		fmt.Fprintf(stderr, "Error: %v\n", err)
+		return 1
 	}
+	return 0
 }
 
 func init() {
 	cobra.OnInitialize(initConfig)
+
+	// Declared so cobra adds no -v shorthand: kubectl owns -v for verbosity.
+	rootCmd.Flags().Bool("version", false, "version for kb")
 
 	// Add version flag template
 	rootCmd.SetVersionTemplate("kb version {{.Version}}\n")

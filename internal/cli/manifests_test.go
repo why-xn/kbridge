@@ -50,7 +50,18 @@ func TestLocalManifests(t *testing.T) {
 	writeFile(t, filepath.Join(dir, "app", "notes.txt"), "ignored")
 	writeFile(t, filepath.Join(dir, "app", "sub", "c.yml"), "kind: C")
 	app := filepath.Join(dir, "app")
-	const url = "https://example.com/m.yaml"
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/m.yaml":
+			io.WriteString(w, "kind: Remote")
+		case "/big.yaml":
+			w.Write(make([]byte, 10<<20+1))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+	url := srv.URL + "/m.yaml"
 
 	tests := []struct {
 		name     string
@@ -63,7 +74,10 @@ func TestLocalManifests(t *testing.T) {
 	}{
 		{name: "no -f is untouched", args: []string{"get", "pods"}, wantArgs: []string{"get", "pods"}},
 		{name: "logs -f means follow", args: []string{"logs", "-f", "web"}, wantArgs: []string{"logs", "-f", "web"}},
-		{name: "url is fetched by the agent", args: []string{"apply", "-f", url}, wantArgs: []string{"apply", "-f", url}},
+		{name: "url is fetched by the cli", args: []string{"apply", "-f", url},
+			wantArgs: []string{"apply", "-f", "-"}, wantBody: []string{"kind: Remote"}, wantOK: true},
+		{name: "url 404", args: []string{"apply", "-f", srv.URL + "/nope"}, wantErr: "/nope: status 404"},
+		{name: "url over 10 MiB", args: []string{"apply", "-f", srv.URL + "/big.yaml"}, wantErr: "larger than 10 MiB"},
 		{name: "local file", args: []string{"apply", "-f", cm, "-n", "demo"},
 			wantArgs: []string{"apply", "-n", "demo", "-f", "-"}, wantBody: []string{"kind: ConfigMap"}, wantOK: true},
 		{name: "--filename= form", args: []string{"delete", "--filename=" + cm},
@@ -75,10 +89,12 @@ func TestLocalManifests(t *testing.T) {
 		{name: "directory with -R recurses", args: []string{"apply", "-R", "-f", app},
 			wantArgs: []string{"apply", "-R", "-f", "-"}, wantBody: []string{"kind: A", `{"kind":"B"}`, "kind: C"}, wantOK: true},
 		{name: "local and url mixed", args: []string{"apply", "-f", cm, "-f", url},
-			wantArgs: []string{"apply", "-f", url, "-f", "-"}, wantBody: []string{"kind: ConfigMap"}, wantOK: true},
+			wantArgs: []string{"apply", "-f", "-"}, wantBody: []string{"kind: ConfigMap", "kind: Remote"}, wantOK: true},
 		{name: "missing file", args: []string{"apply", "-f", filepath.Join(dir, "nope.yaml")}, wantErr: "reading manifest"},
-		{name: "local kustomize dir", args: []string{"apply", "-k", app}, wantErr: "kustomize directories are not supported"},
-		{name: "remote kustomize is allowed", args: []string{"apply", "-k", url}, wantArgs: []string{"apply", "-k", url}},
+		{name: "local kustomize dir", args: []string{"apply", "-k", app},
+			wantErr: "-k is not supported: run 'kubectl kustomize " + app + " | kb apply -f -'"},
+		{name: "remote kustomize", args: []string{"delete", "--kustomize=" + url},
+			wantErr: "-k is not supported: run 'kubectl kustomize " + url + " | kb delete -f -'"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

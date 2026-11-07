@@ -15,6 +15,10 @@ roles:
         namespaces: ["*"]
         resources: ["*"]
         verbs: ["*"]
+    clusterAccess:
+      - clusters: ["*"]
+        clusterRole: cluster-admin
+        clusterWide: true
 
   - name: developer
     rules:
@@ -28,7 +32,11 @@ roles:
       - clusters: ["*"]
         namespaces: ["*"]
         resources: ["*"]
-        verbs: ["get", "list", "watch", "describe", "logs"]
+        verbs: ["get", "list", "watch", "describe", "logs", "auth"]
+    clusterAccess:
+      - clusters: ["*"]
+        clusterRole: view
+        clusterWide: true
 
 bindings:
   # subject is matched against the user's JWT email; wildcards are supported.

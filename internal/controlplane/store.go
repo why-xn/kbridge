@@ -13,6 +13,10 @@ type AgentInfo struct {
 	Status      string
 	RegisteredAt time.Time
 	LastSeen    time.Time
+	// Capabilities the agent advertised at registration, e.g. "impersonation".
+	Capabilities []string
+	// SyncStatus is the agent's last binding sync report; nil until it reports.
+	SyncStatus *SyncStatus
 }
 
 // AgentStatus constants for agent connection state.
@@ -31,6 +35,9 @@ type AgentStore struct {
 	// validTokens holds pre-configured agent tokens for validation.
 	// In production, this would be stored in a database.
 	validTokens map[string]bool
+	// OnDisconnect, when set, is called (outside the lock) for each agent
+	// MarkDisconnected flips, so queued commands can fail fast.
+	OnDisconnect func(agentID string)
 }
 
 // NewAgentStore creates a new agent store.
@@ -134,13 +141,20 @@ func (s *AgentStore) List() []*AgentInfo {
 
 // MarkDisconnected marks agents without recent heartbeats as disconnected.
 func (s *AgentStore) MarkDisconnected() {
+	var dropped []string
 	s.mu.Lock()
-	defer s.mu.Unlock()
-
 	cutoff := time.Now().Add(-DisconnectTimeout)
-	for _, agent := range s.agents {
+	for id, agent := range s.agents {
 		if agent.Status == AgentStatusConnected && agent.LastSeen.Before(cutoff) {
 			agent.Status = AgentStatusDisconnected
+			dropped = append(dropped, id)
+		}
+	}
+	s.mu.Unlock()
+
+	if s.OnDisconnect != nil {
+		for _, id := range dropped {
+			s.OnDisconnect(id)
 		}
 	}
 }

@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 )
 
 const samplePolicy = `
@@ -177,5 +178,53 @@ roles:
 	}
 	if !engine.Allows("u@x.com", req) {
 		t.Error("delete should be allowed after hot-reload to permissive policy")
+	}
+}
+
+// TestWatch_ReloadsOnContentChangeWithoutEvent swaps the policy the way
+// kubelet updates a ConfigMap mount: rbac.yaml -> ..data/rbac.yaml, and the
+// ..data symlink is replaced by rename, so no event names rbac.yaml.
+func TestWatch_ReloadsOnContentChangeWithoutEvent(t *testing.T) {
+	defer func(d time.Duration) { policyPollInterval = d }(policyPollInterval)
+	policyPollInterval = 50 * time.Millisecond
+
+	dir := t.TempDir()
+	writeVersion := func(name, policy string) {
+		t.Helper()
+		if err := os.Mkdir(filepath.Join(dir, name), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, name, "rbac.yaml"), []byte(policy), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		tmp := filepath.Join(dir, "..data_tmp")
+		if err := os.Symlink(name, tmp); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Rename(tmp, filepath.Join(dir, "..data")); err != nil {
+			t.Fatal(err)
+		}
+	}
+	writeVersion("..v1", "default: viewer\nroles:\n  - name: viewer\n    rules: []\n")
+	path := filepath.Join(dir, "rbac.yaml")
+	if err := os.Symlink(filepath.Join("..data", "rbac.yaml"), path); err != nil {
+		t.Fatal(err)
+	}
+	engine, err := NewEngineFromFile(path)
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	stop := make(chan struct{})
+	defer close(stop)
+	engine.Watch(stop)
+
+	req := AccessRequest{Cluster: "c", Namespace: "n", Resource: "pods", Verb: "delete"}
+	writeVersion("..v2", "default: admin\nroles:\n  - name: admin\n    rules:\n      - {clusters: [\"*\"], namespaces: [\"*\"], resources: [\"*\"], verbs: [\"*\"]}\n")
+	deadline := time.Now().Add(15 * time.Second)
+	for !engine.Allows("u@x.com", req) {
+		if time.Now().After(deadline) {
+			t.Fatal("policy not reloaded within 15s of the content changing")
+		}
+		time.Sleep(20 * time.Millisecond)
 	}
 }

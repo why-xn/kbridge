@@ -5,11 +5,15 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"net/http"
 	"os"
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 )
+
+const maxManifestBytes = 10 << 20
 
 // valueFlags are kubectl global flags that may precede the subcommand and take
 // a separate value, so kubectlVerb must skip that value too.
@@ -67,21 +71,17 @@ func splitFilenameFlags(args []string) (rest []string, sources []manifestSource)
 // localManifests makes local -f inputs work against a remote agent: kubectl
 // runs on the agent, which cannot see the user's files or terminal. Every local
 // file, directory and "-" is read here and sent as stdin behind a single
-// "-f -"; URLs stay as flags for the agent to fetch. It returns ok=false when
-// there is nothing local to send.
+// "-f -"; http(s) URLs are fetched here too, since the agent fetches nothing.
+// It returns ok=false when there is nothing to send.
 func localManifests(args []string, stdin io.Reader) (newArgs []string, body []byte, ok bool, err error) {
-	if err := rejectLocalKustomize(args); err != nil {
+	if err := rejectKustomize(args); err != nil {
 		return nil, nil, false, err
 	}
 	rest, sources := splitFilenameFlags(args)
 	recursive := hasFlag(args, "-R", "--recursive")
 	var buf bytes.Buffer
 	for _, src := range sources {
-		if src.isURL() {
-			rest = append(rest, "-f", src.value)
-			continue
-		}
-		if err := appendManifest(&buf, src.value, recursive, stdin); err != nil {
+		if err := appendManifest(&buf, src, recursive, stdin); err != nil {
 			return nil, nil, false, err
 		}
 		ok = true
@@ -94,7 +94,16 @@ func localManifests(args []string, stdin io.Reader) (newArgs []string, body []by
 
 // appendManifest adds one source's documents to buf, each behind a "---"
 // separator so multiple files (YAML or JSON) form one valid YAML stream.
-func appendManifest(buf *bytes.Buffer, value string, recursive bool, stdin io.Reader) error {
+func appendManifest(buf *bytes.Buffer, src manifestSource, recursive bool, stdin io.Reader) error {
+	value := src.value
+	if src.isURL() {
+		data, err := fetchManifest(value)
+		if err != nil {
+			return err
+		}
+		writeDoc(buf, data)
+		return nil
+	}
 	if value == "-" {
 		data, err := io.ReadAll(stdin)
 		if err != nil {
@@ -167,9 +176,30 @@ func isManifestFile(p string) bool {
 	return false
 }
 
-// rejectLocalKustomize fails fast for -k with a local directory: it would be
-// resolved on the agent, where the directory does not exist.
-func rejectLocalKustomize(args []string) error {
+// fetchManifest downloads one manifest URL, capped at maxManifestBytes.
+func fetchManifest(url string) ([]byte, error) {
+	client := http.Client{Timeout: 30 * time.Second}
+	resp, err := client.Get(url)
+	if err != nil {
+		return nil, fmt.Errorf("fetching %s: %w", url, err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode > 299 {
+		return nil, fmt.Errorf("fetching %s: status %d", url, resp.StatusCode)
+	}
+	data, err := io.ReadAll(io.LimitReader(resp.Body, maxManifestBytes+1))
+	if err != nil {
+		return nil, fmt.Errorf("fetching %s: %w", url, err)
+	}
+	if len(data) > maxManifestBytes {
+		return nil, fmt.Errorf("fetching %s: larger than 10 MiB", url)
+	}
+	return data, nil
+}
+
+// rejectKustomize fails fast for any -k: kustomize would run on the agent,
+// which can neither see local directories nor fetch remote bases.
+func rejectKustomize(args []string) error {
 	for i, a := range args {
 		dir := ""
 		switch {
@@ -178,8 +208,8 @@ func rejectLocalKustomize(args []string) error {
 		case strings.HasPrefix(a, "--kustomize="):
 			dir = strings.TrimPrefix(a, "--kustomize=")
 		}
-		if dir != "" && !(manifestSource{dir}).isURL() {
-			return fmt.Errorf("local kustomize directories are not supported: run 'kubectl kustomize %s | kb %s -f -'", dir, kubectlVerb(args))
+		if dir != "" {
+			return fmt.Errorf("-k is not supported: run 'kubectl kustomize %s | kb %s -f -'", dir, kubectlVerb(args))
 		}
 	}
 	return nil

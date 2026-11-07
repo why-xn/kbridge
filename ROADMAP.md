@@ -40,19 +40,15 @@ not build.
 
 The immediate queue, across tracks, in order.
 
-1. **Credential-less kubectl, impersonation, and RBAC sync.** The agent's kubectl
-   holds no credentials; every request passes through an in-agent proxy that
-   runs it as the real user; the agent keeps the cluster's RoleBindings in step
-   with kbridge policy. Ships in two releases, the first as a security fix.
-2. **Release what is on `master`.** Guardrails, just-in-time access, policy
+1. **Release what is on `master`.** Guardrails, just-in-time access, policy
    tooling, and grant notifications are built and unreleased.
-3. `.gitattributes`. The repo has mixed line endings and it has cost time twice.
-4. **Human-readable audit.** One line per action, in words, with the reason and
+2. `.gitattributes`. The repo has mixed line endings and it has cost time twice.
+3. **Human-readable audit.** One line per action, in words, with the reason and
    the approver; one query for "every mutation in production last week."
-5. The three small guardrail additions: mutation rate limiting, dry-run before
+4. The three small guardrail additions: mutation rate limiting, dry-run before
    change, and break-glass.
-6. Fleet-wide reads.
-7. MCP server with scoped agent identities.
+5. Fleet-wide reads.
+6. MCP server with scoped agent identities.
 
 ---
 
@@ -73,24 +69,12 @@ outbound so no inbound port is needed, and access is revoked in one place.
 | Agent tokens | Hashed at rest with a server-side pepper, one token per cluster, revocable |
 | Commands | One-shot kubectl, streaming (`logs -f`, `get -w`), interactive `exec -it` with a real PTY, multi-port port-forward |
 | Ops | Helm charts, Dockerfiles, goreleaser, checksum-verified installer, CI and nightly end-to-end tests on Kind |
+| Credential-less kubectl | The agent's kubectl holds no token: every request goes through a loopback proxy in the agent that owns the cluster connection, refuses connection and file flags, and keeps the agent's own namespace out of reach |
+| Identity pass-through | Each command runs as `kbridge:<email>` inside Kubernetes, so cluster RBAC is a second check and the cluster audit log names the person, with a request id that matches kbridge's entry |
+| RBAC sync | Policy roles say what they mean per cluster (`clusterAccess`); the agent keeps the RoleBindings in step under a chart-set ceiling and a Pod Security guard, and `kb admin rbac status` reports drift |
 
 **Planned**
 
-- **Credential-less kubectl.** The agent's kubectl process holds no token and no
-  kubeconfig. Every request it makes goes through a loopback proxy inside the
-  agent that owns the cluster connection, overwrites whatever identity the
-  command claims, and refuses anything aimed at the agent's own namespace. A
-  user argument like `--server` or `--as` becomes harmless by construction
-  rather than by a list of forbidden flags.
-- **Identity pass-through.** That proxy runs each command *as the requesting
-  user* inside Kubernetes, so cluster RBAC is a second check kbridge cannot
-  bypass, and the cluster's own audit log names the real person, with a request
-  id that matches kbridge's audit entry.
-- **RBAC sync.** Roles in the kbridge policy say what they mean in each cluster
-  (`edit` in `dev`, `view` everywhere). The agent creates and maintains the
-  matching RoleBindings, reverts manual drift, and reports its status. The
-  cluster owner sets only a ceiling once, in the chart: the most kbridge may
-  hand out there. Nothing else in the cluster is touched by hand again.
 - **Agent-side hard denies.** A small policy the agent enforces itself, owned by
   the cluster operator and invisible to the control plane, so a compromised
   control plane cannot lift it. The protected-namespace list is the first one.

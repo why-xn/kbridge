@@ -23,9 +23,10 @@ const reasonHint = `retry with --reason "<why>", for example: --reason "INC-4521
 const approvalHint = `request access with: kb request <cluster> --duration 2h --reason "<why>"
 someone else must approve it; track it with 'kb grants'`
 
-// policyRejectionError turns a 403 body into an error the user can act on. A
-// body that is missing or not a policy rejection degrades to "permission
-// denied", which is what the control plane sends for a plain RBAC denial.
+// policyRejectionError turns a 403 body into an error the user can act on: the
+// control plane's message (an RBAC denial names what was refused and who can
+// help), plus hints for guardrails. A body that is missing or not a policy
+// rejection degrades to "permission denied".
 func policyRejectionError(body []byte) error {
 	var r policyRejection
 	if err := json.Unmarshal(body, &r); err != nil || r.Error == "" {

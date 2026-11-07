@@ -13,6 +13,48 @@ import (
 	"time"
 )
 
+// harnessRoles mirrors the roles, bindings and clusterAccess the e2e harness
+// installs (scripts/e2e-kind.sh). A test policy must keep them: a policy
+// without clusterAccess makes the agent prune every kbridge RoleBinding.
+const harnessRoles = `default: viewer
+roles:
+  - name: admin
+    rules:
+      - clusters: ["*"]
+        namespaces: ["*"]
+        resources: ["*"]
+        verbs: ["*"]
+    clusterAccess:
+      - clusters: ["*"]
+        clusterRole: cluster-admin
+        clusterWide: true
+  - name: viewer
+    rules:
+      - clusters: ["*"]
+        namespaces: ["*"]
+        resources: ["*"]
+        verbs: ["get", "list", "watch", "describe", "logs", "auth"]
+    clusterAccess:
+      - clusters: ["*"]
+        clusterRole: view
+        clusterWide: true
+  - name: developer
+    rules:
+      - clusters: ["*"]
+        namespaces: ["e2e-dev"]
+        resources: ["*"]
+        verbs: ["*"]
+    clusterAccess:
+      - clusters: ["*"]
+        clusterRole: edit
+        namespaces: ["e2e-dev"]
+bindings:
+  - subject: admin@e2e.test
+    roles: ["admin"]
+  - subject: developer@e2e.test
+    roles: ["viewer", "developer"]
+`
+
 // guardrailPolicy grants the given subject full access, then guards it. Cluster
 // patterns are "*" because the e2e cluster name comes from a flag. The e2e admin
 // is bound too, since runCLI drives the CLI with the admin token.
@@ -21,25 +63,7 @@ func guardrailPolicy(subjects ...string) string {
 	for _, s := range subjects {
 		fmt.Fprintf(&bindings, "  - subject: %s\n    roles: [\"admin\"]\n", s)
 	}
-	return fmt.Sprintf(`default: viewer
-roles:
-  - name: admin
-    rules:
-      - clusters: ["*"]
-        namespaces: ["*"]
-        resources: ["*"]
-        verbs: ["*"]
-  - name: viewer
-    rules:
-      - clusters: ["*"]
-        namespaces: ["*"]
-        resources: ["*"]
-        verbs: ["get", "list", "watch", "describe", "logs"]
-bindings:
-  - subject: admin@e2e.test
-    roles: ["admin"]
-%s
-guardrails:
+	return harnessRoles + bindings.String() + `guardrails:
   - name: e2e-no-namespace-delete
     match:
       resources: ["namespaces", "ns"]
@@ -59,7 +83,7 @@ guardrails:
       verbs: ["delete"]
       args_not: ["--dry-run*"]
     action: require-reason
-`, bindings.String())
+`
 }
 
 // installPolicy writes a policy file, triggers a reload, and registers a cleanup

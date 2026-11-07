@@ -7,6 +7,7 @@ This directory contains end-to-end tests for kbridge using Kind (Kubernetes in D
 - Docker installed and running
 - [Kind](https://kind.sigs.k8s.io/) installed
 - kubectl installed
+- [Helm](https://helm.sh/) installed (the agent is installed from `charts/agent`)
 - Go 1.21+
 
 ## Running Tests
@@ -21,9 +22,9 @@ make test-e2e
 
 This will:
 1. Create a Kind cluster
-2. Build all binaries
-3. Start the control plane
-4. Start an agent connected to Kind
+2. Build all binaries and the agent image, and load the image into Kind
+3. Start the control plane (on the host)
+4. Install the agent in the cluster as a pod from the Helm chart `charts/agent`; it dials the host control plane through the `kind` docker network gateway
 5. Run all e2e tests
 6. Clean up everything
 
@@ -95,13 +96,17 @@ The edit tests use mock editor scripts via the `KUBE_EDITOR` environment variabl
 
 When running tests, logs are stored in `tests/e2e/logs/`:
 - `control-plane.log` - control plane logs
-- `agent.log` - Agent logs
+
+The agent runs as a pod in the `kbridge` namespace, so its logs come from the cluster:
+
+```bash
+kubectl -n kbridge logs deploy/kbridge-agent
+```
 
 ## Configuration
 
 Test configuration files are stored in `tests/e2e/config/`:
 - `control-plane.yaml` - control plane config
-- `agent.yaml` - Agent config
 
 These directories are cleaned up automatically after tests.
 
@@ -129,6 +134,6 @@ kind delete cluster --name kbridge-e2e-test
 # View control plane logs
 cat tests/e2e/logs/control-plane.log
 
-# View agent logs
-cat tests/e2e/logs/agent.log
+# View agent (pod) logs
+kubectl -n kbridge logs deploy/kbridge-agent
 ```

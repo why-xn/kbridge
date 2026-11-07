@@ -33,10 +33,23 @@ type Server struct {
 	stopCh       chan struct{}
 }
 
+// failQueuedOnDisconnect fails a dropped agent's commands with the message the
+// CLI shows for a disconnected cluster, so the user sees one wording.
+func failQueuedOnDisconnect(store *AgentStore, q *CommandQueue) func(string) {
+	return func(id string) {
+		name := id
+		if a, ok := store.Get(id); ok {
+			name = a.ClusterName
+		}
+		q.FailForAgent(id, fmt.Sprintf("cluster %q: agent is disconnected", name))
+	}
+}
+
 // NewServer creates a new control plane server with the given configuration.
 func NewServer(cfg *Config) (*Server, error) {
 	agentStore := NewAgentStore()
 	commandQueue := NewCommandQueue()
+	agentStore.OnDisconnect = failQueuedOnDisconnect(agentStore, commandQueue)
 
 	// Open SQLite store
 	dbStore, err := NewSQLiteStore(cfg.Database.Path)
@@ -91,6 +104,7 @@ func NewServer(cfg *Config) (*Server, error) {
 	httpHandler := NewHTTPServer(agentStore, commandQueue, authHandlers, adminHandlers, policy,
 		auditRecorder, sessionManager, jwtManager, WithGrants(grantService, cfg.Grants))
 	grpcHandler := NewGRPCServer(agentStore, commandQueue, authenticator, sessionManager)
+	grpcHandler.policy = policy
 
 	grpcOpts, err := grpcServerOptions(cfg.TLS)
 	if err != nil {

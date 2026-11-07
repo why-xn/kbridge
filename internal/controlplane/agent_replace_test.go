@@ -83,7 +83,7 @@ func TestRunExecBridge_HalfCloseSendsStdinEOF(t *testing.T) {
 	m := NewSessionManager(10)
 	rs := &recordingSender{}
 	m.RegisterAgentStream("a1", rs)
-	sess, _ := m.StartWithStdin("a1", []string{"exec", "-i", "p", "--", "sh"}, "ns")
+	sess, _ := m.StartWithStdin("a1", "", []string{"exec", "-i", "p", "--", "sh"}, "ns")
 
 	upR, upW := io.Pipe()
 	ctx, cancel := context.WithCancel(context.Background())
@@ -115,7 +115,7 @@ func TestHandleStreamCommand_ExitCodeTrailer(t *testing.T) {
 			jm := auth.NewJWTManager("test-secret-at-least-32-chars!!", time.Hour)
 			sm := NewSessionManager(10)
 			agents := NewAgentStore()
-			agents.Register(&AgentInfo{ID: "a1", ClusterName: "prod"})
+			agents.Register(&AgentInfo{ID: "a1", ClusterName: "prod", Capabilities: []string{capImpersonation}})
 			snd := &fakeSender{}
 			sm.RegisterAgentStream("a1", snd)
 			srv := NewHTTPServer(agents, NewCommandQueue(), NewAuthHandlers(store, jm, time.Hour),
@@ -167,7 +167,7 @@ func TestCommandQueue_Reassign(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			q := NewCommandQueue()
-			id, _ := q.Enqueue(tt.agentID, "prod", []string{"get", "pods"}, "", 30, nil)
+			id, _ := q.Enqueue(tt.agentID, "prod", "", []string{"get", "pods"}, "", 30, nil)
 			if tt.status == CommandStatusRunning {
 				q.MarkRunning(id)
 			}
@@ -193,7 +193,7 @@ func TestGRPCServer_Register_RestartTakesOverCluster(t *testing.T) {
 	if err != nil || !first.Success {
 		t.Fatalf("first register: %v %+v", err, first)
 	}
-	queued, _ := queue.Enqueue(first.AgentId, testClusterName, []string{"get", "pods"}, "", 30, nil)
+	queued, _ := queue.Enqueue(first.AgentId, testClusterName, "", []string{"get", "pods"}, "", 30, nil)
 
 	second, err := srv.Register(ctx, req)
 	if err != nil || !second.Success {

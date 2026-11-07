@@ -43,7 +43,7 @@ func TestSessionManager_StartRoutesOutputAndExit(t *testing.T) {
 	snd := &fakeSender{}
 	m.RegisterAgentStream("agent-1", snd)
 
-	sess, err := m.Start("agent-1", []string{"logs", "-f", "p"}, "app")
+	sess, err := m.Start("agent-1", "", []string{"logs", "-f", "p"}, "app")
 	if err != nil {
 		t.Fatalf("start: %v", err)
 	}
@@ -76,7 +76,7 @@ func TestSessionManager_StartRoutesOutputAndExit(t *testing.T) {
 
 func TestSessionManager_StartWithoutAgentStream(t *testing.T) {
 	m := NewSessionManager(10)
-	if _, err := m.Start("missing", []string{"logs"}, ""); err == nil {
+	if _, err := m.Start("missing", "", []string{"logs"}, ""); err == nil {
 		t.Fatal("expected error when agent has no open stream")
 	}
 }
@@ -84,10 +84,10 @@ func TestSessionManager_StartWithoutAgentStream(t *testing.T) {
 func TestSessionManager_MaxConcurrent(t *testing.T) {
 	m := NewSessionManager(1)
 	m.RegisterAgentStream("a", &fakeSender{})
-	if _, err := m.Start("a", []string{"logs"}, ""); err != nil {
+	if _, err := m.Start("a", "", []string{"logs"}, ""); err != nil {
 		t.Fatalf("first start: %v", err)
 	}
-	if _, err := m.Start("a", []string{"logs"}, ""); err == nil {
+	if _, err := m.Start("a", "", []string{"logs"}, ""); err == nil {
 		t.Fatal("expected ErrTooManyStreams on second start")
 	}
 }
@@ -96,7 +96,7 @@ func TestSessionManager_CancelSendsCancel(t *testing.T) {
 	m := NewSessionManager(10)
 	snd := &fakeSender{}
 	m.RegisterAgentStream("a", snd)
-	sess, _ := m.Start("a", []string{"logs"}, "")
+	sess, _ := m.Start("a", "", []string{"logs"}, "")
 	m.Cancel(sess.ID)
 	found := false
 	for _, msg := range snd.sentMessages() {
@@ -112,7 +112,7 @@ func TestSessionManager_CancelSendsCancel(t *testing.T) {
 func TestSessionManager_AgentDisconnectClosesSessions(t *testing.T) {
 	m := NewSessionManager(10)
 	m.RegisterAgentStream("a", &fakeSender{})
-	sess, _ := m.Start("a", []string{"logs"}, "")
+	sess, _ := m.Start("a", "", []string{"logs"}, "")
 	m.UnregisterAgentStream("a")
 	if _, ok := <-sess.Output; ok {
 		t.Error("expected output channel closed after disconnect")
@@ -146,7 +146,7 @@ func TestSessionManager_PortForward(t *testing.T) {
 	rs := &recordingSender{}
 	m.RegisterAgentStream("a1", rs)
 
-	sess, err := m.StartPortForward("a1", "pod", "ns", []uint32{5432})
+	sess, err := m.StartPortForward("a1", "", "pod", "ns", []uint32{5432})
 	if err != nil {
 		t.Fatalf("start pf: %v", err)
 	}
@@ -187,7 +187,7 @@ func TestSessionManager_StartInteractiveAndControl(t *testing.T) {
 	rs := &recordingSender{}
 	m.RegisterAgentStream("agent-1", rs)
 
-	sess, err := m.StartInteractive("agent-1", []string{"exec", "-i", "-t", "p", "--", "sh"}, "ns", 40, 120)
+	sess, err := m.StartInteractive("agent-1", "", []string{"exec", "-i", "-t", "p", "--", "sh"}, "ns", 40, 120)
 	if err != nil {
 		t.Fatalf("start interactive: %v", err)
 	}

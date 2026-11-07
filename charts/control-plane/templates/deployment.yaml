@@ -6,13 +6,17 @@ metadata:
     {{- include "controlplane.labels" . | nindent 4 }}
 spec:
   replicas: {{ .Values.replicaCount }}
+  # SQLite allows one writer and the data PVC is ReadWriteOnce: stop the old
+  # pod before starting the new one.
+  strategy:
+    type: Recreate
   selector:
     matchLabels:
       {{- include "controlplane.selectorLabels" . | nindent 6 }}
   template:
     metadata:
       annotations:
-        checksum/config: {{ include (print $.Template.BasePath "/secret.yaml") . | sha256sum }}
+        checksum/config: {{ print (include (print $.Template.BasePath "/secret.yaml") .) (include (print $.Template.BasePath "/configmap.yaml") .) | sha256sum }}
       labels:
         {{- include "controlplane.selectorLabels" . | nindent 8 }}
     spec:

@@ -52,9 +52,10 @@ ports, no kubeconfig distribution, no VPN.
    whether the command may run, routes it, and records the outcome. The one place
    access is granted and revoked.
 2. **Cluster agent (`kbridge-agent`)** runs inside each cluster, opens an
-   outbound gRPC connection, executes approved commands with kubectl, and returns
-   the result. Because it dials out, no firewall change is needed, and because it
-   holds the credentials, the control plane never does.
+   outbound gRPC connection, runs approved commands with kubectl as the
+   requesting user, and returns the result. Because it dials out, no firewall
+   change is needed, and because it holds the credentials, the control plane
+   never does.
 3. **CLI (`kb`)** speaks REST to the control plane with familiar kubectl syntax,
    so `kb get pods` works with no local credentials and no network path to the
    cluster.
@@ -117,8 +118,13 @@ CLI (kbridge) --HTTP REST--> Control Plane <--gRPC-- Agent (per cluster) --> kub
   port-forward
 - **Agent to control plane**: gRPC for registration, heartbeats, and command
   polling, plus one persistent stream that multiplexes every live session
-- **Agent to Kubernetes**: kubectl, run locally with the agent's own
-  ServiceAccount
+- **Agent to Kubernetes**: kubectl with no credentials of its own, through a
+  loopback proxy in the agent that adds impersonation of `kbridge:<email>`.
+  Arguments that change the connection or read local files are refused, so
+  the cluster's own audit log names the user, and the agent holds only
+  impersonation and RoleBinding-sync permissions
+- **RBAC sync**: the agent keeps RoleBindings in step with the policy's
+  `clusterAccess`; `kb admin rbac status` shows whether each cluster matches
 
 Every command passes one authorization chokepoint: role rules decide first, then
 guardrails may refuse it, demand a reason, or require an approved grant. Nothing
@@ -154,6 +160,7 @@ kb admin users list                          # List users
 kb admin users create --email dev@corp.com --name Dev
 kb admin agent-tokens create --cluster prod  # Generate an agent token
 kb admin audit --user dev@corp.com           # View the command audit log
+kb admin rbac status                         # Show RoleBinding sync state per cluster
 ```
 
 ### Control Plane (`kbridge-control-plane`)
@@ -162,7 +169,7 @@ API gateway and control plane. Handles user authentication, cluster registry, RB
 
 ### Agent (`kbridge-agent`)
 
-Lightweight daemon running in each Kubernetes cluster. Connects outbound to the control plane, registers cluster metadata, polls for commands, executes kubectl locally, and submits results back.
+Lightweight daemon running in each Kubernetes cluster. Connects outbound to the control plane, registers cluster metadata, polls for commands, executes kubectl locally as the requesting user (impersonation), keeps cluster RoleBindings in step with kbridge policy, and submits results back. It holds only impersonation and binding-sync permissions.
 
 ## Quick Start
 
@@ -192,7 +199,7 @@ export KBRIDGE_JWT_SECRET="$(openssl rand -hex 32)"
 ./bin/kbridge-control-plane --config configs/control-plane.yaml
 ```
 
-**2. Start an agent (in a cluster with kubectl access):**
+**2. Start an agent (locally, set `kubernetes.kubeconfig` in `configs/agent.yaml` to an absolute path; in a pod the in-cluster defaults apply):**
 ```bash
 ./bin/kbridge-agent --config configs/agent.yaml
 ```

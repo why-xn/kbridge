@@ -41,7 +41,7 @@ func rewriteArgs(args []string) []string {
 
 	if strings.HasPrefix(first, "-") {
 		switch first {
-		case "-h", "--help", "-v", "--version":
+		case "-h", "--help", "--version":
 			return args
 		default:
 			// A leading flag that isn't ours (e.g. `kb -n ns get pods`) belongs

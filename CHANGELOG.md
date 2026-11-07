@@ -128,6 +128,160 @@ Existing databases gain the `audit_logs.reason` column automatically on startup.
 Policy files without a `guardrails:` section keep working unchanged — guardrails
 are opt-in, and a policy with none behaves exactly as before.
 
+## [0.3.0-alpha.1] - 2026-11-06
+
+### Added
+
+- **The agent keeps cluster RBAC in step with kbridge policy.** A role's new
+  `clusterAccess` list names the ClusterRole its users get, in which
+  namespaces or cluster-wide. Each agent creates the `kbridge-<role>-<clusterRole>`
+  bindings for the role's `kbridge:<email>` users, labelled
+  `app.kubernetes.io/managed-by=kbridge`, puts them back within seconds when
+  edited by hand, and deletes them when policy or the user goes away. It never
+  writes in its own or a protected namespace and only binds `kbridge:` users.
+  See [docs/rbac.md](docs/rbac.md#cluster-bindings-clusteraccess).
+- **The agent grants a role that can create pods only where Pod Security is
+  enforced.** A namespaced binding to any ClusterRole but `view` needs the
+  namespace labelled `pod-security.kubernetes.io/enforce=baseline` (or
+  `restricted`); otherwise `kb admin rbac status` shows the refusal and the
+  label command, and a grant already made there is deleted. The agent chart grants `get` on namespaces for this, and a new
+  `sync.interval` value (default `60s`) sets how often it re-checks. See
+  [docs/rbac.md](docs/rbac.md#cluster-bindings-clusteraccess).
+- **Agent chart `accessCeiling`** caps what the agent may bind: by default the
+  ClusterRoles `view`, `edit` and `cluster-admin`, in any non-protected
+  namespace and cluster-wide. Kubernetes refuses anything above it. The default
+  policies map `admin` to `cluster-admin` and `viewer` to `view` cluster-wide,
+  and the agent ceiling defaults to `[view, edit, cluster-admin]`.
+- **`kb admin rbac status`** shows, per cluster, whether its bindings match the
+  current policy (`in sync`, `drift`, `unreported`) and why not. See
+  [docs/operations.md](docs/operations.md#rbac-sync).
+
+**Upgrading:** add `clusterAccess` to your policy roles and set
+`accessCeiling` to cover it (for example `clusterRoles: [view, edit, admin]`
+or `clusterWide: true`), then upgrade the agents. Run `kb admin rbac status`
+until every cluster is `in sync`. Then delete any `kbridge:` bindings you
+made by hand (the agent ignores bindings without its label, so they keep
+granting access until removed), e.g.
+`kubectl get rolebindings,clusterrolebindings -A -o wide | grep kbridge:`.
+
+### Security
+
+- **kubectl on the agent no longer holds the agent's credentials.** Before,
+  the agent ran kubectl with its own ServiceAccount (cluster-admin by chart
+  default) and passed user arguments through. A user allowed to run any
+  command could add `--server`, `--token`, `--kubeconfig` or `--as` to send
+  the agent's credentials elsewhere or act as someone else, reach the agent's
+  own namespace however `-n` was spelled (`-nkbridge`), have the agent fetch
+  `-f` URLs and read local files on the agent (`--from-file`, `-f <path>`), and
+  use `kb cp` to read or write the agent's filesystem, including its token.
+  Now kubectl talks to a loopback proxy in the agent with a one-off nonce; the
+  proxy adds the agent token, drops `Authorization` and `Impersonate-*`
+  headers, and refuses the agent's namespace, any `protectedNamespaces`, and
+  the cluster-wide secrets list and watch. Connection flags, file flags and
+  the verbs `cp`, `proxy`, `plugin`, `config` and `kustomize` are refused by
+  the control plane (`403`, audited as `denied`) and again by the agent.
+  Arguments after `--` are checked too, except a container command after
+  `exec`, `attach`, `run` or `debug`; there a value flag just before `--` must
+  be written `--flag=value`. See
+  [docs/security.md](docs/security.md#layer-2--the-agent-what-kubectl-can-actually-do)
+  for what this does and does not cover.
+- **The agent chart mounts its token at `/var/run/kbridge/sa`** as a projected
+  volume (10 minute expiry) and nothing at the default ServiceAccount path. A
+  new `protectedNamespaces` value lists namespaces besides the release
+  namespace that the agent refuses; add the control plane's namespace if it
+  runs in the same cluster. An optional `networkPolicy` limits agent egress to
+  the API server, the control plane and DNS.
+- **The agent's proxy refuses the kubelet node proxy and ServiceAccount
+  tokens.** `/api/v1/nodes/<node>/proxy/...` could run commands in any pod,
+  the agent's included, and `kb create token <sa>` returned a token usable
+  outside kbridge. Both are now refused with a `403` naming what was refused.
+- **Pod Security grants follow the namespace label.** A pod-creating grant is
+  deleted when its namespace stops enforcing `baseline` or `restricted`, and
+  kept when the namespace cannot be read (only a definite answer revokes).
+- **The policy finds the resource and namespace kubectl will use.** A flag
+  value no longer stands in for the resource (`get -l pods secrets` was judged
+  as `pods`), an unknown long flag before the resource takes the next token as
+  its value, and `apply -f -` is checked against every namespace its manifests
+  name, as is an attached `-nteam-b`.
+
+**Upgrading:** upgrade the control plane and agents together (see
+[Changed](#changed) below), then the CLI. Behaviour users will notice:
+
+- `-f <URL>` is fetched by the `kb` CLI; an older CLI's `-f <URL>` is refused.
+- `-k <dir>` is refused with a hint to run
+  `kubectl kustomize <dir> | kb apply -f -`.
+- `kb cp` is refused. Use `kb exec -i … -- tar` or similar instead.
+- Commands into the agent's namespace or a protected namespace are refused,
+  as is `kb get secrets -A`.
+
+### Changed
+
+- **Breaking: commands run as the requesting user, not as the agent.** The
+  agent impersonates `kbridge:<email>` on every request to the API server, so
+  Kubernetes RBAC bound to that user now decides what a command may do, after
+  the kbridge policy allows it. Admission (PodSecurity and the like) applies as
+  that user too. The agent chart's ClusterRole grants impersonation and the
+  binding sync above; the `rbac.rules` value is removed. Each request carries the extra
+  `kbridge-request-id`, visible in the Kubernetes audit log under
+  `impersonatedUser`. See
+  [docs/security.md](docs/security.md#binding-kbridge-users-in-the-cluster).
+
+**Upgrading:** upgrade the control plane and all agents together. A new
+agent refuses commands from an old control plane (no identity), and a new
+control plane answers `503` for an old agent. Without a binding for its
+`kbridge:<email>` user every request is `Forbidden`; the agent creates those
+bindings from policy `clusterAccess` (see [Added](#added)).
+
+- **Chart resources take standard Helm names.** Installed as `kbridge-agent`
+  and `kbridge-control-plane`, the charts name their Deployment, Service,
+  ServiceAccount, ClusterRole and Secrets `kbridge-agent` and
+  `kbridge-control-plane` (before, the release name was followed by `-agent`
+  or `-control-plane` again). A release name that does not contain
+  the chart name gets `<release>-kbridge-agent` or
+  `<release>-kbridge-control-plane`.
+
+**Upgrading:** the control plane's data PVC is renamed too, so `helm upgrade`
+deletes the old `<release>-control-plane-data` PVC and starts on an empty
+database. Back up the database before upgrading and restore it afterwards (see
+[docs/operations.md](docs/operations.md#backup--restore-sqlite)). Point
+agents' `controlPlane.url` at the new Service name.
+
+### Fixed
+
+- **Policy changes reach the running control plane.** A `helm upgrade` that
+  changed `rbac.policy` left the old policy in force: the pod restart covered
+  only the config Secret, and the kubelet's ConfigMap update did not fire the
+  file watch. The chart now restarts the control plane when `rbac.policy`
+  changes, and the control plane also re-reads the policy file every 10 s and
+  reloads when its content changed. See [docs/rbac.md](docs/rbac.md#reloading).
+- **The control plane chart stops the old pod before starting the new one**
+  (`Recreate` strategy), so an upgrade never runs two SQLite writers or waits
+  on a ReadWriteOnce volume still attached elsewhere, and sets `fsGroup: 10001`
+  so the control plane can write its PVC on storage that mounts as root.
+- **The install guides work as written.** The quick start installs both charts
+  into one `kbridge` namespace labelled Pod Security `restricted`, reaches the
+  control plane with `kubectl port-forward`, and labels the namespaces where
+  kbridge grants `edit`. Backup and restore no longer need `sqlite3` in the
+  image, token rotation covers both an inline token and `existingSecret`, and
+  every command names the right namespace, Deployment and Secret. See
+  [docs/installation.md](docs/installation.md#helm-kubernetes) and
+  [docs/operations.md](docs/operations.md).
+- **`kb login` prompts for the control plane URL** when none is set and
+  reads a piped password (`echo "$PW" | kb login`).
+- **Policy refusals say what was refused and who can help**, naming the verb,
+  resource, namespace, cluster and user, and `kb` prints each error once
+  without a usage block.
+- **A dropped agent fails its commands.** Commands queued when an agent drops
+  fail with `cluster "<name>": agent is disconnected` within the heartbeat
+  timeout, with the same message and exit code (1) as a command sent
+  afterwards; commands still running when the agent is replaced fail with
+  `agent shut down while the command was running; retry it` instead of waiting
+  for the command timeout. A reconnecting agent reports its sync state again
+  so `kb admin rbac status` is current.
+- **`kb -v=<n>` reaches kubectl**, viewers may run `kb auth can-i`, the
+  `--from-file` refusal says how to send the object instead, and
+  `kb admin rbac status` shows times in seconds.
+
 ## [0.2.2-alpha.1] - 2026-10-21
 
 ### Fixed
@@ -237,7 +391,8 @@ paths — may still change between alpha releases.
 - **Agent token storage** — tokens are stored only as HMAC-SHA256 digests keyed by a server-side pepper; a stolen database alone cannot be used to verify guessed tokens.
 - mTLS between agents and control plane is planned but deferred; the channel is currently protected by server-authenticated TLS only.
 
-[Unreleased]: https://github.com/why-xn/kbridge/compare/v0.2.2-alpha.1...HEAD
+[Unreleased]: https://github.com/why-xn/kbridge/compare/v0.3.0-alpha.1...HEAD
+[0.3.0-alpha.1]: https://github.com/why-xn/kbridge/compare/v0.2.2-alpha.1...v0.3.0-alpha.1
 [0.2.2-alpha.1]: https://github.com/why-xn/kbridge/compare/v0.2.1-alpha.1...v0.2.2-alpha.1
 [0.2.1-alpha.1]: https://github.com/why-xn/kbridge/compare/v0.2.0-alpha.1...v0.2.1-alpha.1
 [0.2.0-alpha.1]: https://github.com/why-xn/kbridge/compare/v0.1.0-alpha.1...v0.2.0-alpha.1

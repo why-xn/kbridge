@@ -133,21 +133,22 @@ func (m *SessionManager) UnregisterAgentStream(agentID string) {
 }
 
 // Start opens a non-interactive session (logs -f / get -w).
-func (m *SessionManager) Start(agentID string, command []string, namespace string) (*Session, error) {
-	return m.startSession(agentID, &agentpb.StartStream{Command: command, Namespace: namespace})
+func (m *SessionManager) Start(agentID, user string, command []string, namespace string) (*Session, error) {
+	return m.startSession(agentID, &agentpb.StartStream{Command: command, Namespace: namespace, Identity: identityFor(user)})
 }
 
 // StartInteractive opens an interactive (tty) session and includes the initial size.
-func (m *SessionManager) StartInteractive(agentID string, command []string, namespace string, rows, cols uint16) (*Session, error) {
+func (m *SessionManager) StartInteractive(agentID, user string, command []string, namespace string, rows, cols uint16) (*Session, error) {
 	return m.startSession(agentID, &agentpb.StartStream{
 		Command: command, Namespace: namespace, Tty: true, Rows: uint32(rows), Cols: uint32(cols),
+		Identity: identityFor(user),
 	})
 }
 
 // StartWithStdin opens a stdin-streaming session without a TTY.
-func (m *SessionManager) StartWithStdin(agentID string, command []string, namespace string) (*Session, error) {
+func (m *SessionManager) StartWithStdin(agentID, user string, command []string, namespace string) (*Session, error) {
 	return m.startSession(agentID, &agentpb.StartStream{
-		Command: command, Namespace: namespace, Tty: false,
+		Command: command, Namespace: namespace, Tty: false, Identity: identityFor(user),
 	})
 }
 
@@ -227,7 +228,7 @@ func (m *SessionManager) SendResize(sessionID string, rows, cols uint32) error {
 }
 
 // StartPortForward opens a port-forward session and pushes PortForwardStart.
-func (m *SessionManager) StartPortForward(agentID, pod, namespace string, ports []uint32) (*Session, error) {
+func (m *SessionManager) StartPortForward(agentID, user, pod, namespace string, ports []uint32) (*Session, error) {
 	m.mu.Lock()
 	conn := m.agents[agentID]
 	if conn == nil {
@@ -247,7 +248,7 @@ func (m *SessionManager) StartPortForward(agentID, pod, namespace string, ports 
 	m.mu.Unlock()
 
 	err := sendLocked(conn, &agentpb.ControlPlaneStreamMessage{Msg: &agentpb.ControlPlaneStreamMessage_PfStart{
-		PfStart: &agentpb.PortForwardStart{SessionId: sess.ID, Pod: pod, Namespace: namespace, Ports: ports},
+		PfStart: &agentpb.PortForwardStart{SessionId: sess.ID, Pod: pod, Namespace: namespace, Ports: ports, Identity: identityFor(user)},
 	}})
 	if err != nil {
 		return nil, err

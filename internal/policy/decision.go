@@ -44,7 +44,7 @@ func allowed(reason string) Decision {
 // where the first matching guardrail decides.
 func (p *Policy) Evaluate(subject string, req AccessRequest, reason string) Decision {
 	if !p.allows(subject, req) {
-		return Decision{Outcome: OutcomeDenied, Message: "permission denied"}
+		return Decision{Outcome: OutcomeDenied, Message: req.DenialMessage(subject)}
 	}
 	reason = NormalizeReason(reason)
 	for _, g := range p.Guardrails {

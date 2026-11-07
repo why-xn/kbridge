@@ -50,6 +50,11 @@ check_dependencies() {
         exit 1
     fi
 
+    if ! command -v helm &> /dev/null; then
+        log_error "helm is not installed."
+        exit 1
+    fi
+
     log_info "All dependencies found."
 }
 
@@ -94,7 +99,14 @@ build_binaries() {
     log_info "Building binaries..."
     cd "${PROJECT_ROOT}"
     make build
+    docker build -f build/agent.Dockerfile -t kbridge-agent:e2e .
+    kind load docker-image kbridge-agent:e2e --name "${CLUSTER_NAME}"
     log_info "Binaries built successfully."
+}
+
+# Gateway of the kind docker network: where the in-cluster agent reaches the host.
+kind_gateway() {
+    docker network inspect kind -f '{{range .IPAM.Config}}{{if .Gateway}}{{.Gateway}}{{"\n"}}{{end}}{{end}}' | grep -v ':' | head -1
 }
 
 start_control_plane() {
@@ -136,7 +148,9 @@ EOF
     # The signing secret is mounted from a file, as a production install would.
     printf 'e2e-notify-secret\n' > "${CONFIG_DIR}/notify-secret"
 
-    # Create RBAC policy: the e2e admin gets full access; everyone else is a viewer.
+    # Create RBAC policy: the e2e admin gets full access; the developer may do
+    # anything in e2e-dev; everyone else is a viewer. clusterAccess is what the
+    # agent binds in the cluster for each role's kbridge:<email> users.
     cat > "${CONFIG_DIR}/rbac.yaml" <<EOF
 default: viewer
 roles:
@@ -146,15 +160,35 @@ roles:
         namespaces: ["*"]
         resources: ["*"]
         verbs: ["*"]
+    clusterAccess:
+      - clusters: ["*"]
+        clusterRole: cluster-admin
+        clusterWide: true
   - name: viewer
     rules:
       - clusters: ["*"]
         namespaces: ["*"]
         resources: ["*"]
-        verbs: ["get", "list", "watch", "describe", "logs"]
+        verbs: ["get", "list", "watch", "describe", "logs", "auth"]
+    clusterAccess:
+      - clusters: ["*"]
+        clusterRole: view
+        clusterWide: true
+  - name: developer
+    rules:
+      - clusters: ["*"]
+        namespaces: ["e2e-dev"]
+        resources: ["*"]
+        verbs: ["*"]
+    clusterAccess:
+      - clusters: ["*"]
+        clusterRole: edit
+        namespaces: ["e2e-dev"]
 bindings:
   - subject: admin@e2e.test
     roles: ["admin"]
+  - subject: developer@e2e.test
+    roles: ["viewer", "developer"]
 EOF
 
     # Fail fast (with a clear message) if the port is already taken by something
@@ -222,52 +256,57 @@ stop_control_plane() {
 start_agent() {
     log_info "Starting agent..."
 
-    mkdir -p "${LOG_DIR}"
-
-    # Create agent config pointing to local control plane
-    cat > "${CONFIG_DIR}/agent.yaml" <<EOF
-control_plane:
-  url: "localhost:${GRPC_PORT}"
-  token: "dev-token"
-cluster:
-  name: "${CLUSTER_NAME}"
-EOF
-
-    # Start agent in background
-    "${BIN_DIR}/kbridge-agent" --config "${CONFIG_DIR}/agent.yaml" > "${LOG_DIR}/agent.log" 2>&1 &
-    AGENT_PID=$!
-    echo "${AGENT_PID}" > "${LOG_DIR}/agent.pid"
+    helm upgrade --install kbridge-agent charts/agent -n kbridge --create-namespace --wait --timeout 120s \
+        --set image.repository=kbridge-agent --set image.tag=e2e --set image.pullPolicy=Never \
+        --set controlPlane.url="$(kind_gateway):${GRPC_PORT}" --set controlPlane.token=dev-token \
+        --set cluster.name="${CLUSTER_NAME}" \
+        --set 'accessCeiling.clusterRoles={view,edit,cluster-admin}' --set accessCeiling.clusterWide=true \
+        --set sync.interval=10s
 
     # Wait for agent to register
     log_info "Waiting for agent to register..."
     for i in {1..30}; do
-        # Check if agent appears in clusters list
         CLUSTERS=$(curl -s -H "Authorization: Bearer ${AUTH_TOKEN}" "http://localhost:${CONTROL_PLANE_PORT}/api/v1/clusters" 2>/dev/null || echo "{}")
         if echo "${CLUSTERS}" | grep -q "${CLUSTER_NAME}"; then
-            log_info "Agent registered successfully (PID: ${AGENT_PID})."
+            log_info "Agent registered successfully."
             return 0
         fi
         sleep 1
     done
 
-    log_error "Agent failed to register. Check ${LOG_DIR}/agent.log"
-    cat "${LOG_DIR}/agent.log"
+    log_error "Agent failed to register. Agent pod logs:"
+    kubectl -n kbridge logs deploy/kbridge-agent --tail=50
+    exit 1
+}
+
+# Namespaces the policy and tests refer to; the agent binds users from policy.
+create_e2e_namespaces() {
+    log_info "Creating e2e namespaces..."
+    kubectl create namespace e2e-dev
+    kubectl create namespace e2e-nobind
+    kubectl create namespace e2e-nopsa
+    kubectl label namespace e2e-dev pod-security.kubernetes.io/enforce=baseline
+}
+
+# Tests must not race the agent's first reconcile.
+wait_rbac_sync() {
+    log_info "Waiting for the agent to sync cluster RBAC..."
+    for i in {1..60}; do
+        if "${BIN_DIR}/kb" admin rbac status 2>/dev/null | grep "^${CLUSTER_NAME} " | grep -q "in sync"; then
+            log_info "Cluster RBAC in sync."
+            return 0
+        fi
+        sleep 1
+    done
+    log_error "Cluster RBAC did not sync:"
+    "${BIN_DIR}/kb" admin rbac status || true
+    kubectl -n kbridge logs deploy/kbridge-agent --tail=50
     exit 1
 }
 
 stop_agent() {
     log_info "Stopping agent..."
-
-    if [ -f "${LOG_DIR}/agent.pid" ]; then
-        PID=$(cat "${LOG_DIR}/agent.pid")
-        if kill -0 "${PID}" 2>/dev/null; then
-            kill "${PID}" 2>/dev/null || true
-            sleep 1
-            kill -9 "${PID}" 2>/dev/null || true
-            log_info "Agent stopped."
-        fi
-        rm -f "${LOG_DIR}/agent.pid"
-    fi
+    helm uninstall kbridge-agent -n kbridge --ignore-not-found 2>/dev/null || true
 }
 
 setup_cli_config() {
@@ -321,7 +360,7 @@ run_tests() {
     cd "${PROJECT_ROOT}"
 
     # Run Go e2e tests
-    go test -v -tags=e2e ./tests/e2e/... -control-plane-url="http://localhost:${CONTROL_PLANE_PORT}" -grpc-addr="localhost:${GRPC_PORT}" -cluster-name="${CLUSTER_NAME}" -bin-dir="${BIN_DIR}" -notify-port="${NOTIFY_PORT}"
+    go test -v -timeout 20m -tags=e2e ./tests/e2e/... -control-plane-url="http://localhost:${CONTROL_PLANE_PORT}" -grpc-addr="localhost:${GRPC_PORT}" -cluster-name="${CLUSTER_NAME}" -bin-dir="${BIN_DIR}" -notify-port="${NOTIFY_PORT}"
 
     log_info "All e2e tests passed!"
 }
@@ -335,8 +374,10 @@ main() {
             build_binaries
             start_control_plane
             login_control_plane
+            create_e2e_namespaces
             start_agent
             setup_cli_config
+            wait_rbac_sync
             log_info "E2E environment is ready!"
             log_info "Control plane: http://localhost:${CONTROL_PLANE_PORT}"
             log_info "Cluster: ${CLUSTER_NAME}"
@@ -366,8 +407,10 @@ main() {
             build_binaries
             start_control_plane
             login_control_plane
+            create_e2e_namespaces
             start_agent
             setup_cli_config
+            wait_rbac_sync
             run_tests
             # cleanup happens via trap
             ;;

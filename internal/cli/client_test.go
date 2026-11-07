@@ -2,6 +2,7 @@ package cli
 
 import (
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -261,8 +262,8 @@ func TestControlPlaneClient_ExecCommand_Disconnected(t *testing.T) {
 
 	client := NewControlPlaneClient(server.URL)
 	_, err := client.ExecCommand("prod", []string{"get", "pods"}, "", 30)
-	if err == nil {
-		t.Fatal("expected error for disconnected agent")
+	if err == nil || err.Error() != `cluster "prod": agent is disconnected` {
+		t.Fatalf("err = %v, want the disconnected message", err)
 	}
 }
 
@@ -277,6 +278,33 @@ func TestControlPlaneClient_ExecCommand_Timeout(t *testing.T) {
 	_, err := client.ExecCommand("prod", []string{"get", "pods"}, "", 30)
 	if err == nil {
 		t.Fatal("expected error for timeout")
+	}
+}
+
+func TestControlPlaneClient_ExecCommand_Refused(t *testing.T) {
+	tests := []struct {
+		name    string
+		status  int
+		body    string
+		wantErr string
+	}{
+		{"argument check", http.StatusForbidden, `{"error":"kubectl cp is not supported through kbridge"}`, "kubectl cp is not supported through kbridge"},
+		{"rbac", http.StatusForbidden, `{"error":"permission denied"}`, "permission denied"},
+		{"bad request without message", http.StatusBadRequest, `{}`, "server returned 400"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.WriteHeader(tt.status)
+				w.Write([]byte(tt.body))
+			}))
+			defer server.Close()
+
+			_, err := NewControlPlaneClient(server.URL).ExecCommand("prod", []string{"get", "pods"}, "", 30)
+			if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
+				t.Fatalf("err = %v, want it to contain %q", err, tt.wantErr)
+			}
+		})
 	}
 }
 
@@ -435,5 +463,29 @@ func TestTransparentRefresh_NoRefreshToken(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "run 'kb login' first") {
 		t.Fatalf("expected 'run kb login' error, got: %v", err)
+	}
+}
+
+func TestHTTPStatusError_UsesBody(t *testing.T) {
+	const msg = `permission denied: get pods in namespace "x" on cluster "c" is not allowed for a@b.c; ask a kbridge admin to extend your role`
+	tests := []struct {
+		name, body, want string
+	}{
+		{"json error field", `{"error":"` + strings.ReplaceAll(msg, `"`, `\"`) + `"}`, msg},
+		{"no body", "", "permission denied"},
+		{"not json", "nope", "permission denied"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			resp := func() *http.Response {
+				return &http.Response{StatusCode: http.StatusForbidden, Body: io.NopCloser(strings.NewReader(tt.body))}
+			}
+			if got := httpStatusError(resp()).Error(); got != tt.want {
+				t.Errorf("httpStatusError = %q, want %q", got, tt.want)
+			}
+			if got := streamStatusError(resp(), "c").Error(); got != tt.want {
+				t.Errorf("streamStatusError = %q, want %q", got, tt.want)
+			}
+		})
 	}
 }

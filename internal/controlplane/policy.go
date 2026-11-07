@@ -13,6 +13,10 @@ type (
 	AccessRequest = policy.AccessRequest
 	// PolicyDecision is the verdict on a single command.
 	PolicyDecision = policy.Decision
+	// ClusterAccess grants a role a Kubernetes ClusterRole on matching clusters.
+	ClusterAccess = policy.ClusterAccess
+	// DesiredBinding is a RoleBinding a cluster should carry for the policy.
+	DesiredBinding = policy.DesiredBinding
 )
 
 // NewPolicyEngineFromBytes parses a policy document into a new engine that has
@@ -29,4 +33,15 @@ func NewPolicyEngineFromFile(path string) (*PolicyEngine, error) {
 // parseAccessRequest derives an AccessRequest from a kubectl command.
 func parseAccessRequest(cluster string, command []string, fallbackNamespace string) AccessRequest {
 	return policy.ParseAccessRequest(cluster, command, fallbackNamespace)
+}
+
+// accessRequests lists every check a command needs: the flag namespace plus
+// each namespace its stdin manifests write to.
+func accessRequests(cluster string, req ExecRequest) []AccessRequest {
+	return policy.AccessRequests(cluster, req.Command, req.Namespace, req.Stdin)
+}
+
+// BindingsVersion is the hash agents compare their sync state against.
+func BindingsVersion(b []DesiredBinding) string {
+	return policy.BindingsVersion(b)
 }

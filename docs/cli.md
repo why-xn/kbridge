@@ -56,8 +56,8 @@ kb get nodes
 
 **Local manifests (`-f`).** kubectl runs on the agent, so the CLI reads local
 `-f` inputs — files, directories (`-R` to recurse) and `-` (stdin) — and sends
-their contents along. URLs are fetched by the agent. Local kustomize directories
-(`-k <dir>`) are not supported; pipe them instead:
+their contents along. `http(s)` URLs are fetched by the CLI (10 MiB limit).
+Kustomize (`-k`) is not supported; pipe it instead:
 
 ```bash
 kb apply -f app.yaml

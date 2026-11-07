@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -21,7 +23,12 @@ type Agent struct {
 	conn      *grpc.ClientConn
 	client    agentpb.AgentServiceClient
 	executor  *KubectlExecutor
+	window    *Window
+	windowDir string // holds the window CA; removed on shutdown
+	tempToken string // token file LoadUpstream wrote from a kubeconfig; removed on shutdown
 	agentID   string
+	sync      *syncer // keeps cluster role bindings in step; set by openWindow
+	bindingsV string  // last desired-bindings version a heartbeat reported
 	mu        sync.RWMutex
 	stopCh    chan struct{}
 	stoppedCh chan struct{}
@@ -31,7 +38,7 @@ type Agent struct {
 func New(cfg *Config) *Agent {
 	return &Agent{
 		config:    cfg,
-		executor:  NewKubectlExecutor(),
+		executor:  NewKubectlExecutor(nil), // Run opens the window
 		stopCh:    make(chan struct{}),
 		stoppedCh: make(chan struct{}),
 	}
@@ -40,6 +47,12 @@ func New(cfg *Config) *Agent {
 // Run starts the agent, connecting to control plane and maintaining the connection.
 func (a *Agent) Run(ctx context.Context) error {
 	log.Printf("Agent starting for cluster: %s", a.config.Cluster.Name)
+	defer close(a.stoppedCh)
+
+	defer a.closeWindow()
+	if err := a.openWindow(); err != nil {
+		return fmt.Errorf("starting window: %w", err)
+	}
 
 	if err := a.connect(ctx); err != nil {
 		return fmt.Errorf("connecting to control plane: %w", err)
@@ -64,14 +77,94 @@ func (a *Agent) Run(ctx context.Context) error {
 	// Start persistent stream client
 	go a.runStream(ctx)
 
+	stopSync := a.startSync(ctx)
+
 	// Run heartbeat loop (blocks until stopped)
 	a.runHeartbeatLoop(ctx)
+	stopSync()
 
 	// Let an in-flight command report its result before the connection closes,
 	// so its caller gets an answer instead of waiting for the command timeout.
 	<-pollDone
-	close(a.stoppedCh)
 	return nil
+}
+
+// openWindow builds the window from config and hands it to the executor;
+// kubectl never runs with the agent's own credentials.
+func (a *Agent) openWindow() error {
+	up, err := LoadUpstream(a.config.Kubernetes)
+	if err != nil {
+		return err
+	}
+	if a.config.Kubernetes.Kubeconfig != "" && strings.HasPrefix(filepath.Base(up.TokenFile), "kbridge-token-") {
+		a.tempToken = up.TokenFile
+	}
+	if a.windowDir, err = os.MkdirTemp("", "kbridge-window-"); err != nil {
+		return fmt.Errorf("creating window dir: %w", err)
+	}
+	protected := windowProtected(a.config)
+	if a.window, err = NewWindow(up, protected, a.windowDir); err != nil {
+		return err
+	}
+	a.executor.window = a.window
+	a.sync = newSyncer(newKubeAPI(up), protected, a.config.Sync.Interval, a.currentClient)
+	return nil
+}
+
+// startSync runs the binding sync loop beside command handling; the returned
+// func stops it and waits for it to finish.
+func (a *Agent) startSync(ctx context.Context) func() {
+	ctx, cancel := context.WithCancel(ctx)
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		a.sync.run(ctx)
+	}()
+	return func() {
+		cancel()
+		<-done
+	}
+}
+
+// currentClient is the control plane client and agent ID the sync loop uses.
+func (a *Agent) currentClient() (agentpb.AgentServiceClient, string) {
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+	return a.client, a.agentID
+}
+
+// noteBindingsVersion triggers a sync when a heartbeat reports new desired bindings.
+func (a *Agent) noteBindingsVersion(v string) {
+	if v == "" || v == a.bindingsV || a.sync == nil {
+		return
+	}
+	a.bindingsV = v
+	a.sync.trigger()
+}
+
+// closeWindow releases whatever openWindow managed to set up.
+func (a *Agent) closeWindow() {
+	if a.window != nil {
+		_ = a.window.Close()
+	}
+	if a.windowDir != "" {
+		_ = os.RemoveAll(a.windowDir)
+	}
+	if a.tempToken != "" {
+		_ = os.Remove(a.tempToken)
+	}
+}
+
+// windowProtected lists the namespaces the window refuses: the configured ones
+// and the agent's own.
+func windowProtected(cfg *Config) []string {
+	var out []string
+	for _, ns := range append(append([]string{}, cfg.ProtectedNamespaces...), ownNamespace(cfg.Kubernetes.TokenFile)) {
+		if ns != "" {
+			out = append(out, ns)
+		}
+	}
+	return out
 }
 
 // Stop signals the agent to stop and waits for it to finish.
@@ -125,8 +218,9 @@ func (a *Agent) register(ctx context.Context) error {
 	log.Printf("Registering with control plane")
 
 	req := &agentpb.RegisterRequest{
-		AgentToken:  a.config.ControlPlane.Token,
-		ClusterName: a.config.Cluster.Name,
+		AgentToken:   a.config.ControlPlane.Token,
+		ClusterName:  a.config.Cluster.Name,
+		Capabilities: []string{"impersonation", "rbac-sync"},
 	}
 
 	// Add timeout for registration
@@ -147,6 +241,10 @@ func (a *Agent) register(ctx context.Context) error {
 	a.mu.Unlock()
 
 	log.Printf("Registered successfully with agent ID: %s", resp.AgentId)
+	// A restarted control plane has no sync status; report without waiting for the timer.
+	if a.sync != nil {
+		a.sync.trigger()
+	}
 	return nil
 }
 
@@ -209,6 +307,7 @@ func (a *Agent) sendHeartbeat(ctx context.Context) (time.Duration, error) {
 	if !resp.Acknowledged {
 		return 0, fmt.Errorf("heartbeat not acknowledged")
 	}
+	a.noteBindingsVersion(resp.GetDesiredBindingsVersion())
 
 	return time.Duration(resp.NextHeartbeatSeconds) * time.Second, nil
 }
@@ -332,7 +431,7 @@ func (a *Agent) executeAndSubmit(ctx context.Context, cmd *agentpb.CommandReques
 	}
 
 	// Execute the kubectl command with optional stdin
-	result := a.executor.ExecuteWithStdin(ctx, cmd.Command, cmd.Namespace, timeout, cmd.Stdin)
+	result := a.executor.ExecuteWithStdin(ctx, Identity{User: cmd.GetIdentity().GetUser(), RequestID: cmd.GetRequestId()}, cmd.Command, cmd.Namespace, timeout, cmd.Stdin)
 
 	// Build result request
 	submitReq := &agentpb.SubmitCommandResultRequest{

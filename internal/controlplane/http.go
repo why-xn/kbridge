@@ -11,6 +11,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/why-xn/kbridge/internal/auth"
+	"github.com/why-xn/kbridge/internal/kubeargs"
 	"github.com/why-xn/kbridge/internal/policy"
 )
 
@@ -32,6 +33,7 @@ type ExecRequest struct {
 	// It is deliberately not decoded from the request body: a client asserting
 	// its own grant would defeat the approval.
 	GrantID string `json:"-"`
+	User    string `json:"-"` // set from verified JWT claims by authorizeExec, never from the body
 }
 
 // ExecResponse represents a command execution response.
@@ -176,6 +178,7 @@ func (s *HTTPServer) setupRoutes() {
 					admin.POST("/grants/:id/deny", s.grantHandlers.HandleDenyGrant)
 					admin.DELETE("/grants/:id", s.grantHandlers.HandleRevokeGrant)
 				}
+				admin.GET("/rbac/status", s.handleRBACStatus)
 			}
 		}
 	}
@@ -243,7 +246,7 @@ func (s *HTTPServer) handleExecCommand(c *gin.Context) {
 	}
 
 	// Enforce RBAC before routing the command to the agent.
-	if !s.authorizeExec(c, clusterName, &req) {
+	if !requireImpersonation(c, agent) || !s.authorizeExec(c, clusterName, &req) {
 		return
 	}
 
@@ -260,6 +263,7 @@ func (s *HTTPServer) handleExecCommand(c *gin.Context) {
 	requestID, err := s.commandQueue.Enqueue(
 		agent.ID,
 		clusterName,
+		req.User,
 		req.Command,
 		req.Namespace,
 		int32(timeout.Seconds()),
@@ -320,33 +324,46 @@ func (s *HTTPServer) handleExecCommand(c *gin.Context) {
 	c.JSON(http.StatusOK, response)
 }
 
-// authorizeExec checks the requesting user's permissions for the command: role
-// rules first, then guardrails. It writes the appropriate error response and
-// returns false when the request must be rejected. When no policy is configured
-// it allows the request. An accepted justification is written back into req so
-// the caller audits it alongside the command.
+// authorizeExec checks the requesting user's RBAC permissions for the command.
+// It writes the appropriate error response and returns false when the request
+// must be rejected. When no authorizer is configured it allows the request.
+// On success it sets req.User from the verified claims, so the agent runs the
+// command as that user.
 func (s *HTTPServer) authorizeExec(c *gin.Context, clusterName string, req *ExecRequest) bool {
-	if s.policy == nil {
-		return true
+	if err := kubeargs.Check(req.Command); err != nil {
+		s.recordExecAudit(c, clusterName, *req, AuditStatusDenied, nil, nil, err.Error())
+		c.JSON(http.StatusForbidden, gin.H{"error": err.Error()})
+		return false
 	}
-
 	claims := auth.GetUserFromContext(c)
+	if s.policy != nil && !s.policyAllows(c, clusterName, req, claims) {
+		return false
+	}
+	if claims != nil {
+		req.User = claims.Email
+	}
+	return true
+}
+
+// policyAllows enforces role rules, guardrails and grants for every access the
+// command needs, writing the 401/403 response and the audit entry when it
+// refuses. An accepted justification is written back into req so the caller
+// audits it alongside the command.
+func (s *HTTPServer) policyAllows(c *gin.Context, clusterName string, req *ExecRequest, claims *auth.UserClaims) bool {
 	if claims == nil {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "not authenticated"})
 		return false
 	}
-
-	access := parseAccessRequest(clusterName, req.Command, req.Namespace)
-	decision := s.policy.Evaluate(claims.Email, access, req.Reason)
-	req.Reason = decision.Reason
-	if decision.Allowed() {
-		return true
+	for _, access := range accessRequests(clusterName, *req) {
+		decision := s.policy.Evaluate(claims.Email, access, req.Reason)
+		req.Reason = decision.Reason
+		if decision.Allowed() || s.admitByGrant(c, req, claims.Email, access, decision) {
+			continue
+		}
+		s.rejectExec(c, clusterName, *req, claims.Email, access, decision)
+		return false
 	}
-	if s.admitByGrant(c, req, claims.Email, access, decision) {
-		return true
-	}
-	s.rejectExec(c, clusterName, *req, claims.Email, access, decision)
-	return false
+	return true
 }
 
 // admitByGrant lets an approved, unexpired grant satisfy a require-approval
@@ -461,11 +478,11 @@ func (s *HTTPServer) handleStreamCommand(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "command is required"})
 		return
 	}
-	if !s.authorizeExec(c, clusterName, &req) {
+	if !requireImpersonation(c, agent) || !s.authorizeExec(c, clusterName, &req) {
 		return
 	}
 
-	sess, err := s.sessions.Start(agent.ID, req.Command, req.Namespace)
+	sess, err := s.sessions.Start(agent.ID, req.User, req.Command, req.Namespace)
 	if err != nil {
 		if err == ErrTooManyStreams {
 			c.JSON(http.StatusTooManyRequests, gin.H{"error": "too many concurrent streams"})

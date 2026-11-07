@@ -162,8 +162,9 @@ control_plane:
 
 ## Two-layer authorization
 
-kbridge applies authorization at two independent layers. Both must be correctly
-configured for meaningful defense in depth.
+kbridge applies authorization at two independent layers, in order: the kbridge
+policy on the control plane, then Kubernetes RBAC on the cluster, evaluated as
+the requesting user. A command runs only when both allow it.
 
 ### Layer 1 — kbridge RBAC policy (what users may request)
 
@@ -191,109 +192,174 @@ the audit log with status `denied` — the agent never sees it.
 See [rbac.md](rbac.md) for the full policy reference including wildcards,
 hot-reload, and the `default` role.
 
-### Layer 2 — agent Kubernetes ServiceAccount (what kubectl can actually do)
+### Layer 2 — the agent (what kubectl can actually do)
 
-The agent runs `kubectl` using the ServiceAccount bound to its ClusterRole. This
-controls what the Kubernetes API server will actually permit. It is entirely
-independent of the kbridge policy: even if a user is denied by kbridge RBAC, a
-compromised or misconfigured agent could still act using its own ServiceAccount
-credentials.
+Every command runs as the user who sent it. The control plane sends the
+user's identity with each command, stream and port-forward, and the agent
+impersonates `kbridge:<email>` on every request to the API server, so
+Kubernetes RBAC bound to that user decides what the API server permits. The
+agent refuses a command that carries no identity, and the control plane
+answers `503` for an agent too old to impersonate. The agent's own
+ClusterRole grants impersonation and what it needs to keep those users'
+bindings in step with policy, up to the chart's `accessCeiling` (see
+[Binding kbridge users in the cluster](#binding-kbridge-users-in-the-cluster)).
+kubectl itself never holds the agent's credential.
+For each command the agent starts kubectl with an empty kubeconfig and a
+minimal environment, pointed by flags at a TLS proxy on loopback inside the
+agent (the "window"), with a one-off nonce as its bearer token. The nonce is
+valid until that command ends. The window:
 
-**Critically: a locked-down kbridge policy combined with a `cluster-admin` agent
-ServiceAccount is NOT defense in depth.** If the agent is compromised, an
-attacker has full cluster access regardless of what the kbridge policy says.
+- accepts only requests that carry a live nonce;
+- strips any `Authorization` and `Impersonate-*` headers and forwards with the
+  agent's own token, re-read from disk on every request so kubelet rotation
+  takes effect, adding `Impersonate-User: kbridge:<email>` and
+  `Impersonate-Extra-Kbridge-Request-Id: <request id>`;
+- refuses any request under a protected namespace: the agent's own namespace
+  (the Helm release namespace) and any listed in `protected_namespaces`
+  (`protectedNamespaces` in the chart). This covers `exec`, `logs`,
+  `port-forward`, `create token` and every object in those namespaces;
+- refuses `GET /api/v1/secrets` and `/api/v1/watch/secrets`, the cluster-wide
+  secrets list and watch.
+- refuses the kubelet node proxy, `/api/v1/nodes/<node>/proxy/...`, which
+  reaches every pod on a node without a namespace in the path;
+- refuses `/api/v1/namespaces/<ns>/serviceaccounts/<name>/token`
+  (`kb create token`), so the token API never hands a user a ServiceAccount
+  token. An `edit` user can still read one from a token Secret; see
+  [Known limits](#known-limits).
 
-The agent chart default `rbac.rules` grants `*/*` on all verbs — equivalent to
-`cluster-admin`. You must scope this down to the minimum your users actually need
-(see the next section).
+The chart mounts the token as a projected volume at `/var/run/kbridge/sa`
+(default 10 minute expiry) and leaves nothing at the default ServiceAccount
+path.
+
+Two argument checks run before kubectl starts, first on the control plane
+(refusal is a `403` and a `denied` audit row) and again on the agent:
+
+- **Connection flags** (`--server`, `--token`, `--kubeconfig`, `--context`,
+  `--as`, client certificate and TLS flags and the like) are refused, so a
+  command cannot point kubectl somewhere other than the window or swap
+  credentials.
+- **File flags** (`--from-file`, `--from-env-file`, `-k`, `--template`,
+  `-f` with anything other than `-`, and similar) are refused, so kubectl
+  never reads a file on the agent. The `kb` CLI reads local files and fetches
+  `-f <URL>` itself and sends the content on stdin. The verbs `cp`, `proxy`,
+  `plugin`, `config` and `kustomize` are refused outright.
+
+**Limit: kubectl runs as the agent's uid.** It can read the token file the
+same way the agent does. The window keeps the token out of kubectl's
+arguments, kubeconfig and environment, but the flag checks above are what
+stop a command from reading the token file or sending it elsewhere. A gap in
+those checks is a token leak. The structural fix is to run kubectl under a second uid that
+cannot read the token; it is not done yet.
+
+The window narrows what a user can reach through kbridge. It does not narrow
+what a compromised agent can do. Kubernetes cannot limit impersonation to a
+name prefix, so the agent may impersonate any user name (not groups or service
+accounts): a compromised agent holds every binding whose subject is a `User`,
+`kbridge:` or not. Prefer binding people outside kbridge by group, and consider the
+chart's optional `networkPolicy`, which limits agent egress to the API server,
+the control plane and cluster DNS.
 
 ### How the layers interact
 
-| kbridge policy | Agent ClusterRole | Outcome |
-|----------------|-------------------|---------|
+| kbridge policy | Kubernetes RBAC for `kbridge:<email>` | Outcome |
+|----------------|---------------------------------------|---------|
 | allows `get pods` | grants `get pods` | Request succeeds |
-| denies `delete pods` | grants `delete pods` | Rejected at the control plane; agent never called |
-| allows `delete pods` | denies `delete pods` | control plane forwards; Kubernetes rejects it |
-| **allows `delete nodes`** | **grants `*`** | **Full cluster access if agent is compromised** |
-
-The agent ClusterRole is the floor: it determines the blast radius of an agent
-compromise. Keep it as narrow as the use case permits.
+| denies `delete pods` | grants `delete pods` | Rejected at the control plane (`403`, audited `denied`); agent never called |
+| allows `delete pods` | no binding | Kubernetes refuses: `User "kbridge:<email>" cannot delete resource "pods"` |
+| allows `create pods` | grants `create pods` | Admission still applies as the user, e.g. PodSecurity `baseline` refuses a `hostPath` pod |
 
 ---
 
-## Agent least-privilege ClusterRole
+## Binding kbridge users in the cluster
 
-The agent chart creates a ClusterRole from `rbac.rules` in `values.yaml`. The
-chart default is unrestricted:
+Each kbridge user appears to Kubernetes as the user `kbridge:<email>` (with the
+group `system:authenticated`). The agent binds those users as the policy's
+`clusterAccess` says (see [rbac.md](rbac.md#cluster-bindings-clusteraccess)):
+it creates `kbridge-<role>-<clusterRole>` bindings labelled
+`app.kubernetes.io/managed-by=kbridge`, puts them back when someone edits them,
+and deletes them when policy stops asking for them. `kb admin rbac status`
+shows whether each cluster matches.
 
-```yaml
-# charts/agent/values.yaml (default — do not use in production)
-rbac:
-  rules:
-    - apiGroups: ["*"]
-      resources: ["*"]
-      verbs: ["*"]
-```
-
-Override `rbac.rules` in your installation to match what your users actually do.
-
-### Viewer-equivalent (read-only)
-
-Suitable for teams that need visibility but should not modify workloads:
+The agent chart's `accessCeiling` is the most the agent may hand out:
 
 ```yaml
-# values-agent.yaml
-rbac:
-  rules:
-    - apiGroups: ["", "apps", "batch"]
-      resources:
-        - pods
-        - pods/log
-        - services
-        - deployments
-        - replicasets
-        - jobs
-        - configmaps
-        - nodes
-        - events
-      verbs: ["get", "list", "watch"]
+accessCeiling:
+  clusterRoles: [view, edit, cluster-admin]  # ClusterRoles the agent may bind
+  namespaces: []               # empty = any namespace except the protected ones
+  clusterWide: true            # allow ClusterRoleBindings
 ```
 
-### Developer-equivalent (read/write workloads)
+These are the defaults, so a fresh install works with the default policy
+(`admin` is bound to `cluster-admin`, `viewer` to `view`, cluster-wide). A
+cluster owner can lower the ceiling, for example to `[view, edit]` with
+`clusterWide: false`, to limit what any kbridge policy can grant there.
 
-Suitable for development clusters where users need exec, apply, and restart:
+The agent's ServiceAccount gets `bind` on those ClusterRoles only, write
+access to RoleBindings (cluster-wide, or in the listed namespaces), write
+access to ClusterRoleBindings only with `clusterWide`, and list and watch on
+both kinds everywhere. Kubernetes enforces this: a policy that asks for more
+gets a `403` for that binding, shown in `kb admin rbac status`, and the other
+bindings still apply. The agent, not Kubernetes, refuses the release
+namespace and `protectedNamespaces`, bindings not named `kbridge-`, and
+subjects that are not `kbridge:` users. The chart refuses to render with an
+empty `clusterRoles` or with the release namespace in `namespaces`.
 
-```yaml
-# values-agent.yaml
-rbac:
-  rules:
-    - apiGroups: ["", "apps"]
-      resources:
-        - pods
-        - pods/exec
-        - pods/portforward
-        - deployments
-        - services
-        - configmaps
-      verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
-```
+A user with no binding can still reach kbridge but every request is refused
+by the API server. `kb auth whoami` prints the name Kubernetes sees. Bindings
+you make by hand for `kbridge:` users still work, and the agent leaves any
+binding without its label alone.
 
-Apply either ruleset at install or upgrade time:
+### Kubernetes audit log
 
-```bash
-helm install kbridge-agent ./charts/agent \
-  --set control_plane.url=kbridge-control-plane:9090 \
-  --set control_plane.token=<token> \
-  --set cluster.name=prod-us-east \
-  -f values-agent.yaml
-```
+Requests made through kbridge appear in the API server audit log with:
 
-> The kbridge RBAC policy on the control plane is still the per-user gate. A developer
-> whose kbridge policy only allows `get`/`list` cannot run `delete` even if the
-> ClusterRole permits it. The ClusterRole sets the ceiling; the policy sets the
-> per-user floor.
+- `user.username`: the agent's ServiceAccount,
+  `system:serviceaccount:kbridge:kbridge-agent` with the quick start's names;
+- `impersonatedUser.username`: `kbridge:<email>`, the user RBAC was evaluated for;
+- `impersonatedUser.extra.kbridge-request-id`: the id the control plane gave the
+  command, stream or port-forward session.
 
----
+The request id is the one in the control plane log line
+`Queued command <id> for cluster <name>`. The kbridge audit row (`kb admin
+audit`) records the user email, cluster, command and time but not the id, so
+match it to the Kubernetes audit event by email, cluster and time.
+
+## Known limits
+
+- **A compromised control plane can bind the ceiling roles to anyone** in any
+  namespace that is not protected: it decides who holds which role, and it
+  can name any `kbridge:` user and send commands as that user. The agent only
+  checks the shape of each binding (name, namespace, `kbridge:` users), and
+  `accessCeiling` caps what can be bound. The ceiling scopes what kbridge may
+  hand out in a cluster; it is not a boundary against a compromised control
+  plane: once any user is bound to `cluster-admin` through kbridge, a
+  compromised control plane can act as that user by impersonation.
+- **A stolen agent token can impersonate any user name.** Kubernetes cannot
+  limit `users impersonate` to the `kbridge:` prefix, so the agent's
+  credential reaches every binding whose subject is a `User`, `kbridge:` or
+  not. Bind people outside kbridge by group.
+- **`edit` lets users run pods as that namespace's ServiceAccounts**, and so
+  use whatever those ServiceAccounts may do. They can also create a
+  `kubernetes.io/service-account-token` Secret and read it, which the window
+  does not refuse. Grant `edit` only where the namespace's ServiceAccounts
+  hold no more than the user should.
+- **Cluster-wide `edit` or `admin` bindings are not checked for Pod
+  Security.** The agent refuses a namespaced binding to a role that can create
+  pods unless the namespace enforces `baseline` or `restricted`, but a
+  ClusterRoleBinding (`clusterWide: true`) reaches every namespace, including
+  ones that enforce nothing. A user who can create a `hostPath` pod in an
+  unguarded namespace can read any token on that node, the agent's included.
+  Enforce Pod Security cluster-wide (an `AdmissionConfiguration` with
+  `defaults.enforce: baseline`), or do not use `clusterWide` for roles that
+  can create pods.
+- **kubectl runs as the agent's uid.** The connection and file flag checks are
+  what keep a command from reading the agent's token file. Running kubectl
+  under a second uid is the planned fix.
+- **kbridge's own audit log is editable** by whoever can reach the control
+  plane's host or database. The Kubernetes audit log records the same
+  requests under `impersonatedUser`.
+- **Per-call agent authentication is the agent id issued at registration.**
+  Mutual TLS is planned before a stable release.
 
 ## What the platform enforces
 

@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/why-xn/kbridge/api/proto/agentpb"
 	"github.com/why-xn/kbridge/internal/auth"
 )
 
@@ -361,5 +362,64 @@ func TestAdminHandler_RevokeAgentToken(t *testing.T) {
 	stored, _ := store.GetAgentTokenByHash(context.Background(), hashAgentToken(testPepper, created.Token))
 	if stored == nil || !stored.IsRevoked {
 		t.Fatalf("expected token to be revoked, got %+v", stored)
+	}
+}
+
+func TestReportBindingSync_StoredAndListed(t *testing.T) {
+	eng := engineFor(t, accessPolicy)
+	grpcSrv, db, ids := newSyncServer(t, eng, "dev-1", "prod-1")
+	desired := BindingsVersion(eng.DesiredBindings("dev-1", []string{"alice", "bob"}))
+	_, err := grpcSrv.ReportBindingSync(context.Background(), &agentpb.ReportBindingSyncRequest{
+		AgentId: ids["dev-1"], Version: desired, InSync: false, Errors: []string{"forbidden: ns dev"},
+	})
+	if err != nil {
+		t.Fatalf("report: %v", err)
+	}
+	jm := auth.NewJWTManager("test-secret-at-least-32-chars!!", time.Hour)
+	srv := NewHTTPServer(grpcSrv.agents, NewCommandQueue(), NewAuthHandlers(db, jm, time.Hour),
+		NewAdminHandlers(db, testPepper), eng, nil, nil, jm)
+	tests := []struct {
+		name     string
+		isAdmin  bool
+		wantCode int
+	}{
+		{"non-admin refused", false, http.StatusForbidden},
+		{"admin lists status", true, http.StatusOK},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tok, _ := jm.GenerateAccessToken(&auth.UserClaims{UserID: "u1", Email: "u@example.com", IsAdmin: tt.isAdmin})
+			req, _ := http.NewRequest("GET", "/api/v1/admin/rbac/status", nil)
+			req.Header.Set("Authorization", "Bearer "+tok)
+			w := httptest.NewRecorder()
+			srv.Handler().ServeHTTP(w, req)
+			if w.Code != tt.wantCode {
+				t.Fatalf("code = %d, want %d: %s", w.Code, tt.wantCode, w.Body.String())
+			}
+			if tt.isAdmin {
+				assertRBACStatus(t, w.Body.Bytes(), desired)
+			}
+		})
+	}
+}
+
+func assertRBACStatus(t *testing.T, body []byte, desired string) {
+	t.Helper()
+	var out struct {
+		Clusters []rbacClusterStatus `json:"clusters"`
+	}
+	if err := json.Unmarshal(body, &out); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(out.Clusters) != 2 || out.Clusters[0].Cluster != "dev-1" || out.Clusters[1].Cluster != "prod-1" {
+		t.Fatalf("unexpected clusters: %+v", out.Clusters)
+	}
+	dev, prod := out.Clusters[0], out.Clusters[1]
+	if dev.State != SyncStateDrift || dev.Version != desired || dev.DesiredVersion != desired ||
+		len(dev.Errors) != 1 || dev.ReportedAt == nil {
+		t.Errorf("dev-1 status = %+v", dev)
+	}
+	if prod.State != SyncStateUnreported || prod.Version != "" || prod.ReportedAt != nil {
+		t.Errorf("prod-1 status = %+v", prod)
 	}
 }

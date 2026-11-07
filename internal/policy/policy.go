@@ -5,12 +5,14 @@
 package policy
 
 import (
+	"crypto/sha256"
 	"fmt"
 	"log"
 	"os"
 	"path/filepath"
 	"strings"
 	"sync/atomic"
+	"time"
 
 	"github.com/fsnotify/fsnotify"
 	"gopkg.in/yaml.v3"
@@ -28,8 +30,9 @@ type Rule struct {
 
 // Role is a named collection of rules.
 type Role struct {
-	Name  string `yaml:"name"`
-	Rules []Rule `yaml:"rules"`
+	Name          string          `yaml:"name"`
+	Rules         []Rule          `yaml:"rules"`
+	ClusterAccess []ClusterAccess `yaml:"clusterAccess"`
 }
 
 // Binding maps a subject (matched against the JWT email, may contain
@@ -114,6 +117,9 @@ func (p *Policy) validate() error {
 			return fmt.Errorf("duplicate policy role %q", r.Name)
 		}
 		defined[r.Name] = true
+		if err := validateClusterAccess(r); err != nil {
+			return err
+		}
 	}
 	for _, b := range p.Bindings {
 		for _, name := range b.Roles {
@@ -207,48 +213,92 @@ func (e *Engine) Reload() error {
 	return nil
 }
 
-// Watch reloads the policy whenever its file changes, until stop is closed.
-// It watches the containing directory so atomic editor rename/replace writes
-// are still observed. Reload failures are logged and the previous policy is
-// kept.
+// policyPollInterval is how often Watch re-reads the policy file. Kubelet
+// updates a ConfigMap mount by swapping a "..data" symlink, which fsnotify on
+// the directory reports under that name rather than the policy file's.
+var policyPollInterval = 10 * time.Second
+
+// Watch reloads the policy whenever its file changes, until stop is closed:
+// on a filesystem event for the file, and when a poll finds new content.
+// Reload failures are logged and the previous policy is kept. An engine with
+// no file behind it has nothing to watch.
 func (e *Engine) Watch(stop <-chan struct{}) {
+	if e.path == "" {
+		return
+	}
+	watcher := e.watchDir()
+	go func() {
+		var events <-chan fsnotify.Event
+		var errs <-chan error
+		if watcher != nil {
+			defer watcher.Close()
+			events, errs = watcher.Events, watcher.Errors
+		}
+		e.watchLoop(events, errs, stop)
+	}()
+}
+
+// watchDir watches the file's directory so editor rename/replace writes are
+// seen. It returns nil when events are unavailable; polling still runs.
+func (e *Engine) watchDir() *fsnotify.Watcher {
 	watcher, err := fsnotify.NewWatcher()
 	if err != nil {
-		log.Printf("rbac watch disabled: %v", err)
-		return
+		log.Printf("rbac file events disabled, polling only: %v", err)
+		return nil
 	}
-	dir := filepath.Dir(e.path)
-	if err := watcher.Add(dir); err != nil {
-		log.Printf("rbac watch disabled: %v", err)
+	if err := watcher.Add(filepath.Dir(e.path)); err != nil {
+		log.Printf("rbac file events disabled, polling only: %v", err)
 		watcher.Close()
-		return
+		return nil
 	}
+	return watcher
+}
 
-	go func() {
-		defer watcher.Close()
-		target := filepath.Clean(e.path)
-		for {
-			select {
-			case ev, ok := <-watcher.Events:
-				if !ok {
-					return
-				}
-				if filepath.Clean(ev.Name) != target {
-					continue
-				}
-				if err := e.Reload(); err != nil {
-					log.Printf("rbac reload failed, keeping previous policy: %v", err)
-				} else {
-					log.Printf("rbac policy reloaded from %s", e.path)
-				}
-			case err, ok := <-watcher.Errors:
-				if !ok {
-					return
-				}
-				log.Printf("rbac watch error: %v", err)
-			case <-stop:
+func (e *Engine) watchLoop(events <-chan fsnotify.Event, errs <-chan error, stop <-chan struct{}) {
+	ticker := time.NewTicker(policyPollInterval)
+	defer ticker.Stop()
+	target := filepath.Clean(e.path)
+	last := fileHash(e.path)
+	for {
+		select {
+		case ev, ok := <-events:
+			if !ok {
 				return
 			}
+			if filepath.Clean(ev.Name) == target {
+				last = e.reloadAndLog()
+			}
+		case <-ticker.C:
+			if fileHash(e.path) != last {
+				last = e.reloadAndLog()
+			}
+		case err, ok := <-errs:
+			if !ok {
+				return
+			}
+			log.Printf("rbac watch error: %v", err)
+		case <-stop:
+			return
 		}
-	}()
+	}
+}
+
+// reloadAndLog reloads the policy and returns the hash of the content it read.
+func (e *Engine) reloadAndLog() [sha256.Size]byte {
+	h := fileHash(e.path)
+	if err := e.Reload(); err != nil {
+		log.Printf("rbac reload failed, keeping previous policy: %v", err)
+	} else {
+		log.Printf("rbac policy reloaded from %s", e.path)
+	}
+	return h
+}
+
+// fileHash returns the SHA-256 of the file, or the zero hash if unreadable.
+func fileHash(path string) [sha256.Size]byte {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return [sha256.Size]byte{}
+	}
+	return sha256.Sum256(data)
 }

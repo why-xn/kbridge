@@ -17,6 +17,7 @@ spec:
         {{- include "agent.selectorLabels" . | nindent 8 }}
     spec:
       serviceAccountName: {{ include "agent.serviceAccountName" . }}
+      automountServiceAccountToken: false
       {{- with .Values.imagePullSecrets }}
       imagePullSecrets:
         {{- toYaml . | nindent 8 }}
@@ -45,6 +46,9 @@ spec:
               readOnly: true
             - name: tmp
               mountPath: /tmp
+            - name: sa
+              mountPath: /var/run/kbridge/sa
+              readOnly: true
             {{- if .Values.controlPlane.existingSecret }}
             - name: agent-token
               mountPath: /etc/kbridge-token
@@ -68,6 +72,23 @@ spec:
             secretName: {{ include "agent.fullname" . }}-config
         - name: tmp
           emptyDir: {}
+        - name: sa
+          projected:
+            defaultMode: 0400
+            sources:
+              - serviceAccountToken:
+                  path: token
+                  expirationSeconds: {{ .Values.serviceAccountToken.expirationSeconds }}
+              - configMap:
+                  name: kube-root-ca.crt
+                  items:
+                    - key: ca.crt
+                      path: ca.crt
+              - downwardAPI:
+                  items:
+                    - path: namespace
+                      fieldRef:
+                        fieldPath: metadata.namespace
         {{- if .Values.controlPlane.existingSecret }}
         - name: agent-token
           secret:

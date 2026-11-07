@@ -1,7 +1,11 @@
 {{- define "controlplane.name" -}}kbridge-control-plane{{- end -}}
 
 {{- define "controlplane.fullname" -}}
-{{- printf "%s-control-plane" .Release.Name | trunc 63 | trimSuffix "-" -}}
+{{- if contains .Chart.Name .Release.Name -}}
+{{- .Release.Name | trunc 63 | trimSuffix "-" -}}
+{{- else -}}
+{{- printf "%s-%s" .Release.Name .Chart.Name | trunc 63 | trimSuffix "-" -}}
+{{- end -}}
 {{- end -}}
 
 {{- define "controlplane.labels" -}}

@@ -83,7 +83,9 @@ Logs older than `audit.retention_days` are pruned automatically every
 ## RBAC changes
 
 Edit the policy file referenced by `rbac.policy_file`. The control plane reloads it
-automatically (file watch) or on demand via `SIGHUP`
-(`kill -HUP <control-plane-pid>`) — use the latter where the filesystem doesn't
-deliver change events. A policy that fails to parse is rejected and the previous
-one stays active (the error is logged). See the [RBAC reference](rbac.md#reloading).
+within 10 s of the file changing, or at once on `SIGHUP`
+(`kill -HUP <control-plane-pid>`). With the Helm chart, change `rbac.policy` and
+run `helm upgrade`; the control plane restarts with the new policy. A policy that fails to parse is rejected and the previous
+one stays active (the error is logged). See the [RBAC reference](rbac.md#reloading). Run
+`kb admin rbac status` to see whether each cluster's RoleBindings match the policy
+(see [operations](operations.md)).

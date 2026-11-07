@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/tls"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -744,7 +745,7 @@ func (c *ControlPlaneClient) parseExecResponse(resp *http.Response, clusterName 
 		return nil, fmt.Errorf("cluster %q not found", clusterName)
 	}
 	if resp.StatusCode == http.StatusServiceUnavailable {
-		return nil, fmt.Errorf("cluster %q agent is disconnected", clusterName)
+		return nil, fmt.Errorf("cluster %q: agent is disconnected", clusterName)
 	}
 	if resp.StatusCode == http.StatusGatewayTimeout {
 		return nil, fmt.Errorf("command execution timed out")
@@ -759,6 +760,13 @@ func (c *ControlPlaneClient) parseExecResponse(resp *http.Response, clusterName 
 			return nil, fmt.Errorf("server returned %d: %s", resp.StatusCode, string(body))
 		}
 		return nil, fmt.Errorf("failed to decode response: %w", err)
+	}
+	// A refusal (403 from the argument check or RBAC) must not look like success.
+	if resp.StatusCode != http.StatusOK && execResp.Error != "" {
+		return nil, errors.New(execResp.Error)
+	}
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("server returned %d: %s", resp.StatusCode, string(body))
 	}
 
 	return &execResp, nil

@@ -27,6 +27,13 @@ service AgentService {
   // SubmitCommandResult is called by the agent after executing a command.
   // Submits the command output and exit code back to control plane.
   rpc SubmitCommandResult(SubmitCommandResultRequest) returns (SubmitCommandResultResponse);
+
+  // GetDesiredBindings returns the bindings the calling agent's own cluster
+  // should carry. An agent can never read another cluster's bindings.
+  rpc GetDesiredBindings(GetDesiredBindingsRequest) returns (GetDesiredBindingsResponse);
+
+  // ReportBindingSync records the outcome of the agent's last reconcile.
+  rpc ReportBindingSync(ReportBindingSyncRequest) returns (ReportBindingSyncResponse);
 }
 
 // RegisterRequest is sent by the agent to register with control plane.
@@ -38,7 +45,13 @@ message RegisterRequest {
   string cluster_name = 2;
 
   reserved 3;
+
+  // capabilities lists optional agent features: "impersonation", "rbac-sync".
+  repeated string capabilities = 4;
 }
+
+// Identity is the person a command runs as; user is already prefixed "kbridge:".
+message Identity { string user = 1; }
 
 // RegisterResponse is returned after an agent registration attempt.
 message RegisterResponse {
@@ -81,6 +94,11 @@ message HeartbeatResponse {
 
   // next_heartbeat_seconds indicates how long to wait before the next heartbeat.
   int64 next_heartbeat_seconds = 2;
+
+  // desired_bindings_version is the version of the bindings this agent's
+  // cluster should carry; "none" when no policy is loaded, empty when the
+  // control plane could not compute it (the agent keeps its current state).
+  string desired_bindings_version = 3;
 }
 
 // CommandRequest represents a kubectl command to execute on the agent.
@@ -103,6 +121,9 @@ message CommandRequest {
   // stdin is optional input to be piped to the command's standard input.
   // Used for commands like "kubectl apply -f -" that read from stdin.
   bytes stdin = 6;
+
+  // identity is who the agent runs the command as.
+  Identity identity = 7;
 }
 
 // CommandResponse contains output from a command execution.
@@ -194,6 +215,7 @@ message StartStream  {
   bool   tty = 4;
   uint32 rows = 5;
   uint32 cols = 6;
+  Identity identity = 7;
 }
 message CancelStream { string session_id = 1; }
 // eof signals the client closed its stdin; the agent closes the process stdin.
@@ -216,10 +238,17 @@ message StreamRegister { string agent_id = 1; }
 message StreamOutput   { string session_id = 1; OutputType type = 2; bytes data = 3; }
 message StreamExit     { string session_id = 1; int32 exit_code = 2; string error_message = 3; }
 
-message PortForwardStart { string session_id = 1; string pod = 2; string namespace = 3; repeated uint32 ports = 4; }
+message PortForwardStart { string session_id = 1; string pod = 2; string namespace = 3; repeated uint32 ports = 4; Identity identity = 5; }
 message PfOpen           { string session_id = 1; uint32 conn_id = 2; uint32 remote_port = 3; }
 message PfData           { string session_id = 1; uint32 conn_id = 2; bytes  data = 3; }
 message PfClose          { string session_id = 1; uint32 conn_id = 2; }
 message PfConnError      { string session_id = 1; uint32 conn_id = 2; string error = 3; }
 message PfReady          { string session_id = 1; }
 message PfSessionError   { string session_id = 1; string error = 2; }
+
+message GetDesiredBindingsRequest  { string agent_id = 1; }
+// DesiredBinding is a RoleBinding, or a ClusterRoleBinding when namespace is empty.
+message DesiredBinding { string name = 1; string namespace = 2; string cluster_role = 3; repeated string users = 4; }
+message GetDesiredBindingsResponse { string version = 1; repeated DesiredBinding bindings = 2; }
+message ReportBindingSyncRequest   { string agent_id = 1; string version = 2; bool in_sync = 3; repeated string errors = 4; }
+message ReportBindingSyncResponse  {}

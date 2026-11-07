@@ -7,8 +7,10 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/why-xn/kbridge/internal/auth"
 )
 
 func newTestHTTPServer() (*HTTPServer, *AgentStore, *CommandQueue) {
@@ -222,5 +224,53 @@ func TestBodyLimitMiddleware(t *testing.T) {
 	r.ServeHTTP(w, req)
 	if w.Code != http.StatusRequestEntityTooLarge {
 		t.Fatalf("code=%d want 413", w.Code)
+	}
+}
+
+// newCapabilityTestServer serves cluster "prod" through agent a1 with the given
+// capabilities. No agent stream is open, so a session that slips past the gate
+// fails with a different message.
+func newCapabilityTestServer(t *testing.T, caps []string) (*HTTPServer, *CommandQueue, *SessionManager, string) {
+	t.Helper()
+	store := newTestStore(t)
+	jm := auth.NewJWTManager("test-secret-at-least-32-chars!!", time.Hour)
+	agents := NewAgentStore()
+	agents.Register(&AgentInfo{ID: "a1", ClusterName: "prod", Capabilities: caps})
+	queue, sm := NewCommandQueue(), NewSessionManager(10)
+	srv := NewHTTPServer(agents, queue, NewAuthHandlers(store, jm, time.Hour),
+		NewAdminHandlers(store, testPepper), nil, nil, sm, jm)
+	token, _ := jm.GenerateAccessToken(&auth.UserClaims{UserID: "u1", Email: "alice@x"})
+	return srv, queue, sm, token
+}
+
+func TestExec_RefusesAgentWithoutImpersonation(t *testing.T) {
+	execBody, _ := json.Marshal(ExecRequest{Command: []string{"get", "pods"}, Timeout: 1})
+	streamBody, _ := json.Marshal(ExecRequest{Command: []string{"logs", "-f", "web"}})
+	tests := []struct {
+		name string
+		path string
+		body []byte
+	}{
+		{"exec", "/api/v1/clusters/prod/exec", execBody},
+		{"stream", "/api/v1/clusters/prod/stream", streamBody},
+		{"exec attach", "/api/v1/clusters/prod/exec/attach?pod=web&command=sh", nil},
+		{"port-forward", "/api/v1/clusters/prod/port-forward?pod=web&port=5432", nil},
+	}
+	const want = `{"error":"agent does not support impersonation: upgrade the agent for cluster prod"}`
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			srv, queue, sm, token := newCapabilityTestServer(t, nil)
+			req, _ := http.NewRequest(http.MethodPost, tt.path, bytes.NewReader(tt.body))
+			req.Header.Set("Authorization", "Bearer "+token)
+			req.Header.Set("Content-Type", "application/json")
+			w := httptest.NewRecorder()
+			srv.Handler().ServeHTTP(w, req)
+			if w.Code != http.StatusServiceUnavailable || w.Body.String() != want {
+				t.Fatalf("got %d %s, want 503 %s", w.Code, w.Body.String(), want)
+			}
+			if len(queue.commands) != 0 || len(sm.sessions) != 0 {
+				t.Errorf("nothing may be routed: %d queued, %d sessions", len(queue.commands), len(sm.sessions))
+			}
+		})
 	}
 }
