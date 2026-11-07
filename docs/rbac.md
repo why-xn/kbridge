@@ -142,6 +142,7 @@ roles:
 | `clusterRole` | An existing ClusterRole to bind, such as `view` or `edit`. Required |
 | `namespaces` | Literal namespace names (no patterns). One RoleBinding per namespace |
 | `clusterWide` | `true` for one ClusterRoleBinding instead. Exactly one of `namespaces` or `clusterWide` must be set; the policy fails to load otherwise |
+| `requiresGrant` | `true` binds only the role's users who hold an approved, unexpired [grant](#just-in-time-access) for the cluster and namespace. See [Grant-gated bindings](#grant-gated-bindings) |
 
 What the agent creates:
 
@@ -364,6 +365,53 @@ effect immediately, and works on a pending grant too.
 A grant covers a cluster and, optionally, one namespace. Both are glob patterns,
 so a grant for `prod-*` covers every production cluster while one for `prod-eu`
 with namespace `payments` covers nothing else.
+
+### Grant-gated bindings
+
+A guardrail decides what kbridge forwards; the cluster still checks the user's
+own RBAC. To make a grant open the cluster too, mark the `clusterAccess` entry
+`requiresGrant`:
+
+```yaml
+roles:
+  - name: on-call
+    rules:
+      - clusters: ["prod-*"]
+        namespaces: ["payments"]
+        resources: ["*"]
+        verbs: ["*"]
+    clusterAccess:
+      - clusters: ["prod-*"]
+        clusterRole: edit
+        namespaces: ["payments"]
+        requiresGrant: true
+guardrails:
+  - name: prod-writes-need-approval
+    match:
+      clusters: ["prod-*"]
+      namespaces: ["payments"]
+      verbs: ["delete", "apply", "create", "patch", "scale"]
+    action: require-approval
+```
+
+The agent maintains `kbridge-on-call-edit-grant` in `payments`: its subjects
+are the `on-call` users whose approved grant covers that cluster and namespace,
+and nobody while no grant is live. Approval adds the user within one heartbeat
+and reconcile; expiry or revocation removes them the same way, with no event
+needed, since the control plane recomputes the desired bindings on every
+heartbeat. The lag is one heartbeat (30 s) plus the agent's `sync.interval`
+(60 s by default), so cluster access can outlive an expired grant by up to
+about 90 s. If the control plane cannot read its grants, agents keep their
+current bindings and report the error. A user with a grant but without the
+role is not bound.
+
+A grant's reach follows its scope: a grant with no namespace, or with `*`,
+covers every gated entry on the matching clusters, including `clusterWide`
+ones, in every role the user holds; a grant naming a namespace never opens a
+`clusterWide` entry. Scope grants narrowly when a role has several gated
+entries. Two `clusterAccess` entries that would produce the same binding name
+with a different meaning (`on-call` + `edit` gated, and `on-call-edit` +
+`grant`) are refused when the policy loads.
 
 ### Configuration
 

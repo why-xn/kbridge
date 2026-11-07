@@ -15,7 +15,14 @@ type ClusterAccess struct {
 	// Namespaces are literal names, not globs.
 	Namespaces  []string `yaml:"namespaces"`
 	ClusterWide bool     `yaml:"clusterWide"`
+	// RequiresGrant binds only role members who hold an approved, unexpired
+	// grant for the cluster and namespace, in a binding named "...-grant".
+	RequiresGrant bool `yaml:"requiresGrant"`
 }
+
+// GrantLookup answers which subjects (bare emails) hold an approved, unexpired
+// grant covering cluster and namespace; "" is the cluster-wide namespace.
+type GrantLookup func(cluster, namespace string) []string
 
 // DesiredBinding is a RoleBinding (or ClusterRoleBinding when Namespace is
 // empty) a cluster should carry.
@@ -38,9 +45,32 @@ func validateClusterAccess(r Role) error {
 	return nil
 }
 
+// validateBindingNames refuses two entries that would share a binding name
+// but mean different things ("oncall" + edit gated by a grant collides with
+// "oncall-edit" + grant). Merged, the ungated members would get the gated
+// ClusterRole without a grant.
+func validateBindingNames(p *Policy) error {
+	type meaning struct {
+		role, clusterRole string
+		gated             bool
+	}
+	seen := map[string]meaning{}
+	for _, r := range p.Roles {
+		for _, ca := range r.ClusterAccess {
+			name, m := "kbridge-"+r.Name+ca.nameSuffix(), meaning{r.Name, ca.ClusterRole, ca.RequiresGrant}
+			if prev, ok := seen[name]; ok && prev != m {
+				return fmt.Errorf("roles %s and %s would both bind %s: rename one", prev.role, r.Name, name)
+			}
+			seen[name] = m
+		}
+	}
+	return nil
+}
+
 // DesiredBindings computes the bindings cluster should carry for subjects
-// (bare emails), sorted by namespace then name.
-func (e *Engine) DesiredBindings(cluster string, subjects []string) []DesiredBinding {
+// (bare emails), sorted by namespace then name. grants may be nil, in which
+// case requiresGrant entries bind nobody.
+func (e *Engine) DesiredBindings(cluster string, subjects []string, grants GrantLookup) []DesiredBinding {
 	out := []DesiredBinding{}
 	if e == nil {
 		return out
@@ -49,10 +79,10 @@ func (e *Engine) DesiredBindings(cluster string, subjects []string) []DesiredBin
 	if p == nil {
 		return out
 	}
-	return p.desiredBindings(cluster, subjects)
+	return p.desiredBindings(cluster, subjects, grants)
 }
 
-func (p *Policy) desiredBindings(cluster string, subjects []string) []DesiredBinding {
+func (p *Policy) desiredBindings(cluster string, subjects []string, grants GrantLookup) []DesiredBinding {
 	members := p.roleMembers(subjects)
 	acc := map[[2]string]*DesiredBinding{}
 	for _, role := range p.Roles {
@@ -61,11 +91,41 @@ func (p *Policy) desiredBindings(cluster string, subjects []string) []DesiredBin
 				continue
 			}
 			for _, ns := range ca.bindingNamespaces() {
-				mergeBinding(acc, role.Name, ns, ca.ClusterRole, members[role.Name])
+				users := ca.boundUsers(members[role.Name], cluster, ns, grants)
+				mergeBinding(acc, role.Name+ca.nameSuffix(), ns, ca.ClusterRole, users)
 			}
 		}
 	}
 	return sortedBindings(acc)
+}
+
+// boundUsers is the role's members, narrowed to grant holders for a gated
+// entry. A gated binding with no holders still exists, empty, so the cluster
+// shows what a grant would unlock.
+func (ca ClusterAccess) boundUsers(members []string, cluster, ns string, grants GrantLookup) []string {
+	if !ca.RequiresGrant {
+		return members
+	}
+	holders := map[string]bool{}
+	if grants != nil {
+		for _, h := range grants(cluster, ns) {
+			holders["kbridge:"+h] = true
+		}
+	}
+	out := []string{}
+	for _, m := range members {
+		if holders[m] {
+			out = append(out, m)
+		}
+	}
+	return out
+}
+
+func (ca ClusterAccess) nameSuffix() string {
+	if ca.RequiresGrant {
+		return "-" + ca.ClusterRole + "-grant"
+	}
+	return "-" + ca.ClusterRole
 }
 
 // roleMembers maps role name to the sorted, deduplicated kbridge users in it.
@@ -93,8 +153,8 @@ func (ca ClusterAccess) bindingNamespaces() []string {
 	return ca.Namespaces
 }
 
-func mergeBinding(acc map[[2]string]*DesiredBinding, role, ns, clusterRole string, users []string) {
-	name := "kbridge-" + role + "-" + clusterRole
+func mergeBinding(acc map[[2]string]*DesiredBinding, name, ns, clusterRole string, users []string) {
+	name = "kbridge-" + name
 	b := acc[[2]string{ns, name}]
 	if b == nil {
 		b = &DesiredBinding{Name: name, Namespace: ns, ClusterRole: clusterRole}

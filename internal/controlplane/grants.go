@@ -54,6 +54,8 @@ type GrantFilter struct {
 	Subject string
 	Status  string
 	Limit   int
+	// ExpiresAfter, when set, keeps only grants whose window ends after it.
+	ExpiresAfter time.Time
 }
 
 // Active reports whether the grant currently authorizes anything. A grant is

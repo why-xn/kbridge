@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Grant-gated cluster bindings.** A `clusterAccess` entry marked
+  `requiresGrant: true` binds only the role's users who hold an approved,
+  unexpired grant for that cluster and namespace, in a binding named
+  `kbridge-<role>-<clusterRole>-grant`. Approval opens the cluster within a
+  heartbeat; expiry or revocation closes it the same way. See
+  [docs/rbac.md](docs/rbac.md#grant-gated-bindings).
 - **Just-in-time access grants.** A third guardrail action, `require-approval`,
   is satisfied only by a time-boxed grant that one person requests and another
   approves. A reason is self-asserted; an approval is not.

@@ -88,6 +88,10 @@ func (s *SQLiteStore) ListGrants(ctx context.Context, f GrantFilter) ([]*Grant, 
 		clauses = append(clauses, "status = ?")
 		args = append(args, f.Status)
 	}
+	if !f.ExpiresAfter.IsZero() {
+		clauses = append(clauses, "expires_at > ?")
+		args = append(args, formatTimePtr(&f.ExpiresAfter))
+	}
 	for i, c := range clauses {
 		if i == 0 {
 			query += " WHERE " + c
