@@ -45,6 +45,14 @@ granting access until removed), e.g.
 
 ### Security
 
+- **`~/.kbridge/config.yaml` is private.** The CLI creates it 0600 (directory
+  0700) and tightens an existing file on the next write; it holds the access
+  and refresh tokens.
+- **`default` applies only to users with no binding.** A bound user holds
+  exactly the roles in their binding; before, every user also held the
+  default role and the agent bound its `clusterAccess` to everyone. A policy
+  that relied on that must list the default role in the binding
+  (`roles: ["viewer", "developer"]`).
 - **kubectl on the agent no longer holds the agent's credentials.** Before,
   the agent ran kubectl with its own ServiceAccount (cluster-admin by chart
   default) and passed user arguments through. A user allowed to run any
@@ -127,6 +135,16 @@ agents' `controlPlane.url` at the new Service name.
 
 ### Fixed
 
+- **`kb edit` accepts an editor with arguments** (`KUBE_EDITOR="code --wait"`),
+  split on spaces like kubectl does.
+- **`kb admin rbac status` explains an `accessCeiling` refusal.** A binding
+  to a ClusterRole outside the agent chart's `accessCeiling.clusterRoles`
+  now reads `clusterRole <name> is outside this cluster's accessCeiling ...;
+  ask the cluster owner to raise it` instead of the raw API server 403.
+- **`-o go-template-file` and friends get their own refusal**, pointing at
+  the inline `-o go-template='...'` form rather than the `--from-file` hint.
+- **`install.sh` creates a custom `KBRIDGE_INSTALL_DIR`** instead of falling
+  back to `sudo` when it does not exist yet.
 - **Policy changes reach the running control plane.** A `helm upgrade` that
   changed `rbac.policy` left the old policy in force: the pod restart covered
   only the config Secret, and the kubelet's ConfigMap update did not fire the
