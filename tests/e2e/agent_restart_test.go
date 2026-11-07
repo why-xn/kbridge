@@ -48,8 +48,11 @@ func TestAgentRestart_FailsRunningCommand(t *testing.T) {
 	if code := cmd.ProcessState.ExitCode(); code != 1 {
 		t.Errorf("exit code = %d, want 1; stderr: %s", code, stderr.String())
 	}
-	if out := stderr.String(); !strings.Contains(out, agentRetryCopy) {
-		t.Errorf("stderr = %q, want %q", out, agentRetryCopy)
+	// The control plane sees the stream close first and fails the command as
+	// disconnected; the retry copy appears only if the replacement registers
+	// before that.
+	if out := stderr.String(); !strings.Contains(out, agentRetryCopy) && !strings.Contains(out, "agent is disconnected") {
+		t.Errorf("stderr = %q, want %q or an agent-disconnected error", out, agentRetryCopy)
 	}
 	waitAgentBack(t)
 }
