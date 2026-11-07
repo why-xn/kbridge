@@ -25,6 +25,9 @@ type mockAgentService struct {
 	heartbeatCalled  int
 	rejectRegister   bool
 	rejectHeartbeat  bool
+	// heartbeatCode / pollCode, when set, fail every heartbeat / poll with it.
+	heartbeatCode    codes.Code
+	pollCode         codes.Code
 	// rejectAfter / unavailableAfter, when set, refuse every registration
 	// after that many with a rejection / a transport error.
 	rejectAfter      int
@@ -62,11 +65,21 @@ func (m *mockAgentService) Heartbeat(ctx context.Context, req *agentpb.Heartbeat
 	if m.rejectHeartbeat {
 		return nil, status.Error(codes.NotFound, "agent not found")
 	}
+	if m.heartbeatCode != codes.OK {
+		return nil, status.Error(m.heartbeatCode, "refused")
+	}
 
 	return &agentpb.HeartbeatResponse{
 		Acknowledged:         true,
 		NextHeartbeatSeconds: 1, // Short interval for testing
 	}, nil
+}
+
+func (m *mockAgentService) GetPendingCommands(ctx context.Context, req *agentpb.GetPendingCommandsRequest) (*agentpb.GetPendingCommandsResponse, error) {
+	if m.pollCode != codes.OK {
+		return nil, status.Error(m.pollCode, "refused")
+	}
+	return &agentpb.GetPendingCommandsResponse{}, nil
 }
 
 func startMockServer(t *testing.T, svc *mockAgentService) (string, func()) {
@@ -509,22 +522,26 @@ func TestRun_TriggersSyncAfterRegister(t *testing.T) {
 }
 
 // A control plane that refuses re-registration (e.g. the token was revoked)
-// will refuse every retry, so the agent exits; an unreachable one is retried.
+// will refuse every retry, so the agent exits; so does an agent a newer one
+// replaced. An unreachable control plane is retried, and an unknown agent
+// (control plane restarted) re-registers.
 func TestAgent_Run_ReRegistration(t *testing.T) {
 	tests := []struct {
-		name       string
-		mock       *mockAgentService
-		wantReturn bool
+		name          string
+		mock          *mockAgentService
+		wantErr       error // nil: Run keeps going
+		wantRegisters int
 	}{
-		{"rejection exits", &mockAgentService{rejectHeartbeat: true, rejectAfter: 1}, true},
-		{"transport error keeps retrying", &mockAgentService{rejectHeartbeat: true, unavailableAfter: 1}, false},
+		{"rejection exits", &mockAgentService{rejectHeartbeat: true, rejectAfter: 1}, errRegistrationRejected, 2},
+		{"transport error keeps retrying", &mockAgentService{rejectHeartbeat: true, unavailableAfter: 1}, nil, 2},
+		{"not found re-registers", &mockAgentService{rejectHeartbeat: true}, nil, 2},
+		{"replaced exits", &mockAgentService{heartbeatCode: codes.FailedPrecondition}, errReplaced, 1},
 	}
 	defer func(d time.Duration) { initialHeartbeatInterval = d }(initialHeartbeatInterval)
 	initialHeartbeatInterval = 50 * time.Millisecond
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			addr, cleanup := startMockServer(t, tt.mock)
-			defer cleanup()
 			a := New(&Config{
 				ControlPlane: ControlPlaneConfig{URL: addr, Token: "token"},
 				Cluster:      ClusterConfig{Name: "test"},
@@ -534,14 +551,51 @@ func TestAgent_Run_ReRegistration(t *testing.T) {
 			go func() { errCh <- a.Run(context.Background()) }()
 			select {
 			case err := <-errCh:
-				if !tt.wantReturn || !errors.Is(err, errRegistrationRejected) || !strings.Contains(err.Error(), "rejected") {
-					t.Fatalf("Run returned %v, want it to exit only on a rejection", err)
+				if tt.wantErr == nil || !errors.Is(err, tt.wantErr) {
+					t.Fatalf("Run returned %v, want %v", err, tt.wantErr)
 				}
 			case <-time.After(1500 * time.Millisecond):
-				if tt.wantReturn {
-					t.Fatal("Run kept going after registration was rejected")
+				if tt.wantErr != nil {
+					t.Fatalf("Run kept going, want %v", tt.wantErr)
 				}
 				a.Stop()
+				<-errCh
+			}
+			cleanup() // waits for handlers, so registerCalled is safe to read
+			if tt.mock.registerCalled < tt.wantRegisters || (tt.wantErr == errReplaced && tt.mock.registerCalled != 1) {
+				t.Fatalf("registered %d times, want %d", tt.mock.registerCalled, tt.wantRegisters)
+			}
+		})
+	}
+}
+
+// The command poll runs more often than the heartbeat, so it is usually the
+// first to learn the agent was replaced.
+func TestAgent_Poll_Replaced(t *testing.T) {
+	tests := []struct {
+		name    string
+		code    codes.Code
+		wantErr error
+	}{
+		{"replaced", codes.FailedPrecondition, errReplaced},
+		{"other errors are left to the heartbeat", codes.NotFound, nil},
+		{"ok", codes.OK, nil},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			addr, cleanup := startMockServer(t, &mockAgentService{pollCode: tt.code})
+			defer cleanup()
+			a := New(&Config{ControlPlane: ControlPlaneConfig{URL: addr, Token: "token"}, Cluster: ClusterConfig{Name: "test"}})
+			ctx := context.Background()
+			if err := a.connect(ctx); err != nil {
+				t.Fatalf("connect: %v", err)
+			}
+			defer a.disconnect()
+			if err := a.register(ctx); err != nil {
+				t.Fatalf("register: %v", err)
+			}
+			if err := a.pollAndExecuteCommands(ctx); !errors.Is(err, tt.wantErr) {
+				t.Fatalf("poll = %v, want %v", err, tt.wantErr)
 			}
 		})
 	}

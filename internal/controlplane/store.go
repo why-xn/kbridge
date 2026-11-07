@@ -31,6 +31,10 @@ const (
 // DisconnectTimeout is the duration after which an agent without heartbeat is marked disconnected.
 const DisconnectTimeout = 60 * time.Second
 
+// replacedTTL is how long a replaced agent id is remembered: far longer than a
+// pod's termination grace period, short enough that the map stays small.
+const replacedTTL = 10 * time.Minute
+
 // AgentStore manages registered agents in memory.
 type AgentStore struct {
 	mu     sync.RWMutex
@@ -41,6 +45,9 @@ type AgentStore struct {
 	// revoked names clusters whose agent was dropped by token revocation, so
 	// the clusters list shows them disconnected until an agent registers again.
 	revoked map[string]bool
+	// replaced holds ids a newer registration for the same cluster replaced,
+	// with when, so their late calls are refused instead of re-registering.
+	replaced map[string]time.Time
 	// OnDisconnect, when set, is called (outside the lock) for each agent
 	// marked disconnected or dropped, so queued commands can fail fast.
 	OnDisconnect func(agentID, clusterName string)
@@ -52,6 +59,7 @@ func NewAgentStore() *AgentStore {
 		agents:      make(map[string]*AgentInfo),
 		validTokens: make(map[string]bool),
 		revoked:     make(map[string]bool),
+		replaced:    make(map[string]time.Time),
 	}
 }
 
@@ -72,13 +80,17 @@ func (s *AgentStore) ValidateToken(token string) bool {
 // Register adds or updates an agent in the store. A cluster is served by its
 // most recently registered agent: any other agent registered for the same
 // cluster (e.g. the pod a rollout just replaced) is dropped so requests are
-// never routed to it. Their IDs are returned for logging.
+// never routed to it. Their IDs are returned for logging and remembered for
+// replacedTTL (see WasReplaced).
 func (s *AgentStore) Register(info *AgentInfo) (replaced []string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	now := time.Now()
+	s.evictReplaced(now)
 	for id, agent := range s.agents {
 		if id != info.ID && agent.ClusterName == info.ClusterName {
 			delete(s.agents, id)
+			s.replaced[id] = now
 			replaced = append(replaced, id)
 		}
 	}
@@ -88,6 +100,24 @@ func (s *AgentStore) Register(info *AgentInfo) (replaced []string) {
 	info.Status = AgentStatusConnected
 	s.agents[info.ID] = info
 	return replaced
+}
+
+// evictReplaced forgets replaced ids older than replacedTTL; call with the lock.
+func (s *AgentStore) evictReplaced(now time.Time) {
+	for id, at := range s.replaced {
+		if now.Sub(at) > replacedTTL {
+			delete(s.replaced, id)
+		}
+	}
+}
+
+// WasReplaced reports whether a newer registration for the same cluster
+// replaced this agent id within the last replacedTTL.
+func (s *AgentStore) WasReplaced(agentID string) bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	_, ok := s.replaced[agentID]
+	return ok
 }
 
 // UpdateHeartbeat updates the last seen timestamp for an agent.

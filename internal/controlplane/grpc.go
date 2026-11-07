@@ -178,7 +178,7 @@ func (s *GRPCServer) Heartbeat(ctx context.Context, req *agentpb.HeartbeatReques
 	// Update heartbeat in store
 	if !s.agents.UpdateHeartbeat(req.GetAgentId(), agentStatus) {
 		log.Printf("Heartbeat from unknown agent: id=%s", req.GetAgentId())
-		return nil, status.Error(codes.NotFound, "agent not registered")
+		return nil, s.notRegistered(req.GetAgentId(), codes.NotFound)
 	}
 
 	return &agentpb.HeartbeatResponse{
@@ -197,7 +197,7 @@ func (s *GRPCServer) GetPendingCommands(ctx context.Context, req *agentpb.GetPen
 
 	// Verify agent is registered
 	if _, exists := s.agents.Get(agentID); !exists {
-		return nil, status.Error(codes.NotFound, "agent not registered")
+		return nil, s.notRegistered(agentID, codes.NotFound)
 	}
 
 	// Get pending commands for this agent
@@ -270,7 +270,7 @@ func (s *GRPCServer) OpenStream(stream agentpb.AgentService_OpenStreamServer) er
 		return status.Error(codes.InvalidArgument, "first message must be StreamRegister")
 	}
 	if _, ok := s.agents.Get(reg.GetAgentId()); !ok {
-		return status.Error(codes.NotFound, "agent not registered")
+		return s.notRegistered(reg.GetAgentId(), codes.NotFound)
 	}
 
 	s.sessions.RegisterAgentStream(reg.GetAgentId(), stream)
@@ -295,6 +295,16 @@ func (s *GRPCServer) streamClosed(agentID string, stream streamSender) {
 	if s.sessions.UnregisterAgentStream(agentID, stream) && s.agents.MarkAgentDisconnected(agentID) {
 		log.Printf("Agent stream closed: id=%s marked disconnected", agentID)
 	}
+}
+
+// notRegistered is the answer to a call from an id the store does not hold. An
+// id a newer agent replaced gets FailedPrecondition so it exits instead of
+// re-registering and taking the cluster back; any other id gets code.
+func (s *GRPCServer) notRegistered(agentID string, code codes.Code) error {
+	if s.agents.WasReplaced(agentID) {
+		return status.Error(codes.FailedPrecondition, "agent replaced by a newer registration for this cluster")
+	}
+	return status.Error(code, "agent not registered")
 }
 
 // generateAgentID creates a unique identifier for an agent using random bytes.

@@ -99,7 +99,7 @@ func (s *GRPCServer) callingAgent(agentID string) (*AgentInfo, error) {
 	}
 	agent, ok := s.agents.Get(agentID)
 	if !ok {
-		return nil, status.Error(codes.PermissionDenied, "agent not registered")
+		return nil, s.notRegistered(agentID, codes.PermissionDenied)
 	}
 	return agent, nil
 }
@@ -140,7 +140,7 @@ func (s *GRPCServer) ReportBindingSync(ctx context.Context, req *agentpb.ReportB
 		ReportedAt: time.Now().UTC(),
 	}
 	if !s.agents.SetSyncStatus(req.GetAgentId(), st) {
-		return nil, status.Error(codes.PermissionDenied, "agent not registered")
+		return nil, s.notRegistered(req.GetAgentId(), codes.PermissionDenied)
 	}
 	return &agentpb.ReportBindingSyncResponse{}, nil
 }
