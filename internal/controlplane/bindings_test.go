@@ -5,6 +5,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/why-xn/kbridge/api/proto/agentpb"
 	"google.golang.org/grpc/codes"
@@ -43,7 +44,7 @@ func TestHeartbeat_CarriesBindingsVersion(t *testing.T) {
 		want string
 	}{
 		{"no policy", nil, "none"},
-		{"policy", eng, BindingsVersion(eng.DesiredBindings("dev-1", []string{"alice", "bob"}))},
+		{"policy", eng, BindingsVersion(eng.DesiredBindings("dev-1", []string{"alice", "bob"}, nil))},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -73,7 +74,7 @@ func TestGetDesiredBindings(t *testing.T) {
 	if err != nil {
 		t.Fatalf("get desired bindings: %v", err)
 	}
-	if resp.Version != BindingsVersion(eng.DesiredBindings("prod-1", []string{"alice", "bob"})) {
+	if resp.Version != BindingsVersion(eng.DesiredBindings("prod-1", []string{"alice", "bob"}, nil)) {
 		t.Errorf("unexpected version %q", resp.Version)
 	}
 	if len(resp.Bindings) != len(want) {
@@ -217,4 +218,78 @@ func engineFor(t *testing.T, doc string) *PolicyEngine {
 		t.Fatalf("parse policy: %v", err)
 	}
 	return eng
+}
+
+const gatedPolicy = `
+roles:
+  - name: oncall
+    clusterAccess:
+      - clusters: ["prod-*"]
+        clusterRole: edit
+        namespaces: [payments]
+        requiresGrant: true
+      - clusters: ["prod-*"]
+        clusterRole: view
+        clusterWide: true
+        requiresGrant: true
+bindings:
+  - subject: alice
+    roles: [oncall]
+  - subject: carol
+    roles: [oncall]
+`
+
+// TestGetDesiredBindings_GrantGated: only a role member with an approved,
+// unexpired grant covering the binding's cluster and namespace is bound.
+func TestGetDesiredBindings_GrantGated(t *testing.T) {
+	future, past := time.Now().Add(time.Hour), time.Now().Add(-time.Minute)
+	tests := []struct {
+		name                        string
+		subject, cluster, namespace string
+		status                      GrantStatus
+		expires                     time.Time
+		wantNamespaced, wantWide    []string
+	}{
+		{"live grant on the namespace", "alice", "prod-*", "payments", GrantStatusApproved, future, []string{"kbridge:alice"}, nil},
+		{"live grant on the whole cluster", "alice", "prod-1", "", GrantStatusApproved, future, []string{"kbridge:alice"}, []string{"kbridge:alice"}},
+		{"expired", "alice", "prod-*", "payments", GrantStatusApproved, past, nil, nil},
+		{"revoked", "alice", "prod-*", "payments", GrantStatusRevoked, future, nil, nil},
+		{"pending", "alice", "prod-*", "payments", GrantStatusPending, future, nil, nil},
+		{"another cluster", "alice", "staging", "payments", GrantStatusApproved, future, nil, nil},
+		{"another namespace", "alice", "prod-*", "billing", GrantStatusApproved, future, nil, nil},
+		{"holder outside the role", "bob", "prod-*", "payments", GrantStatusApproved, future, nil, nil},
+		{"inactive holder in the role", "carol", "prod-*", "payments", GrantStatusApproved, future, nil, nil},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			srv, db, ids := newSyncServer(t, engineFor(t, gatedPolicy), "prod-1")
+			now := time.Now()
+			g := &Grant{ID: "g1", Subject: tt.subject, ClusterName: tt.cluster, Namespace: tt.namespace, Status: tt.status,
+				Reason: "incident 42", Duration: time.Hour, RequestedAt: now, DecidedAt: &now, ExpiresAt: &tt.expires}
+			if err := db.CreateGrant(context.Background(), g); err != nil {
+				t.Fatalf("create grant: %v", err)
+			}
+			resp, err := srv.GetDesiredBindings(context.Background(), &agentpb.GetDesiredBindingsRequest{AgentId: ids["prod-1"]})
+			if err != nil {
+				t.Fatal(err)
+			}
+			got := map[string][]string{}
+			for _, b := range resp.Bindings {
+				got[b.Name] = b.Users
+			}
+			if len(got) != 2 {
+				t.Fatalf("bindings = %v, want the two gated ones", got)
+			}
+			if u := got["kbridge-oncall-edit-grant"]; !sameUsers(u, tt.wantNamespaced) {
+				t.Errorf("namespaced users = %v, want %v", u, tt.wantNamespaced)
+			}
+			if u := got["kbridge-oncall-view-grant"]; !sameUsers(u, tt.wantWide) {
+				t.Errorf("cluster-wide users = %v, want %v", u, tt.wantWide)
+			}
+		})
+	}
+}
+
+func sameUsers(got, want []string) bool {
+	return len(got) == len(want) && (len(got) == 0 || reflect.DeepEqual(got, want))
 }

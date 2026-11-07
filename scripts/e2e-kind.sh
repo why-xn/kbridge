@@ -184,11 +184,22 @@ roles:
       - clusters: ["*"]
         clusterRole: edit
         namespaces: ["e2e-dev"]
+  - name: prodlike
+    rules:
+      - clusters: ["*"]
+        namespaces: ["e2e-grant"]
+        resources: ["*"]
+        verbs: ["*"]
+    clusterAccess:
+      - clusters: ["*"]
+        clusterRole: edit
+        namespaces: ["e2e-grant"]
+        requiresGrant: true
 bindings:
   - subject: admin@e2e.test
     roles: ["admin"]
   - subject: developer@e2e.test
-    roles: ["viewer", "developer"]
+    roles: ["viewer", "developer", "prodlike"]
 EOF
 
     # Fail fast (with a clear message) if the port is already taken by something
@@ -285,7 +296,9 @@ create_e2e_namespaces() {
     kubectl create namespace e2e-dev
     kubectl create namespace e2e-nobind
     kubectl create namespace e2e-nopsa
+    kubectl create namespace e2e-grant
     kubectl label namespace e2e-dev pod-security.kubernetes.io/enforce=baseline
+    kubectl label namespace e2e-grant pod-security.kubernetes.io/enforce=baseline
 }
 
 # Tests must not race the agent's first reconcile.

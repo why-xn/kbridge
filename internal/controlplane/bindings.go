@@ -12,6 +12,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/why-xn/kbridge/api/proto/agentpb"
+	"github.com/why-xn/kbridge/internal/policy"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -63,9 +64,22 @@ func desiredBindingsFor(ctx context.Context, store Store, policy *PolicyEngine, 
 	if policy == nil {
 		return []DesiredBinding{}, noPolicyVersion, nil
 	}
+	emails, err := activeEmails(ctx, store)
+	if err != nil {
+		return nil, "", err
+	}
+	grants, err := grantHolders(ctx, store, time.Now())
+	if err != nil {
+		return nil, "", fmt.Errorf("listing grants: %w", err)
+	}
+	b := policy.DesiredBindings(cluster, emails, grants)
+	return b, BindingsVersion(b), nil
+}
+
+func activeEmails(ctx context.Context, store Store) ([]string, error) {
 	users, err := store.ListUsers(ctx)
 	if err != nil {
-		return nil, "", fmt.Errorf("listing users: %w", err)
+		return nil, fmt.Errorf("listing users: %w", err)
 	}
 	emails := make([]string, 0, len(users))
 	for _, u := range users {
@@ -73,8 +87,26 @@ func desiredBindingsFor(ctx context.Context, store Store, policy *PolicyEngine, 
 			emails = append(emails, u.Email)
 		}
 	}
-	b := policy.DesiredBindings(cluster, emails)
-	return b, BindingsVersion(b), nil
+	return emails, nil
+}
+
+// grantHolders lists the approved grants once and answers, per binding, who
+// holds one that covers it right now. Expiry needs no event: the answer, and
+// so the bindings version, changes at the next heartbeat.
+func grantHolders(ctx context.Context, store Store, now time.Time) (policy.GrantLookup, error) {
+	grants, err := store.ListGrants(ctx, GrantFilter{Status: string(GrantStatusApproved), ExpiresAfter: now})
+	if err != nil {
+		return nil, err
+	}
+	return func(cluster, namespace string) []string {
+		var holders []string
+		for _, g := range grants {
+			if g.Covers(AccessRequest{Cluster: cluster, Namespace: namespace}, now) {
+				holders = append(holders, g.Subject)
+			}
+		}
+		return holders
+	}, nil
 }
 
 // heartbeatVersion is the desired version for an agent, or "" when it cannot

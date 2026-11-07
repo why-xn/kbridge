@@ -299,3 +299,57 @@ func poll(timeout time.Duration, cond func() bool) bool {
 		time.Sleep(time.Second)
 	}
 }
+
+const (
+	grantNamespace = "e2e-grant"
+	grantBinding   = "kbridge-prodlike-edit-grant"
+	// grantGuardrail makes writes in e2e-grant need an approved grant, so the
+	// same grant opens both kbridge and, through the gated binding, the cluster.
+	grantGuardrail = `guardrails:
+  - name: e2e-grant-writes-need-approval
+    match:
+      namespaces: ["e2e-grant"]
+      verbs: ["create", "delete", "apply"]
+    action: require-approval
+    message: "e2e-grant needs an approved grant"
+`
+)
+
+// TestRBACSync_GrantAddsAndRemovesUser approves a one-minute grant for the
+// developer on e2e-grant: the agent binds them, the write works, and once the
+// grant expires the binding empties again and kbridge refuses the write.
+func TestRBACSync_GrantAddsAndRemovesUser(t *testing.T) {
+	ensureUser(t, developerEmail)
+	waitDeveloperBound(t)
+	probe := []string{"delete", "configmap", "e2e-nonexistent", "-n", grantNamespace}
+	installPolicy(t, harnessRoles+grantGuardrail, probe, func(c int) bool { return c == http.StatusForbidden })
+	if users := bindingUsers(t, grantNamespace, grantBinding); strings.Contains(users, developerUser) {
+		t.Fatalf("%s already lists %s before any grant", grantBinding, developerUser)
+	}
+
+	devToken := loginAs(t, developerEmail, edgePassword)
+	g := requestGrantAPI(t, devToken, *clusterName, grantNamespace, "1m", "e2e grant-gated binding")
+	if _, code := decideGrantAPI(t, g.ID, "approve", nil); code != http.StatusOK {
+		t.Fatalf("approve grant: status %d", code)
+	}
+	approved := time.Now()
+	if !poll(syncWait, func() bool { return strings.Contains(bindingUsers(t, grantNamespace, grantBinding), developerUser) }) {
+		t.Fatalf("%s does not list %s within %s of approval", grantBinding, developerUser, syncWait)
+	}
+
+	useDeveloperConfig(t)
+	stdout, stderr, code := runCLI(t, "create", "configmap", "e2e-grant-cm", "-n", grantNamespace)
+	if code != 0 {
+		t.Fatalf("create configmap with a live grant: exit %d, stdout %q, stderr %q", code, stdout, stderr)
+	}
+	defer exec.Command("kubectl", "delete", "configmap", "e2e-grant-cm", "-n", grantNamespace, "--ignore-not-found").Run()
+
+	time.Sleep(time.Until(approved.Add(time.Minute)))
+	if !poll(syncWait, func() bool { return !strings.Contains(bindingUsers(t, grantNamespace, grantBinding), developerUser) }) {
+		t.Fatalf("%s still lists %s %s after the grant expired", grantBinding, developerUser, syncWait)
+	}
+	_, stderr, code = runCLI(t, "delete", "configmap", "e2e-grant-cm", "-n", grantNamespace)
+	if code == 0 || !strings.Contains(stderr, "kb request") {
+		t.Fatalf("delete after expiry: exit %d, stderr %q; want a refusal asking for an approved grant", code, stderr)
+	}
+}

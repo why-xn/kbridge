@@ -48,11 +48,22 @@ roles:
       - clusters: ["*"]
         clusterRole: edit
         namespaces: ["e2e-dev"]
+  - name: prodlike
+    rules:
+      - clusters: ["*"]
+        namespaces: ["e2e-grant"]
+        resources: ["*"]
+        verbs: ["*"]
+    clusterAccess:
+      - clusters: ["*"]
+        clusterRole: edit
+        namespaces: ["e2e-grant"]
+        requiresGrant: true
 bindings:
   - subject: admin@e2e.test
     roles: ["admin"]
   - subject: developer@e2e.test
-    roles: ["viewer", "developer"]
+    roles: ["viewer", "developer", "prodlike"]
 `
 
 // guardrailPolicy grants the given subject full access, then guards it. Cluster

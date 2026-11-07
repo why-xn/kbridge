@@ -368,7 +368,7 @@ func TestAdminHandler_RevokeAgentToken(t *testing.T) {
 func TestReportBindingSync_StoredAndListed(t *testing.T) {
 	eng := engineFor(t, accessPolicy)
 	grpcSrv, db, ids := newSyncServer(t, eng, "dev-1", "prod-1")
-	desired := BindingsVersion(eng.DesiredBindings("dev-1", []string{"alice", "bob"}))
+	desired := BindingsVersion(eng.DesiredBindings("dev-1", []string{"alice", "bob"}, nil))
 	_, err := grpcSrv.ReportBindingSync(context.Background(), &agentpb.ReportBindingSyncRequest{
 		AgentId: ids["dev-1"], Version: desired, InSync: false, Errors: []string{"forbidden: ns dev"},
 	})

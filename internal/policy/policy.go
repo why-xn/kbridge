@@ -131,6 +131,9 @@ func (p *Policy) validate() error {
 	if p.Default != "" && !defined[p.Default] {
 		return fmt.Errorf("default references unknown role %q", p.Default)
 	}
+	if err := validateBindingNames(p); err != nil {
+		return err
+	}
 	return p.validateGuardrails()
 }
 
