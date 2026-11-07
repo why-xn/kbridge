@@ -106,10 +106,13 @@ func TestHandleStreamCommand_ExitCodeTrailer(t *testing.T) {
 	tests := []struct {
 		name     string
 		exitCode int32
+		drop     bool // the agent goes away instead of reporting an exit
 		want     string
+		wantErr  string
 	}{
-		{"success", 0, "0"},
-		{"failure", 1, "1"},
+		{"success", 0, false, "0", ""},
+		{"failure", 1, false, "1", ""},
+		{"agent went away", 0, true, "-1", "agent disconnected"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -127,7 +130,9 @@ func TestHandleStreamCommand_ExitCodeTrailer(t *testing.T) {
 				for i := 0; i < 400 && snd.lastStart() == nil; i++ {
 					time.Sleep(5 * time.Millisecond)
 				}
-				if start := snd.lastStart(); start != nil {
+				if tt.drop {
+					sm.DropAgent("a1")
+				} else if start := snd.lastStart(); start != nil {
 					sm.Route(&agentpb.AgentStreamMessage{Msg: &agentpb.AgentStreamMessage_Exit{
 						Exit: &agentpb.StreamExit{SessionId: start.GetSessionId(), ExitCode: tt.exitCode},
 					}})
@@ -149,6 +154,9 @@ func TestHandleStreamCommand_ExitCodeTrailer(t *testing.T) {
 			_, _ = io.ReadAll(resp.Body) // trailers are available only after the body
 			if got := resp.Trailer.Get(exitCodeTrailer); got != tt.want {
 				t.Fatalf("exit code trailer = %q, want %q", got, tt.want)
+			}
+			if got := resp.Trailer.Get(errorTrailer); got != tt.wantErr {
+				t.Fatalf("error trailer = %q, want %q", got, tt.wantErr)
 			}
 		})
 	}

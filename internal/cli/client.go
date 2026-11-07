@@ -639,9 +639,15 @@ func (c *ControlPlaneClient) ExecCommandWithStdin(clusterName string, command []
 // exitCodeTrailer carries the remote kubectl exit code at the end of a stream.
 const exitCodeTrailer = "X-Kbridge-Exit-Code"
 
+// errorTrailer carries why a stream ended without a kubectl exit code, e.g.
+// the agent went away.
+const errorTrailer = "X-Kbridge-Error"
+
 // StreamCommand runs a streaming kubectl command, copying the chunked response
 // body to out until the stream ends or ctx is cancelled. It returns the remote
-// exit code (0 when the user cancels or the server does not report one).
+// exit code (0 when the user cancels or the server does not report one). A
+// command that never finished (-1) also returns the control plane's reason as
+// the error, so the user is told why the stream stopped.
 func (c *ControlPlaneClient) StreamCommand(ctx context.Context, clusterName string, command []string, namespace string, out io.Writer) (int, error) {
 	resp, err := c.openStream(ctx, clusterName, command, namespace)
 	if err != nil || resp == nil {
@@ -659,7 +665,13 @@ func (c *ControlPlaneClient) StreamCommand(ctx context.Context, clusterName stri
 		return 0, err
 	}
 	code, _ := strconv.Atoi(resp.Trailer.Get(exitCodeTrailer))
-	return code, nil
+	if code >= 0 {
+		return code, nil
+	}
+	if msg := resp.Trailer.Get(errorTrailer); msg != "" {
+		return code, errors.New(msg)
+	}
+	return code, errors.New("stream ended before the command finished; run it again")
 }
 
 // openStream starts the stream request, refreshing the access token once on
