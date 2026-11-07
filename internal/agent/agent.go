@@ -46,6 +46,17 @@ func replacedErr(err error) error {
 	return errReplaced
 }
 
+// replacedFor is replacedErr for a call made as agentID from a goroutine that
+// does not register. A reconnect may have re-registered under a new id since,
+// which the control plane counts as replacing the old one; an answer for the
+// old id is then stale and says nothing about this agent.
+func (a *Agent) replacedFor(err error, agentID string) error {
+	if agentID != a.AgentID() {
+		return nil
+	}
+	return replacedErr(err)
+}
+
 // standByTouchInterval keeps the health file well inside the chart's
 // readiness (60 s) and liveness (180 s) windows while standing by. A var so
 // tests need not wait.
@@ -370,8 +381,10 @@ func (a *Agent) connect(ctx context.Context) error {
 		return fmt.Errorf("dialing control plane: %w", err)
 	}
 
+	a.mu.Lock() // the poll and stream goroutines read client beside the id
 	a.conn = conn
 	a.client = agentpb.NewAgentServiceClient(conn)
+	a.mu.Unlock()
 	log.Printf("Connected to control plane")
 	return nil
 }
@@ -616,7 +629,7 @@ func (a *Agent) pollAndExecuteCommands(ctx, cmdCtx context.Context) error {
 	})
 	if err != nil {
 		// Don't log on every poll failure - connection issues are handled by heartbeat
-		return replacedErr(err)
+		return a.replacedFor(err, agentID)
 	}
 
 	// Execute each command

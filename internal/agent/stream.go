@@ -23,8 +23,9 @@ func outputTypeFor(stdout bool) agentpb.OutputType {
 // replaced this one.
 func (a *Agent) runStream(ctx context.Context) {
 	for ctx.Err() == nil {
-		err := a.openAndServeStream(ctx)
-		if replacedErr(err) != nil {
+		client, id := a.currentClient()
+		err := a.openAndServeStream(ctx, client, id)
+		if a.replacedFor(err, id) != nil {
 			a.markReplaced()
 			return
 		}
@@ -39,14 +40,11 @@ func (a *Agent) runStream(ctx context.Context) {
 	}
 }
 
-func (a *Agent) openAndServeStream(ctx context.Context) error {
-	stream, err := a.client.OpenStream(ctx)
+func (a *Agent) openAndServeStream(ctx context.Context, client agentpb.AgentServiceClient, agentID string) error {
+	stream, err := client.OpenStream(ctx)
 	if err != nil {
 		return err
 	}
-	a.mu.RLock()
-	agentID := a.agentID
-	a.mu.RUnlock()
 	if err := stream.Send(&agentpb.AgentStreamMessage{Msg: &agentpb.AgentStreamMessage_Register{
 		Register: &agentpb.StreamRegister{AgentId: agentID},
 	}}); err != nil {

@@ -723,6 +723,32 @@ func TestAgent_StandingByTakesOverWhenReplacerGone(t *testing.T) {
 	}
 }
 
+// A "replaced" answer to a call made under an id a reconnect has since
+// changed is about the old registration; acting on it would make the current
+// agent stand by.
+func TestAgent_ReplacedFor(t *testing.T) {
+	tests := []struct {
+		name string
+		err  error
+		id   string
+		want error
+	}{
+		{"current id replaced", status.Error(codes.FailedPrecondition, "replaced"), "current", errReplaced},
+		{"stale id replaced", status.Error(codes.FailedPrecondition, "replaced"), "old", nil},
+		{"current id not found", status.Error(codes.NotFound, "agent not registered"), "current", nil},
+		{"no error", nil, "current", nil},
+	}
+	a := New(&Config{})
+	a.agentID = "current"
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := a.replacedFor(tt.err, tt.id); got != tt.want {
+				t.Fatalf("replacedFor = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
 // The command poll runs more often than the heartbeat, so it is usually the
 // first to learn the agent was replaced.
 func TestAgent_Poll_Replaced(t *testing.T) {
