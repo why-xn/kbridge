@@ -59,11 +59,14 @@ func TestAgentRestart_FailsRunningCommand(t *testing.T) {
 
 // TestAgentRollout_NoOutage runs commands throughout a rolling restart of the
 // agent. The replaced pod must not take the cluster back from the new one, so
-// at most the one request in flight as the old pod goes away may fail.
+// at most the one request in flight as the old pod goes away may fail; a
+// command already running on the old agent finishes there, and neither pod
+// restarts.
 func TestAgentRollout_NoOutage(t *testing.T) {
 	if _, stderr, code := runCLI(t, "clusters", "use", *clusterName); code != 0 {
 		t.Fatalf("clusters use: %s", stderr)
 	}
+	createRolloutWeb(t)
 	rolledOut := make(chan time.Time, 1)
 	go func() {
 		defer func() { rolledOut <- time.Now() }()
@@ -77,14 +80,53 @@ func TestAgentRollout_NoOutage(t *testing.T) {
 		}
 	}()
 
+	time.Sleep(time.Second)
+	execDone := startSleepExec(t) // 2 s before the rollout restart
+
 	failures := runThroughRollout(t, 75*time.Second, rolledOut)
 	if failures > 1 {
 		t.Errorf("%d failed calls during the rollout, want at most 1", failures)
+	}
+	if res := <-execDone; res.code != 0 {
+		t.Errorf("kb exec running across the rollout: exit %d, stderr %s", res.code, res.stderr)
 	}
 	if got := cliClusterStatus(t, *clusterName); got != "connected" {
 		t.Errorf("kb clusters list shows %q after the rollout, want connected", got)
 	}
 	waitOneAgentPod(t, 90*time.Second)
+	out, err := exec.Command("kubectl", "-n", agentNamespace, "get", "pod", "-l", "app.kubernetes.io/name=kbridge-agent",
+		"-o", "jsonpath={.items[0].status.containerStatuses[0].restartCount}").CombinedOutput()
+	if err != nil || strings.TrimSpace(string(out)) != "0" {
+		t.Errorf("agent pod restart count = %q (err %v), want 0", out, err)
+	}
+}
+
+// createRolloutWeb creates deploy/rollout-web in default for a command to run
+// in across the rollout, and deletes it when the test ends.
+func createRolloutWeb(t *testing.T) {
+	t.Helper()
+	if _, stderr, code := runCLI(t, "create", "deployment", "rollout-web", "--image=nginx:1.27-alpine", "-n", "default"); code != 0 {
+		t.Fatalf("create deployment: %s", stderr)
+	}
+	t.Cleanup(func() { runCLI(t, "delete", "deployment", "rollout-web", "-n", "default", "--ignore-not-found") })
+	if _, stderr, code := runCLI(t, "rollout", "status", "deployment/rollout-web", "-n", "default", "--timeout=120s"); code != 0 {
+		t.Fatalf("rollout status rollout-web: %s", stderr)
+	}
+}
+
+type rolloutExec struct {
+	code   int
+	stderr string
+}
+
+// startSleepExec runs a 20 s command through kb in the background.
+func startSleepExec(t *testing.T) <-chan rolloutExec {
+	done := make(chan rolloutExec, 1)
+	go func() {
+		_, stderr, code := runCLI(t, "exec", "deploy/rollout-web", "-n", "default", "--", "sh", "-c", "sleep 20")
+		done <- rolloutExec{code, stderr}
+	}()
+	return done
 }
 
 // runThroughRollout runs `kb get pods` every 500 ms for d and returns how many
