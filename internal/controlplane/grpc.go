@@ -318,10 +318,12 @@ func (s *GRPCServer) failRunningIfGone(agentID string) int {
 }
 
 // notRegistered is the answer to a call from an id the store does not hold. An
-// id a newer agent replaced gets FailedPrecondition so it exits instead of
-// re-registering and taking the cluster back; any other id gets code.
+// id a newer agent replaced gets FailedPrecondition while that newer agent is
+// connected, so it stands by instead of re-registering and taking the cluster
+// back. Once the newer agent is gone, it gets code like any unknown id, so a
+// standing-by agent registers again and the cluster is served.
 func (s *GRPCServer) notRegistered(agentID string, code codes.Code) error {
-	if s.agents.WasReplaced(agentID) {
+	if s.agents.ReplacerConnected(agentID) {
 		return status.Error(codes.FailedPrecondition, "agent replaced by a newer registration for this cluster")
 	}
 	return status.Error(code, "agent not registered")

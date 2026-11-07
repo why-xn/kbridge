@@ -37,6 +37,8 @@ var errReplaced = errors.New("replaced by a newer agent")
 // standBy): re-registering would take the cluster back from the new pod, and
 // exiting would too, because during a RollingUpdate the old pod is not yet
 // terminating and the kubelet restarts its container, which registers again.
+// The control plane answers FailedPrecondition only while the newer agent is
+// connected, so a standing-by agent takes the cluster back if that one dies.
 func replacedErr(err error) error {
 	if status.Code(err) != codes.FailedPrecondition {
 		return nil
@@ -55,8 +57,15 @@ var standByTouchInterval = 30 * time.Second
 // (CrashLoopBackOff) without flapping fast. A var so tests need not wait.
 var standByTimeout = 10 * time.Minute
 
+// errTakeOver tells Run that the agent that replaced this one is gone, so this
+// one registers again and serves the cluster.
+var errTakeOver = errors.New("the agent that replaced this one is gone")
+
 // standBy keeps a replaced agent alive and live, without serving or
-// registering, until it is stopped; it gives up after standByTimeout.
+// registering, until it is stopped; it gives up after standByTimeout. On each
+// tick it asks the control plane whether the agent that replaced it is still
+// connected, and returns errTakeOver when it is not (it died, or the control
+// plane restarted), so the cluster is not left without an agent.
 func (a *Agent) standBy(ctx context.Context) error {
 	log.Printf("%v; standing by until this pod is stopped", errReplaced)
 	touch := time.NewTicker(standByTouchInterval)
@@ -67,20 +76,50 @@ func (a *Agent) standBy(ctx context.Context) error {
 		select {
 		case <-touch.C:
 			a.touchHealthFile()
+			if a.replacerGone(ctx) {
+				log.Printf("%v; registering again", errTakeOver)
+				return errTakeOver
+			}
 		case <-a.stopCh:
 			return nil
 		case <-ctx.Done():
 			return nil
 		case <-timeout.C:
-			return fmt.Errorf("%v and never stopped: exiting", errReplaced)
+			return fmt.Errorf("%w and never stopped: exiting", errReplaced)
 		}
 	}
+}
+
+// replacerGone probes with a heartbeat: the control plane answers a replaced
+// id FailedPrecondition while its replacer is connected and NotFound after.
+func (a *Agent) replacerGone(ctx context.Context) bool {
+	_, err := a.sendHeartbeat(ctx)
+	return status.Code(err) == codes.NotFound
+}
+
+// replacedC is closed once a newer agent replaced this one.
+func (a *Agent) replacedC() <-chan struct{} {
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+	return a.replaced
 }
 
 // markReplaced records that a newer agent replaced this one, which stops the
 // heartbeat and poll loops; safe to call more than once.
 func (a *Agent) markReplaced() {
-	a.replacedOnce.Do(func() { close(a.replaced) })
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if !a.isReplaced {
+		a.isReplaced = true
+		close(a.replaced)
+	}
+}
+
+// resetReplaced readies a fresh replaced signal before serving again.
+func (a *Agent) resetReplaced() {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.replaced, a.isReplaced = make(chan struct{}), false
 }
 
 // Agent represents the kbridge agent that connects to control plane.
@@ -98,9 +137,10 @@ type Agent struct {
 	mu        sync.RWMutex
 	stopCh    chan struct{}
 	stoppedCh chan struct{}
-	// replaced is closed once a newer agent replaced this one.
-	replaced     chan struct{}
-	replacedOnce sync.Once
+	// replaced is closed once a newer agent replaced this one; guarded by mu
+	// because taking the cluster back replaces it (see replacedC).
+	replaced   chan struct{}
+	isReplaced bool
 }
 
 // New creates a new agent with the given configuration.
@@ -137,6 +177,22 @@ func (a *Agent) Run(ctx context.Context) error {
 	// liveness initialDelaySeconds window doesn't race a slow first heartbeat.
 	a.touchHealthFile()
 
+	for {
+		err := a.serve(ctx)
+		if !errors.Is(err, errTakeOver) {
+			return err
+		}
+		a.resetReplaced()
+		if err := a.reconnect(ctx); err != nil {
+			return fmt.Errorf("taking the cluster back: %w", err)
+		}
+	}
+}
+
+// serve runs the heartbeat, poll, stream and sync loops until they stop, then
+// stands by if a newer agent replaced this one. It returns errTakeOver when a
+// standing-by agent should register again.
+func (a *Agent) serve(ctx context.Context) error {
 	// A refused re-registration cancels ctx so the loops below stop; being
 	// replaced stops them through a.replaced. Neither, nor shutdown, cancels a
 	// running command (see executeAndSubmit).
@@ -156,8 +212,12 @@ func (a *Agent) Run(ctx context.Context) error {
 	// running commands, so the stream stays open until the in-flight command has
 	// reported, and while standing by, so sessions running on it finish.
 	streamCtx, stopStream := context.WithCancel(context.WithoutCancel(ctx))
-	defer stopStream()
-	go a.runStream(streamCtx)
+	streamDone := make(chan struct{})
+	defer func() { stopStream(); <-streamDone }()
+	go func() {
+		defer close(streamDone)
+		a.runStream(streamCtx)
+	}()
 
 	stopSync := a.startSync(ctx)
 
@@ -169,7 +229,7 @@ func (a *Agent) Run(ctx context.Context) error {
 	// so its caller gets an answer instead of waiting for the command timeout.
 	<-pollDone
 	select {
-	case <-a.replaced:
+	case <-a.replacedC():
 		return a.standBy(ctx)
 	default:
 	}
@@ -380,7 +440,7 @@ func (a *Agent) runHeartbeatLoop(ctx context.Context) error {
 			log.Printf("Heartbeat loop stopping")
 			return nil
 
-		case <-a.replaced:
+		case <-a.replacedC():
 			return nil
 
 		case <-ctx.Done():
@@ -516,7 +576,7 @@ func (a *Agent) runCommandPollLoop(ctx context.Context) error {
 			log.Printf("Command poll loop stopping")
 			return nil
 
-		case <-a.replaced:
+		case <-a.replacedC():
 			return nil
 
 		case <-ctx.Done():

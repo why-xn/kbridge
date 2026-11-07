@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -631,6 +632,94 @@ func assertStandingBy(t *testing.T, errCh <-chan error, health string) {
 	second, _ := os.Stat(health)
 	if !second.ModTime().After(first.ModTime()) {
 		t.Fatalf("health file not touched while standing by: %v then %v", first.ModTime(), second.ModTime())
+	}
+}
+
+// takeOverService answers heartbeats "replaced" until the test says the
+// replacer is gone, then NotFound until the agent registers again.
+type takeOverService struct {
+	mockAgentService
+	mu        sync.Mutex
+	registers int
+	gone      bool
+}
+
+func (s *takeOverService) Register(ctx context.Context, req *agentpb.RegisterRequest) (*agentpb.RegisterResponse, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.registers++
+	return &agentpb.RegisterResponse{Success: true, AgentId: fmt.Sprintf("agent-%d", s.registers)}, nil
+}
+
+func (s *takeOverService) Heartbeat(ctx context.Context, req *agentpb.HeartbeatRequest) (*agentpb.HeartbeatResponse, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	switch {
+	case s.registers > 1:
+		return &agentpb.HeartbeatResponse{Acknowledged: true, NextHeartbeatSeconds: 1}, nil
+	case s.gone:
+		return nil, status.Error(codes.NotFound, "agent not registered")
+	default:
+		return nil, status.Error(codes.FailedPrecondition, "agent replaced by a newer registration for this cluster")
+	}
+}
+
+func (s *takeOverService) registered() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.registers
+}
+
+// A standing-by agent whose replacer goes away registers again within one
+// stand-by tick and serves the cluster, instead of sitting out the timeout.
+func TestAgent_StandingByTakesOverWhenReplacerGone(t *testing.T) {
+	defer func(h, i time.Duration) { initialHeartbeatInterval, standByTouchInterval = h, i }(
+		initialHeartbeatInterval, standByTouchInterval)
+	initialHeartbeatInterval, standByTouchInterval = 50*time.Millisecond, 100*time.Millisecond
+	svc := &takeOverService{}
+	lis, err := net.Listen("tcp", "localhost:0")
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	srv := grpc.NewServer()
+	agentpb.RegisterAgentServiceServer(srv, svc)
+	go func() { _ = srv.Serve(lis) }()
+	defer srv.Stop()
+	addr := lis.Addr().String()
+	a := New(&Config{
+		ControlPlane: ControlPlaneConfig{URL: addr, Token: "token"},
+		Cluster:      ClusterConfig{Name: "test"},
+		Kubernetes:   kubeFixture(t),
+	})
+	errCh := make(chan error, 1)
+	go func() { errCh <- a.Run(context.Background()) }()
+
+	<-a.replacedC()
+	time.Sleep(300 * time.Millisecond)
+	if n := svc.registered(); n != 1 {
+		t.Fatalf("registered %d times while the replacer is connected, want 1", n)
+	}
+	svc.mu.Lock()
+	svc.gone = true
+	svc.mu.Unlock()
+	deadline := time.Now().Add(time.Second)
+	for svc.registered() < 2 {
+		if time.Now().After(deadline) {
+			t.Fatal("standing-by agent did not register again after its replacer went away")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	select {
+	case err := <-errCh:
+		t.Fatalf("Run returned %v after taking the cluster back", err)
+	case <-time.After(500 * time.Millisecond):
+	}
+	if a.AgentID() != "agent-2" {
+		t.Fatalf("agent id = %q, want agent-2", a.AgentID())
+	}
+	a.Stop()
+	if err := <-errCh; err != nil {
+		t.Fatalf("Run = %v after Stop, want nil", err)
 	}
 }
 

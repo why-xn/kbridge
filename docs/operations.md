@@ -121,7 +121,9 @@ chart version rather than overriding the image tag. From a clone, use
 Hot rotation (no reconnect) is not implemented; each rotation rolls the agent
 pod. That costs no outage: the new pod serves the cluster as soon as it
 registers, and the old one, once replaced, stands by until Kubernetes stops it
-(it does not exit or register again, so it never takes the cluster back). A
+(it does not exit or register again while the new agent is connected, so it
+does not take the cluster back). If the new agent dies or disconnects first, the
+standing-by agent registers again within 30 s and serves the cluster. A
 command running on the old pod finishes there, within the pod's termination
 grace period (`terminationGracePeriodSeconds`, 30 s by default); a longer one
 is killed with the pod and fails with `agent shut down while the command was

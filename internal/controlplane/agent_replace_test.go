@@ -228,7 +228,7 @@ func TestAgentStore_WasReplaced(t *testing.T) {
 			store := NewAgentStore()
 			store.Register(&AgentInfo{ID: "old", ClusterName: "prod"})
 			store.Register(&AgentInfo{ID: "new", ClusterName: "prod"})
-			store.replaced["old"] = time.Now().Add(-tt.age)
+			store.replaced["old"] = replacedAgent{at: time.Now().Add(-tt.age), cluster: "prod"}
 			store.Register(&AgentInfo{ID: "other", ClusterName: "dev"})
 			if got := store.WasReplaced("old"); got != tt.want {
 				t.Fatalf("WasReplaced(old) = %v, want %v", got, tt.want)
@@ -286,6 +286,35 @@ func TestGRPCServer_ReplacedAgentRefused(t *testing.T) {
 	}
 	if got, _ := agents.GetByClusterName(testClusterName); got.ID != current.AgentId || got.Status != AgentStatusConnected {
 		t.Fatalf("cluster routes to %+v, want connected %s", got, current.AgentId)
+	}
+}
+
+// A replaced agent is told to stand by only while the agent that replaced it
+// serves the cluster; once that one is gone it is told NotFound, so it
+// registers again and the cluster is not left without an agent.
+func TestGRPCServer_ReplacedAgentToldNotFoundWhenReplacerGone(t *testing.T) {
+	tests := []struct {
+		name     string
+		goAway   func(*AgentStore, string)
+		wantCode codes.Code
+	}{
+		{"replacer connected", func(*AgentStore, string) {}, codes.FailedPrecondition},
+		{"replacer disconnected", func(a *AgentStore, id string) { a.MarkAgentDisconnected(id) }, codes.NotFound},
+		{"replacer dropped", func(a *AgentStore, id string) { a.Remove(id) }, codes.NotFound},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			srv, agents, _ := newTestGRPCServer(t)
+			ctx := context.Background()
+			req := &agentpb.RegisterRequest{AgentToken: testAgentToken, ClusterName: testClusterName}
+			old, _ := srv.Register(ctx, req)
+			current, _ := srv.Register(ctx, req)
+			tt.goAway(agents, current.AgentId)
+			_, err := srv.Heartbeat(ctx, &agentpb.HeartbeatRequest{AgentId: old.AgentId})
+			if got := status.Code(err); got != tt.wantCode {
+				t.Fatalf("replaced agent heartbeat = %v, want %v", got, tt.wantCode)
+			}
+		})
 	}
 }
 

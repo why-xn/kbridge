@@ -31,9 +31,17 @@ const (
 // DisconnectTimeout is the duration after which an agent without heartbeat is marked disconnected.
 const DisconnectTimeout = 60 * time.Second
 
-// replacedTTL is how long a replaced agent id is remembered: far longer than a
-// pod's termination grace period, short enough that the map stays small.
-const replacedTTL = 10 * time.Minute
+// replacedTTL is how long a replaced agent id is remembered: longer than the
+// agent's 10 minute stand-by, so a standing-by agent is never forgotten (and
+// told NotFound, which would make it take the cluster back) while the agent
+// that replaced it is healthy; short enough that the map stays small.
+const replacedTTL = 15 * time.Minute
+
+// replacedAgent records when an agent id was replaced and for which cluster.
+type replacedAgent struct {
+	at      time.Time
+	cluster string
+}
 
 // AgentStore manages registered agents in memory.
 type AgentStore struct {
@@ -46,8 +54,9 @@ type AgentStore struct {
 	// the clusters list shows them disconnected until an agent registers again.
 	revoked map[string]bool
 	// replaced holds ids a newer registration for the same cluster replaced,
-	// with when, so their late calls are refused instead of re-registering.
-	replaced map[string]time.Time
+	// with when and for which cluster, so their late calls are refused instead
+	// of re-registering while the replacing agent is connected.
+	replaced map[string]replacedAgent
 	// OnDisconnect, when set, is called (outside the lock) for each agent
 	// marked disconnected or dropped, so queued commands can fail fast.
 	OnDisconnect func(agentID, clusterName string)
@@ -59,7 +68,7 @@ func NewAgentStore() *AgentStore {
 		agents:      make(map[string]*AgentInfo),
 		validTokens: make(map[string]bool),
 		revoked:     make(map[string]bool),
-		replaced:    make(map[string]time.Time),
+		replaced:    make(map[string]replacedAgent),
 	}
 }
 
@@ -90,7 +99,7 @@ func (s *AgentStore) Register(info *AgentInfo) (replaced []string) {
 	for id, agent := range s.agents {
 		if id != info.ID && agent.ClusterName == info.ClusterName {
 			delete(s.agents, id)
-			s.replaced[id] = now
+			s.replaced[id] = replacedAgent{at: now, cluster: agent.ClusterName}
 			replaced = append(replaced, id)
 		}
 	}
@@ -104,8 +113,8 @@ func (s *AgentStore) Register(info *AgentInfo) (replaced []string) {
 
 // evictReplaced forgets replaced ids older than replacedTTL; call with the lock.
 func (s *AgentStore) evictReplaced(now time.Time) {
-	for id, at := range s.replaced {
-		if now.Sub(at) > replacedTTL {
+	for id, r := range s.replaced {
+		if now.Sub(r.at) > replacedTTL {
 			delete(s.replaced, id)
 		}
 	}
@@ -118,6 +127,24 @@ func (s *AgentStore) WasReplaced(agentID string) bool {
 	defer s.mu.RUnlock()
 	_, ok := s.replaced[agentID]
 	return ok
+}
+
+// ReplacerConnected reports whether agentID was replaced and its cluster is
+// now served by a connected agent. When the replacing agent is gone, a
+// replaced agent standing by may take the cluster back.
+func (s *AgentStore) ReplacerConnected(agentID string) bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	r, ok := s.replaced[agentID]
+	if !ok {
+		return false
+	}
+	for _, agent := range s.agents {
+		if agent.ClusterName == r.cluster && agent.Status == AgentStatusConnected {
+			return true
+		}
+	}
+	return false
 }
 
 // UpdateHeartbeat updates the last seen timestamp for an agent.

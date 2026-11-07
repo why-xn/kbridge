@@ -135,7 +135,7 @@ func TestAgent_ShutdownLetsInFlightCommandFinish(t *testing.T) {
 			go func() { runDone <- a.Run(ctx) }()
 			handed := waitHandedOut(t, svc)
 			if tt.replaced {
-				<-a.replaced
+				<-a.replacedC()
 			}
 			cancel() // same order as cmd/agent: cancel, then Stop
 			a.Stop()
