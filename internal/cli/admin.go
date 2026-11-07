@@ -224,7 +224,7 @@ func runAdminTokensCreate(cmd *cobra.Command, args []string) error {
 	}
 	fmt.Printf("Agent token for cluster %q created.\n\n", tok.ClusterName)
 	fmt.Printf("  %s\n\n", tok.Token)
-	fmt.Println("Store it now — it cannot be retrieved again. Set it as the agent's control_plane.token.")
+	fmt.Println("Store it now — it cannot be retrieved again. Set it as the agent's control_plane.token (controlPlane.token in the Helm chart).")
 	return nil
 }
 
