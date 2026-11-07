@@ -136,20 +136,29 @@ roles:
 // A command refused because the cluster's agent is gone is still an attempt,
 // so it is audited as failed with no exit code.
 func TestExecHandler_RecordsDisconnectedAudit(t *testing.T) {
+	register := func(a *AgentStore) {
+		a.Register(&AgentInfo{ID: "a1", ClusterName: "prod", TokenID: "tok-1", Capabilities: []string{capImpersonation}})
+	}
 	tests := []struct {
-		name string
-		drop func(*AgentStore)
+		name  string
+		setup func(*AgentStore, *SQLiteStore)
 	}{
-		{"agent disconnected", func(a *AgentStore) { a.MarkAgentDisconnected("a1") }},
-		{"agent token revoked", func(a *AgentStore) { a.DropByToken("tok-1") }},
+		{"agent disconnected", func(a *AgentStore, _ *SQLiteStore) { register(a); a.MarkAgentDisconnected("a1") }},
+		{"agent token revoked", func(a *AgentStore, _ *SQLiteStore) { register(a); a.DropByToken("tok-1") }},
+		// A token was issued but no agent registered yet, or the control plane
+		// restarted: the cluster is known, so it is disconnected, not unknown.
+		{"known cluster, no agent", func(_ *AgentStore, db *SQLiteStore) {
+			if err := db.CreateCluster(context.Background(), &Cluster{Name: "prod", Status: AgentStatusDisconnected}); err != nil {
+				t.Fatalf("seed cluster: %v", err)
+			}
+		}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			store := newTestStore(t)
 			jm := auth.NewJWTManager("test-secret-at-least-32-chars!!", time.Hour)
 			agents := NewAgentStore()
-			agents.Register(&AgentInfo{ID: "a1", ClusterName: "prod", TokenID: "tok-1", Capabilities: []string{capImpersonation}})
-			tt.drop(agents)
+			tt.setup(agents, store)
 			srv := NewHTTPServer(agents, NewCommandQueue(),
 				NewAuthHandlers(store, jm, time.Hour), NewAdminHandlers(store, testPepper, nil), nil, NewAuditRecorder(store), nil, jm)
 			user := &User{Email: "dev@x.com", Name: "Dev", PasswordHash: "h", IsActive: true}

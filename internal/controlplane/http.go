@@ -195,14 +195,23 @@ func (s *HTTPServer) clusterStatuses(ctx context.Context) (map[string]string, er
 }
 
 // connectedAgent returns the cluster's agent if it is connected, or answers
-// 404 or 503. A cluster whose agent was dropped by token revocation is
-// disconnected, as the clusters list shows it, not unknown. A 503 is audited
+// 404 or 503. A known cluster without a registered agent (persisted, or its
+// agent dropped by token revocation) is disconnected, as the clusters list
+// shows it, not unknown; 404 is only for a name nobody knows. A 503 is audited
 // as a failed attempt of req, so every command attempt is recorded.
 func (s *HTTPServer) connectedAgent(c *gin.Context, clusterName string, req ExecRequest) (*AgentInfo, bool) {
 	agent, exists := s.agentStore.GetByClusterName(clusterName)
-	if !exists && !slices.Contains(s.agentStore.RevokedClusters(), clusterName) {
-		c.JSON(http.StatusNotFound, gin.H{"error": "cluster not found"})
-		return nil, false
+	if !exists {
+		statuses, err := s.clusterStatuses(c.Request.Context())
+		if err != nil {
+			log.Printf("looking up cluster %s: %v", clusterName, err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
+			return nil, false
+		}
+		if _, known := statuses[clusterName]; !known {
+			c.JSON(http.StatusNotFound, gin.H{"error": "cluster not found"})
+			return nil, false
+		}
 	}
 	if !exists || agent.Status != AgentStatusConnected {
 		s.recordExecAudit(c, clusterName, req, AuditStatusFailed, nil, nil, "agent is disconnected")
