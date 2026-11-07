@@ -23,16 +23,16 @@ newest pre-release (with a warning) when no stable release exists — which is t
 case while kbridge is in alpha. To pin a version:
 
 ```bash
-KBRIDGE_VERSION=v0.3.0-alpha.1 curl -fsSL \
-  https://raw.githubusercontent.com/why-xn/kbridge/master/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/why-xn/kbridge/master/install.sh \
+  | KBRIDGE_VERSION=v0.3.0-alpha.1 sh
 ```
 
 To install into a custom directory (default is `/usr/local/bin`; the installer
 creates it if it does not exist):
 
 ```bash
-KBRIDGE_INSTALL_DIR=~/.local/bin curl -fsSL \
-  https://raw.githubusercontent.com/why-xn/kbridge/master/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/why-xn/kbridge/master/install.sh \
+  | KBRIDGE_INSTALL_DIR="$HOME/.local/bin" sh
 ```
 
 The installer downloads `kb_<version>_<os>_<arch>.tar.gz` and a `checksums.txt`
