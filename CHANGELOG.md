@@ -45,6 +45,12 @@ granting access until removed), e.g.
 
 ### Security
 
+- **Revoking an agent token disconnects its agents at once.** The agent is
+  dropped from the control plane, its queued and running commands fail with
+  `agent is disconnected`, `kb clusters list` shows the cluster
+  `disconnected`, and the agent exits when its re-registration is refused.
+  Before, a connected agent kept serving on a revoked token until it
+  happened to re-register. Rotate by issuing the new token first.
 - **`~/.kbridge/config.yaml` is private.** The CLI creates it 0600 (directory
   0700) and tightens an existing file on the next write; it holds the access
   and refresh tokens.
@@ -135,6 +141,10 @@ agents' `controlPlane.url` at the new Service name.
 
 ### Fixed
 
+- **A dead agent shows as disconnected within seconds.** The control plane
+  marks an agent disconnected the moment its gRPC stream closes and pings it
+  every 5 s, so `kb clusters list` and queued commands no longer wait up to
+  60 s for the heartbeat timeout.
 - **`kb edit` accepts an editor with arguments** (`KUBE_EDITOR="code --wait"`),
   split on spaces like kubectl does.
 - **`kb admin rbac status` explains an `accessCeiling` refusal.** A binding
