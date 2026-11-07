@@ -27,8 +27,8 @@ type commandService struct {
 	// revokeWhenHanded answers heartbeats NotFound once the command is out, as
 	// after a revocation; set rejectAfter to refuse the re-registration.
 	revokeWhenHanded bool
-	streamOpen        bool // the agent's OpenStream is being served
-	openAtSubmit      bool // streamOpen when the result was submitted
+	streamOpen       bool // the agent's OpenStream is being served
+	openAtSubmit     bool // streamOpen when the result was submitted
 }
 
 // OpenStream serves the agent's stream until the agent closes it.

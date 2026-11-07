@@ -370,8 +370,9 @@ func TestCLIClustersList(t *testing.T) {
 		t.Errorf("Expected output to contain cluster name %q", *clusterName)
 	}
 
-	if !strings.Contains(stdout, "connected") {
-		t.Error("Expected output to show 'connected' status")
+	// "disconnected" contains "connected", so read the cluster's own row.
+	if got := cliClusterStatus(t, *clusterName); got != "connected" {
+		t.Errorf("Expected %s to show 'connected', got %q", *clusterName, got)
 	}
 }
 
