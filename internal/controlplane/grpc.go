@@ -274,6 +274,8 @@ func (s *GRPCServer) OpenStream(stream agentpb.AgentService_OpenStreamServer) er
 	}
 
 	s.sessions.RegisterAgentStream(reg.GetAgentId(), stream)
+	// A reopened stream is proof of life: do not wait for the next heartbeat.
+	s.agents.UpdateHeartbeat(reg.GetAgentId(), AgentStatusConnected)
 	defer s.streamClosed(reg.GetAgentId(), stream)
 	log.Printf("Agent stream opened: id=%s", reg.GetAgentId())
 

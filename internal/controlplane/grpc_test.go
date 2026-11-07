@@ -745,7 +745,10 @@ func registerReplacement(t *testing.T, srv *GRPCServer, _ string) string {
 	return resp.AgentId
 }
 
+// reopenStream reopens the agent's stream after a blip marked it disconnected;
+// the new stream alone must mark it connected again.
 func reopenStream(t *testing.T, srv *GRPCServer, first string) string {
+	srv.agents.MarkAgentDisconnected(first)
 	go func() { _ = srv.OpenStream(newFakeOpenStream(first)) }()
 	time.Sleep(100 * time.Millisecond)
 	return first
