@@ -293,6 +293,27 @@ func TestMarkDisconnected_FailsQueuedCommands(t *testing.T) {
 	}
 }
 
+// A dropped agent must not keep serving sessions it had open.
+func TestDropByToken_ClosesAgentSessions(t *testing.T) {
+	store, sm := NewAgentStore(), NewSessionManager(10)
+	store.OnDisconnect = onAgentDisconnect(NewCommandQueue(), sm)
+	store.Register(&AgentInfo{ID: "agent-1", ClusterName: "test", TokenID: "tok-1"})
+	sm.RegisterAgentStream("agent-1", &fakeSender{})
+	sess, err := sm.Start("agent-1", "", []string{"logs", "-f", "p"}, "")
+	if err != nil {
+		t.Fatalf("start: %v", err)
+	}
+
+	store.DropByToken("tok-1")
+
+	if _, ok := <-sess.Output; ok {
+		t.Error("session output still open after the agent was dropped")
+	}
+	if _, err := sm.Start("agent-1", "", []string{"logs"}, ""); err != ErrNoAgentStream {
+		t.Errorf("start after drop: err = %v, want ErrNoAgentStream", err)
+	}
+}
+
 func TestDropByToken(t *testing.T) {
 	tests := []struct {
 		name        string

@@ -40,11 +40,19 @@ func failQueuedOnDisconnect(q *CommandQueue) func(string, string) {
 	}
 }
 
+// onAgentDisconnect fails a dropped agent's commands and closes its streams.
+func onAgentDisconnect(q *CommandQueue, sm *SessionManager) func(string, string) {
+	failQueued := failQueuedOnDisconnect(q)
+	return func(id, cluster string) {
+		failQueued(id, cluster)
+		sm.DropAgent(id)
+	}
+}
+
 // NewServer creates a new control plane server with the given configuration.
 func NewServer(cfg *Config) (*Server, error) {
 	agentStore := NewAgentStore()
 	commandQueue := NewCommandQueue()
-	agentStore.OnDisconnect = failQueuedOnDisconnect(commandQueue)
 
 	// Open SQLite store
 	dbStore, err := NewSQLiteStore(cfg.Database.Path)
@@ -89,6 +97,7 @@ func NewServer(cfg *Config) (*Server, error) {
 	}
 
 	sessionManager := NewSessionManager(cfg.Streams.MaxConcurrent)
+	agentStore.OnDisconnect = onAgentDisconnect(commandQueue, sessionManager)
 
 	httpHandler := NewHTTPServer(agentStore, commandQueue, authHandlers, adminHandlers, policy, auditRecorder, sessionManager, jwtManager)
 	grpcHandler := NewGRPCServer(agentStore, commandQueue, authenticator, sessionManager)

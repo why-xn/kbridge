@@ -118,9 +118,19 @@ func (m *SessionManager) RegisterAgentStream(agentID string, s streamSender) {
 // sessions. It does nothing and returns false when the agent has since opened
 // another stream, so an old handler exiting cannot cut off the new one.
 func (m *SessionManager) UnregisterAgentStream(agentID string, s streamSender) bool {
+	return m.dropAgent(agentID, func(conn *agentConn) bool { return conn.sender == s })
+}
+
+// DropAgent removes an agent's stream, whichever it is, and closes all of its
+// sessions, so an agent that was dropped or went silent serves none of them.
+func (m *SessionManager) DropAgent(agentID string) {
+	m.dropAgent(agentID, func(*agentConn) bool { return true })
+}
+
+func (m *SessionManager) dropAgent(agentID string, match func(*agentConn) bool) bool {
 	m.mu.Lock()
 	conn := m.agents[agentID]
-	if conn == nil || conn.sender != s {
+	if conn == nil || !match(conn) {
 		m.mu.Unlock()
 		return false
 	}
