@@ -5,6 +5,8 @@ package e2e
 
 import (
 	"bytes"
+	"fmt"
+	"net/http"
 	"os/exec"
 	"strings"
 	"testing"
@@ -162,6 +164,76 @@ func runThroughRollout(t *testing.T, d time.Duration, rolledOut <-chan time.Time
 		done = <-rolledOut // the rollout goroutine always sends; it must finish before the test ends
 	}
 	return failures
+}
+
+// TestAgentFailover_StandingByAgentTakesOver replaces the in-cluster agent
+// with a host agent for the same cluster, so the pod stands by, then kills the
+// host agent. The pod must take the cluster back within one stand-by tick,
+// without restarting.
+func TestAgentFailover_StandingByAgentTakesOver(t *testing.T) {
+	if _, stderr, code := runCLI(t, "clusters", "use", *clusterName); code != 0 {
+		t.Fatalf("clusters use: %s", stderr)
+	}
+	standingBy := strings.Count(agentLog(t), "standing by") // lines from earlier tests
+	tokenID, token := createAgentToken(t, *clusterName)
+	t.Cleanup(func() {
+		doJSON(t, http.MethodDelete, fmt.Sprintf("%s/api/v1/admin/agent-tokens/%s", *controlPlaneURL, tokenID), authToken, nil)
+	})
+	host := startAgentProcess(t, *clusterName, token)
+	t.Cleanup(func() {
+		t.Logf("host agent output:\n%s", host.stop())
+		waitCLIClusterStatus(t, *clusterName, "connected", 60*time.Second) // the pod is current again
+	})
+
+	waitAgentLog(t, "standing by", standingBy+1, 30*time.Second) // the pod learned it was replaced
+	if _, stderr, code := runCLI(t, "get", "pods"); code != 0 {
+		t.Fatalf("kb get pods through the host agent: %s", stderr)
+	}
+
+	_ = host.cmd.Process.Kill() // SIGKILL: no clean shutdown
+	deadline := time.Now().Add(45 * time.Second)
+	for cliClusterStatus(t, *clusterName) != "connected" || !getPodsWorks(t) {
+		if time.Now().After(deadline) {
+			t.Fatalf("cluster not served 45 s after the host agent was killed; pod log:\n%s", agentLog(t))
+		}
+		time.Sleep(time.Second)
+	}
+	logs := agentLog(t)
+	if i, j := strings.LastIndex(logs, "standing by"), strings.LastIndex(logs, "Registered successfully"); i < 0 || j < i {
+		t.Errorf("pod log has no re-registration after standing by:\n%s", logs)
+	}
+	out, err := exec.Command("kubectl", "-n", agentNamespace, "get", "pod", "-l", "app.kubernetes.io/name=kbridge-agent",
+		"-o", "jsonpath={.items[0].status.containerStatuses[0].restartCount}").CombinedOutput()
+	if err != nil || strings.TrimSpace(string(out)) != "0" {
+		t.Errorf("agent pod restart count = %q (err %v), want 0", out, err)
+	}
+}
+
+func getPodsWorks(t *testing.T) bool {
+	_, _, code := runCLI(t, "get", "pods")
+	return code == 0
+}
+
+// agentLog returns the in-cluster agent's log.
+func agentLog(t *testing.T) string {
+	t.Helper()
+	out, err := exec.Command("kubectl", "-n", agentNamespace, "logs", agentDeployment).CombinedOutput()
+	if err != nil {
+		t.Fatalf("agent logs: %v: %s", err, out)
+	}
+	return string(out)
+}
+
+// waitAgentLog waits until the in-cluster agent's log contains want n times.
+func waitAgentLog(t *testing.T, want string, n int, within time.Duration) {
+	t.Helper()
+	deadline := time.Now().Add(within)
+	for strings.Count(agentLog(t), want) < n {
+		if time.Now().After(deadline) {
+			t.Fatalf("agent log has no %q after %s", want, within)
+		}
+		time.Sleep(time.Second)
+	}
 }
 
 // waitOneAgentPod waits until exactly one agent pod exists: the replaced pod
