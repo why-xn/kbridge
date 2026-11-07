@@ -127,11 +127,11 @@ func TestLocalManifests(t *testing.T) {
 
 func TestStreamCommand_ReturnsRemoteExitCode(t *testing.T) {
 	tests := []struct {
-		name     string
-		trailer  string
-		errMsg   string // the control plane's reason the stream ended
-		want     int
-		wantErr  string
+		name    string
+		trailer string
+		errMsg  string // the control plane's reason the stream ended
+		want    int
+		wantErr string
 	}{
 		{"success", "0", "", 0, ""},
 		{"failure", "1", "", 1, ""},
