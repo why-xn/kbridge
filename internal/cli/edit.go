@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"time"
 
@@ -207,18 +208,28 @@ func (h *EditHandler) createTempFile(content string) (string, error) {
 
 // openEditor opens the specified file in the user's preferred editor.
 func (h *EditHandler) openEditor(filepath string) error {
-	// Like kubectl: split on spaces, no quoting, so "code --wait" works.
-	words := strings.Fields(getEditor())
-	if len(words) == 0 {
-		words = []string{"vi"}
-	}
-
-	cmd := exec.Command(words[0], append(words[1:], filepath)...)
+	cmd := editorCommand(getEditor(), filepath)
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 
 	return cmd.Run()
+}
+
+// editorCommand builds the editor invocation for file. As kubectl does, a
+// value with a quote, double quote or backslash is run by sh so its quoting
+// works (`sed -i s/a\ b/c/`), with file passed as "$@" rather than spliced
+// into the script; any other value is split on whitespace ("code --wait").
+// Windows always splits: its paths are full of backslashes and it has no sh.
+func editorCommand(editor, file string) *exec.Cmd {
+	if strings.ContainsAny(editor, `'"\`) && runtime.GOOS != "windows" {
+		return exec.Command("sh", "-c", editor+` "$@"`, "sh", file)
+	}
+	words := strings.Fields(editor)
+	if len(words) == 0 {
+		words = []string{"vi"}
+	}
+	return exec.Command(words[0], append(words[1:], file)...)
 }
 
 // getEditor returns the user's preferred editor.

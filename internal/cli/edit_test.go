@@ -3,6 +3,8 @@ package cli
 import (
 	"os"
 	"path/filepath"
+	"runtime"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -315,21 +317,39 @@ func containsHelper(s, substr string) bool {
 	return false
 }
 
-func TestOpenEditorSplitsArguments(t *testing.T) {
+// The editor value is read the way kubectl reads it: split on spaces, or run
+// by the shell when it has quotes or backslashes so they keep their meaning.
+func TestOpenEditorArguments(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("uses a shell script as the editor")
+	}
 	dir := t.TempDir()
 	script := filepath.Join(dir, "ed.sh")
 	out := filepath.Join(dir, "out")
-	body := "#!/bin/sh\necho \"$@\" > " + out + "\n"
+	body := "#!/bin/sh\nprintf '%s\\n' \"$@\" > " + out + "\n"
 	if err := os.WriteFile(script, []byte(body), 0755); err != nil {
 		t.Fatal(err)
 	}
-	t.Setenv("KUBE_EDITOR", script+" --flag -x")
-
-	if err := (&EditHandler{}).openEditor("/the/file"); err != nil {
-		t.Fatal(err)
+	tests := []struct {
+		name   string
+		editor string
+		want   []string
+	}{
+		{"plain path", script, []string{"/the/file"}},
+		{"path plus args", script + " --flag -x", []string{"--flag", "-x", "/the/file"}},
+		{"escaped space stays one argument", script + ` -i s/a\ b/c/`, []string{"-i", "s/a b/c/", "/the/file"}},
+		{"quoted argument", script + ` "a b" 'c d'`, []string{"a b", "c d", "/the/file"}},
 	}
-	got, _ := os.ReadFile(out)
-	if strings.TrimSpace(string(got)) != "--flag -x /the/file" {
-		t.Errorf("editor args = %q", got)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Setenv("KUBE_EDITOR", tt.editor)
+			if err := (&EditHandler{}).openEditor("/the/file"); err != nil {
+				t.Fatal(err)
+			}
+			got, _ := os.ReadFile(out)
+			if args := strings.Split(strings.TrimSuffix(string(got), "\n"), "\n"); !slices.Equal(args, tt.want) {
+				t.Errorf("editor argv = %q, want %q", args, tt.want)
+			}
+		})
 	}
 }
