@@ -593,7 +593,7 @@ func (a *Agent) runCommandPollLoop(ctx, cmdCtx context.Context) error {
 	for {
 		select {
 		case <-ticker.C:
-			if err := a.pollAndExecuteCommands(ctx, cmdCtx); err != nil {
+			if err := a.pollAndExecuteCommands(cmdCtx); err != nil {
 				return err
 			}
 
@@ -613,7 +613,7 @@ func (a *Agent) runCommandPollLoop(ctx, cmdCtx context.Context) error {
 
 // pollAndExecuteCommands polls for pending commands and executes them. It
 // returns errReplaced when a newer agent replaced this one.
-func (a *Agent) pollAndExecuteCommands(ctx, cmdCtx context.Context) error {
+func (a *Agent) pollAndExecuteCommands(cmdCtx context.Context) error {
 	a.mu.RLock()
 	agentID := a.agentID
 	client := a.client
@@ -623,8 +623,10 @@ func (a *Agent) pollAndExecuteCommands(ctx, cmdCtx context.Context) error {
 		return nil
 	}
 
-	// Poll for pending commands
-	pollCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	// Poll under cmdCtx, not the loop's ctx: a shutdown that lands while the response is
+	// in flight must not drop a command the control plane has already handed
+	// to this agent. Only a revoked token cancels cmdCtx.
+	pollCtx, cancel := context.WithTimeout(cmdCtx, 5*time.Second)
 	defer cancel()
 
 	resp, err := client.GetPendingCommands(pollCtx, &agentpb.GetPendingCommandsRequest{
