@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -128,26 +129,34 @@ func TestStreamCommand_ReturnsRemoteExitCode(t *testing.T) {
 	tests := []struct {
 		name    string
 		trailer string
+		errMsg  string // the control plane's reason the stream ended
 		want    int
+		wantErr string
 	}{
-		{"success", "0", 0},
-		{"failure", "1", 1},
-		{"older server without trailer", "", 0},
+		{"success", "0", "", 0, ""},
+		{"failure", "1", "", 1, ""},
+		{"older server without trailer", "", "", 0, ""},
+		// The agent went away mid-stream: say why instead of exiting silently.
+		{"agent went away", "-1", "agent disconnected", -1, "agent disconnected"},
+		{"never finished, no reason given", "-1", "", -1, "stream ended before the command finished; run it again"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				w.Header().Set("Trailer", exitCodeTrailer)
+				w.Header().Set("Trailer", exitCodeTrailer+", "+errorTrailer)
 				_, _ = io.WriteString(w, "output\n")
 				if tt.trailer != "" {
 					w.Header().Set(exitCodeTrailer, tt.trailer)
+				}
+				if tt.errMsg != "" {
+					w.Header().Set(errorTrailer, tt.errMsg)
 				}
 			}))
 			defer ts.Close()
 			var out strings.Builder
 			code, err := NewControlPlaneClient(ts.URL).StreamCommand(context.Background(), "prod", []string{"logs", "-f", "x"}, "", &out)
-			if err != nil {
-				t.Fatal(err)
+			if got := fmt.Sprint(err); (tt.wantErr == "" && err != nil) || (tt.wantErr != "" && got != tt.wantErr) {
+				t.Fatalf("err = %v, want %q", err, tt.wantErr)
 			}
 			if code != tt.want || out.String() != "output\n" {
 				t.Fatalf("got code=%d out=%q, want code=%d", code, out.String(), tt.want)

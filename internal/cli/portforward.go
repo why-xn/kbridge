@@ -182,7 +182,7 @@ func runPortForward(controlPlaneURL, cluster, token string, tgt pfTarget, insecu
 	// Block until the stream ends.
 	<-reg.done
 	if reg.sessErr != "" {
-		return fmt.Errorf("port-forward failed: %s", reg.sessErr)
+		return fmt.Errorf("port-forward ended: %s", reg.sessErr)
 	}
 	return nil
 }
@@ -289,8 +289,7 @@ func (r *pfConnRegistry) readLoop(body io.Reader, readyCh chan struct{}) {
 				r.closeConn(id)
 			}
 		case pfframe.SessionError:
-			r.sessErr = string(payload)
-			fmt.Fprintln(os.Stderr, r.sessErr)
+			r.sessErr = string(payload) // reported once, as the command's error
 			return
 		}
 	}

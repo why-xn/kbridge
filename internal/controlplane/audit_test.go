@@ -111,7 +111,7 @@ roles:
 	agents := NewAgentStore()
 	agents.Register(&AgentInfo{ID: "a1", ClusterName: "prod", Capabilities: []string{capImpersonation}})
 	srv := NewHTTPServer(agents, NewCommandQueue(),
-		NewAuthHandlers(store, jm, time.Hour), NewAdminHandlers(store, testPepper), eng, NewAuditRecorder(store), nil, jm)
+		NewAuthHandlers(store, jm, time.Hour), NewAdminHandlers(store, testPepper, nil), eng, NewAuditRecorder(store), nil, jm)
 
 	// The audited user must exist (audit_logs.user_id FK -> users.id).
 	user := &User{Email: "dev@x.com", Name: "Dev", PasswordHash: "h", IsActive: true}
@@ -129,6 +129,56 @@ roles:
 	}
 	if logs[0].Status != AuditStatusDenied || logs[0].UserEmail != "dev@x.com" || logs[0].Command != "delete pods x" {
 		t.Errorf("unexpected denied audit entry: %+v", logs[0])
+	}
+}
+
+// A command refused because the cluster's agent is gone is still an attempt,
+// so it is audited as failed with no exit code.
+func TestExecHandler_RecordsDisconnectedAudit(t *testing.T) {
+	register := func(a *AgentStore) {
+		a.Register(&AgentInfo{ID: "a1", ClusterName: "prod", TokenID: "tok-1", Capabilities: []string{capImpersonation}})
+	}
+	tests := []struct {
+		name  string
+		setup func(*AgentStore, *SQLiteStore)
+	}{
+		{"agent disconnected", func(a *AgentStore, _ *SQLiteStore) { register(a); a.MarkAgentDisconnected("a1") }},
+		{"agent token revoked", func(a *AgentStore, _ *SQLiteStore) { register(a); a.DropByToken("tok-1") }},
+		// A token was issued but no agent registered yet, or the control plane
+		// restarted: the cluster is known, so it is disconnected, not unknown.
+		{"known cluster, no agent", func(_ *AgentStore, db *SQLiteStore) {
+			if err := db.CreateCluster(context.Background(), &Cluster{Name: "prod", Status: AgentStatusDisconnected}); err != nil {
+				t.Fatalf("seed cluster: %v", err)
+			}
+		}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			store := newTestStore(t)
+			jm := auth.NewJWTManager("test-secret-at-least-32-chars!!", time.Hour)
+			agents := NewAgentStore()
+			tt.setup(agents, store)
+			srv := NewHTTPServer(agents, NewCommandQueue(),
+				NewAuthHandlers(store, jm, time.Hour), NewAdminHandlers(store, testPepper, nil), nil, NewAuditRecorder(store), nil, jm)
+			user := &User{Email: "dev@x.com", Name: "Dev", PasswordHash: "h", IsActive: true}
+			if err := store.CreateUser(context.Background(), user); err != nil {
+				t.Fatalf("seed user: %v", err)
+			}
+			token, _ := jm.GenerateAccessToken(&auth.UserClaims{UserID: user.ID, Email: "dev@x.com"})
+
+			if w := execRequest(t, srv, token, []string{"get", "pods"}); w.Code != http.StatusServiceUnavailable {
+				t.Fatalf("want 503, got %d", w.Code)
+			}
+			logs, total, _ := store.ListAuditLogs(context.Background(), AuditLogFilter{})
+			if total != 1 {
+				t.Fatalf("want 1 audit entry, got %d", total)
+			}
+			got := logs[0]
+			if got.Status != AuditStatusFailed || got.ErrorMessage != "agent is disconnected" || got.ExitCode != nil ||
+				got.Command != "get pods" || got.UserEmail != "dev@x.com" || got.ClusterName != "prod" {
+				t.Errorf("unexpected audit entry: %+v", got)
+			}
+		})
 	}
 }
 
@@ -165,7 +215,7 @@ roles:
 			agents.Register(&AgentInfo{ID: "a1", ClusterName: "prod", Capabilities: []string{capImpersonation}})
 			queue := NewCommandQueue()
 			srv := NewHTTPServer(agents, queue, NewAuthHandlers(store, jm, time.Hour),
-				NewAdminHandlers(store, testPepper), eng, NewAuditRecorder(store), NewSessionManager(10), jm)
+				NewAdminHandlers(store, testPepper, nil), eng, NewAuditRecorder(store), NewSessionManager(10), jm)
 			user := &User{Email: "dev@x.com", Name: "Dev", PasswordHash: "h", IsActive: true}
 			if err := store.CreateUser(context.Background(), user); err != nil {
 				t.Fatal(err)
@@ -214,7 +264,7 @@ roles:
 	agents := NewAgentStore()
 	agents.Register(&AgentInfo{ID: "a1", ClusterName: "prod", Capabilities: []string{capImpersonation}})
 	srv := NewHTTPServer(agents, NewCommandQueue(),
-		NewAuthHandlers(store, jm, time.Hour), NewAdminHandlers(store, testPepper), eng, NewAuditRecorder(store), nil, jm)
+		NewAuthHandlers(store, jm, time.Hour), NewAdminHandlers(store, testPepper, nil), eng, NewAuditRecorder(store), nil, jm)
 	user := &User{Email: "dev@x.com", Name: "Dev", PasswordHash: "h", IsActive: true}
 	if err := store.CreateUser(context.Background(), user); err != nil {
 		t.Fatalf("seed user: %v", err)

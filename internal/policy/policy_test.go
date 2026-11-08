@@ -3,6 +3,7 @@ package policy
 import (
 	"os"
 	"path/filepath"
+	"reflect"
 	"testing"
 	"time"
 )
@@ -108,6 +109,28 @@ func TestPolicy_Allows(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			if got := p.allows(tt.subject, tt.req); got != tt.want {
 				t.Errorf("allows(%q, %+v) = %v, want %v", tt.subject, tt.req, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestPolicy_RolesFor_DefaultOnlyWhenUnbound(t *testing.T) {
+	p := mustParse(t, samplePolicy+`  - subject: dana@corp.com
+    roles: ["viewer", "developer"]
+`)
+	tests := []struct {
+		name    string
+		subject string
+		want    []string
+	}{
+		{"unbound user gets default", "stranger@x.com", []string{"viewer"}},
+		{"bound user does not get default", "alice@corp.com", []string{"admin"}},
+		{"bound user listing default keeps it", "dana@corp.com", []string{"viewer", "developer"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := p.rolesFor(tt.subject); !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("rolesFor(%q) = %v, want %v", tt.subject, got, tt.want)
 			}
 		})
 	}

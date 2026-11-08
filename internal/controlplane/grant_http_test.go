@@ -58,7 +58,7 @@ func newJITServer(t *testing.T, now time.Time) *jitServer {
 	agents.Register(&AgentInfo{ID: "a1", ClusterName: "prod", Capabilities: []string{capImpersonation}})
 
 	srv := NewHTTPServer(agents, NewCommandQueue(),
-		NewAuthHandlers(store, jm, time.Hour), NewAdminHandlers(store, testPepper), eng,
+		NewAuthHandlers(store, jm, time.Hour), NewAdminHandlers(store, testPepper, nil), eng,
 		audit, nil, jm, WithGrants(grants, limits))
 
 	return &jitServer{
@@ -386,7 +386,7 @@ func TestGrantHTTP_DisabledWhenNotWired(t *testing.T) {
 	agents := NewAgentStore()
 	agents.Register(&AgentInfo{ID: "a1", ClusterName: "prod", Capabilities: []string{capImpersonation}})
 	srv := NewHTTPServer(agents, NewCommandQueue(),
-		NewAuthHandlers(store, jm, time.Hour), NewAdminHandlers(store, testPepper), eng,
+		NewAuthHandlers(store, jm, time.Hour), NewAdminHandlers(store, testPepper, nil), eng,
 		NewAuditRecorder(store), nil, jm)
 	token := userToken(t, jm, store, "dev@corp.com")
 

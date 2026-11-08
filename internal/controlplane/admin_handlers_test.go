@@ -6,18 +6,21 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"testing"
 	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/why-xn/kbridge/api/proto/agentpb"
 	"github.com/why-xn/kbridge/internal/auth"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 func newTestAdminHandlers(t *testing.T) (*AdminHandlers, *SQLiteStore) {
 	t.Helper()
 	store := newTestStore(t)
-	return NewAdminHandlers(store, testPepper), store
+	return NewAdminHandlers(store, testPepper, NewAgentStore()), store
 }
 
 // doRequest runs a single request against a router that has the given route registered.
@@ -306,7 +309,7 @@ func TestAdminRoutes_RequireAdminRole(t *testing.T) {
 	store := newTestStore(t)
 	jm := auth.NewJWTManager("test-secret-at-least-32-chars!!", time.Hour)
 	srv := NewHTTPServer(NewAgentStore(), NewCommandQueue(),
-		NewAuthHandlers(store, jm, time.Hour), NewAdminHandlers(store, testPepper), nil, nil, nil, jm)
+		NewAuthHandlers(store, jm, time.Hour), NewAdminHandlers(store, testPepper, nil), nil, nil, nil, jm)
 
 	tokenFor := func(isAdmin bool) string {
 		tok, err := jm.GenerateAccessToken(&auth.UserClaims{
@@ -365,6 +368,16 @@ func TestAdminHandler_RevokeAgentToken(t *testing.T) {
 	}
 }
 
+// A mistyped id must not be reported as revoked while the real token stays live.
+func TestAdminHandler_RevokeUnknownAgentToken(t *testing.T) {
+	ah, _ := newTestAdminHandlers(t)
+	rw := doRequest(t, "DELETE", "/api/v1/admin/agent-tokens/:id", ah.HandleRevokeAgentToken,
+		"DELETE", "/api/v1/admin/agent-tokens/not-a-uuid", nil)
+	if rw.Code != http.StatusNotFound || !bytes.Contains(rw.Body.Bytes(), []byte(`"token not found"`)) {
+		t.Fatalf("want 404 token not found, got %d: %s", rw.Code, rw.Body.String())
+	}
+}
+
 func TestReportBindingSync_StoredAndListed(t *testing.T) {
 	eng := engineFor(t, accessPolicy)
 	grpcSrv, db, ids := newSyncServer(t, eng, "dev-1", "prod-1")
@@ -377,7 +390,7 @@ func TestReportBindingSync_StoredAndListed(t *testing.T) {
 	}
 	jm := auth.NewJWTManager("test-secret-at-least-32-chars!!", time.Hour)
 	srv := NewHTTPServer(grpcSrv.agents, NewCommandQueue(), NewAuthHandlers(db, jm, time.Hour),
-		NewAdminHandlers(db, testPepper), eng, nil, nil, jm)
+		NewAdminHandlers(db, testPepper, nil), eng, nil, nil, jm)
 	tests := []struct {
 		name     string
 		isAdmin  bool
@@ -421,5 +434,103 @@ func assertRBACStatus(t *testing.T, body []byte, desired string) {
 	}
 	if prod.State != SyncStateUnreported || prod.Version != "" || prod.ReportedAt != nil {
 		t.Errorf("prod-1 status = %+v", prod)
+	}
+}
+
+// Revoking a token must cut off the agent using it at once, not when it next
+// re-registers.
+func TestAdminHandler_RevokeAgentTokenDropsAgent(t *testing.T) {
+	db := newTestStore(t)
+	agents, queue := NewAgentStore(), NewCommandQueue()
+	agents.OnDisconnect = failQueuedOnDisconnect(queue)
+	ah := NewAdminHandlers(db, testPepper, agents)
+	grpcSrv := NewGRPCServer(agents, queue, NewAgentAuthenticator(db, testPepper), NewSessionManager(10))
+	httpSrv := NewHTTPServer(agents, queue, nil, nil, nil, nil, nil, nil)
+
+	body, _ := json.Marshal(map[string]any{"cluster_name": "c1"})
+	w := doRequest(t, "POST", "/api/v1/admin/agent-tokens", ah.HandleCreateAgentToken,
+		"POST", "/api/v1/admin/agent-tokens", body)
+	var created createAgentTokenResponse
+	json.Unmarshal(w.Body.Bytes(), &created)
+	reg := &agentpb.RegisterRequest{AgentToken: created.Token, ClusterName: "c1"}
+	resp, err := grpcSrv.Register(context.Background(), reg)
+	if err != nil || !resp.Success {
+		t.Fatalf("register: %v %s", err, resp.GetErrorMessage())
+	}
+	cmdID, _ := queue.Enqueue(resp.AgentId, "c1", "", []string{"get", "pods"}, "default", 30, nil)
+
+	rw := doRequest(t, "DELETE", "/api/v1/admin/agent-tokens/:id", ah.HandleRevokeAgentToken,
+		"DELETE", "/api/v1/admin/agent-tokens/"+created.ID, nil)
+	if rw.Code != http.StatusOK {
+		t.Fatalf("revoke: want 200, got %d: %s", rw.Code, rw.Body.String())
+	}
+
+	assertRevokedAgentCutOff(t, grpcSrv, resp.AgentId, reg)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	res, err := queue.WaitForResult(ctx, cmdID)
+	if err != nil || res.ErrorMessage != `cluster "c1": agent is disconnected` {
+		t.Fatalf("queued command: res=%+v err=%v, want failed as disconnected", res, err)
+	}
+	assertClusterListed(t, httpSrv, "c1", AgentStatusDisconnected)
+}
+
+func assertRevokedAgentCutOff(t *testing.T, srv *GRPCServer, agentID string, reg *agentpb.RegisterRequest) {
+	t.Helper()
+	if _, ok := srv.agents.Get(agentID); ok {
+		t.Fatal("agent still registered after its token was revoked")
+	}
+	_, err := srv.Heartbeat(context.Background(), &agentpb.HeartbeatRequest{AgentId: agentID})
+	if status.Code(err) != codes.NotFound {
+		t.Fatalf("heartbeat err = %v, want NotFound", err)
+	}
+	resp, _ := srv.Register(context.Background(), reg)
+	if resp.Success || resp.ErrorMessage != "agent token revoked" {
+		t.Fatalf("re-register = %+v, want refused as revoked", resp)
+	}
+}
+
+// Right after a control plane restart no agent has registered yet; the list
+// still shows every known cluster, as disconnected, sorted by name.
+func TestHTTPServer_ListClusters_IncludesPersisted(t *testing.T) {
+	db := newTestStore(t)
+	ctx := context.Background()
+	// The persisted status is stale after a restart and must not be trusted.
+	for _, name := range []string{"prod", "dev"} {
+		if err := db.CreateCluster(ctx, &Cluster{Name: name, Status: AgentStatusConnected}); err != nil {
+			t.Fatalf("seed cluster: %v", err)
+		}
+	}
+	agents := NewAgentStore()
+	agents.Register(&AgentInfo{ID: "a1", ClusterName: "stage"})
+	agents.Register(&AgentInfo{ID: "a2", ClusterName: "dev"})
+	srv := NewHTTPServer(agents, NewCommandQueue(), nil, NewAdminHandlers(db, testPepper, agents), nil, nil, nil, nil)
+
+	w := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/api/v1/clusters", nil))
+	var out struct {
+		Clusters []ClusterResponse `json:"clusters"`
+	}
+	json.Unmarshal(w.Body.Bytes(), &out)
+	want := []ClusterResponse{
+		{Name: "dev", Status: AgentStatusConnected},
+		{Name: "prod", Status: AgentStatusDisconnected},
+		{Name: "stage", Status: AgentStatusConnected},
+	}
+	if !slices.Equal(out.Clusters, want) {
+		t.Fatalf("clusters = %+v, want %+v", out.Clusters, want)
+	}
+}
+
+func assertClusterListed(t *testing.T, srv *HTTPServer, name, want string) {
+	t.Helper()
+	w := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/api/v1/clusters", nil))
+	var out struct {
+		Clusters []ClusterResponse `json:"clusters"`
+	}
+	json.Unmarshal(w.Body.Bytes(), &out)
+	if len(out.Clusters) != 1 || out.Clusters[0].Name != name || out.Clusters[0].Status != want {
+		t.Fatalf("clusters = %+v, want %s %s", out.Clusters, name, want)
 	}
 }

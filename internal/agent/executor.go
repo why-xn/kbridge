@@ -107,6 +107,8 @@ func (e *KubectlExecutor) ExecuteWithStdin(ctx context.Context, id Identity, arg
 		return &CommandResult{ExitCode: 1, Error: err}
 	}
 	defer release()
+	// A child holding stdout open must not keep Run past the timeout or a kill.
+	cmd.WaitDelay = 500 * time.Millisecond
 
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout

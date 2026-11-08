@@ -2,6 +2,7 @@
 
 # Container image settings (override on the command line, e.g. IMAGE_PREFIX=ghcr.io/acme VERSION=v0.3.0-alpha.1)
 IMAGE_PREFIX ?= kbridge
+VERSION ?= $(GIT_VERSION)
 
 # Build-time version stamping
 VERSION_PKG := github.com/why-xn/kbridge/internal/version

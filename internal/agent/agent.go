@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"os"
@@ -12,10 +13,128 @@ import (
 
 	"github.com/why-xn/kbridge/api/proto/agentpb"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 // DefaultPollInterval is how often the agent polls for pending commands.
 const DefaultPollInterval = 2 * time.Second
+
+// initialHeartbeatInterval is the wait before the first heartbeat; each
+// heartbeat reply then sets the interval. A var so tests need not wait 30s.
+var initialHeartbeatInterval = 30 * time.Second
+
+// errRegistrationRejected marks a registration the control plane refused (e.g.
+// a revoked token), as opposed to one that never reached it.
+var errRegistrationRejected = errors.New("registration rejected")
+
+// errReplaced marks an agent the control plane replaced with a newer
+// registration for the same cluster, as the old pod of a rolling update is.
+var errReplaced = errors.New("replaced by a newer agent")
+
+// replacedErr returns errReplaced if err is the control plane saying a newer
+// agent replaced this one, nil otherwise. The agent then stands by (see
+// standBy): re-registering would take the cluster back from the new pod, and
+// exiting would too, because during a RollingUpdate the old pod is not yet
+// terminating and the kubelet restarts its container, which registers again.
+// The control plane answers FailedPrecondition only while the newer agent is
+// connected, so a standing-by agent takes the cluster back if that one dies.
+func replacedErr(err error) error {
+	if status.Code(err) != codes.FailedPrecondition {
+		return nil
+	}
+	return errReplaced
+}
+
+// replacedFor is replacedErr for a call made as agentID from a goroutine that
+// does not register. A reconnect may have re-registered under a new id since,
+// which the control plane counts as replacing the old one; an answer for the
+// old id is then stale and says nothing about this agent.
+func (a *Agent) replacedFor(err error, agentID string) error {
+	if agentID != a.AgentID() {
+		return nil
+	}
+	return replacedErr(err)
+}
+
+// standByTouchInterval keeps the health file well inside the chart's
+// readiness (60 s) and liveness (180 s) windows while standing by. A var so
+// tests need not wait.
+var standByTouchInterval = 30 * time.Second
+
+// standByTimeout bounds the stand-by: a rollout stops the old pod within its
+// termination grace period, so a replaced agent still running after this is
+// a second replica for the same cluster. It exits; Kubernetes restarts it, it
+// registers and takes the cluster over, and the other one stands by in turn,
+// so two replicas swap the cluster about every 10 minutes (each swap can cut
+// a stream) instead of flapping fast. Run one replica (replicaCount: 1). A var
+// so tests need not wait.
+var standByTimeout = 10 * time.Minute
+
+// errTakeOver tells Run that the agent that replaced this one is gone, so this
+// one registers again and serves the cluster.
+var errTakeOver = errors.New("the agent that replaced this one is gone")
+
+// standBy keeps a replaced agent alive and live, without serving or
+// registering, until it is stopped; it gives up after standByTimeout. On each
+// tick it asks the control plane whether the agent that replaced it is still
+// connected, and returns errTakeOver when it is not (it died, or the control
+// plane restarted), so the cluster is not left without an agent.
+func (a *Agent) standBy(ctx context.Context) error {
+	log.Printf("%v; standing by until this pod is stopped", errReplaced)
+	touch := time.NewTicker(standByTouchInterval)
+	defer touch.Stop()
+	timeout := time.NewTimer(standByTimeout)
+	defer timeout.Stop()
+	for {
+		select {
+		case <-touch.C:
+			a.touchHealthFile()
+			if a.replacerGone(ctx) {
+				log.Printf("%v; registering again", errTakeOver)
+				return errTakeOver
+			}
+		case <-a.stopCh:
+			return nil
+		case <-ctx.Done():
+			return nil
+		case <-timeout.C:
+			return fmt.Errorf("%w and never stopped: exiting", errReplaced)
+		}
+	}
+}
+
+// replacerGone probes with a heartbeat: the control plane answers a replaced
+// id FailedPrecondition while its replacer is connected and NotFound after.
+func (a *Agent) replacerGone(ctx context.Context) bool {
+	_, err := a.sendHeartbeat(ctx)
+	return status.Code(err) == codes.NotFound
+}
+
+// replacedC is closed once a newer agent replaced this one.
+func (a *Agent) replacedC() <-chan struct{} {
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+	return a.replaced
+}
+
+// markReplaced records that a newer agent replaced this one, which stops the
+// heartbeat and poll loops; safe to call more than once.
+func (a *Agent) markReplaced() {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if !a.isReplaced {
+		a.isReplaced = true
+		close(a.replaced)
+	}
+}
+
+// resetReplaced readies a fresh replaced signal before serving again.
+func (a *Agent) resetReplaced() {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.replaced, a.isReplaced = make(chan struct{}), false
+}
 
 // Agent represents the kbridge agent that connects to control plane.
 type Agent struct {
@@ -32,6 +151,10 @@ type Agent struct {
 	mu        sync.RWMutex
 	stopCh    chan struct{}
 	stoppedCh chan struct{}
+	// replaced is closed once a newer agent replaced this one; guarded by mu
+	// because taking the cluster back replaces it (see replacedC).
+	replaced   chan struct{}
+	isReplaced bool
 }
 
 // New creates a new agent with the given configuration.
@@ -41,6 +164,7 @@ func New(cfg *Config) *Agent {
 		executor:  NewKubectlExecutor(nil), // Run opens the window
 		stopCh:    make(chan struct{}),
 		stoppedCh: make(chan struct{}),
+		replaced:  make(chan struct{}),
 	}
 }
 
@@ -67,26 +191,87 @@ func (a *Agent) Run(ctx context.Context) error {
 	// liveness initialDelaySeconds window doesn't race a slow first heartbeat.
 	a.touchHealthFile()
 
+	for {
+		err := a.serve(ctx)
+		if !errors.Is(err, errTakeOver) {
+			return err
+		}
+		a.resetReplaced()
+		if err := a.reconnect(ctx); err != nil {
+			return fmt.Errorf("taking the cluster back: %w", err)
+		}
+	}
+}
+
+// serve runs the heartbeat, poll, stream and sync loops until they stop, then
+// stands by if a newer agent replaced this one. It returns errTakeOver when a
+// standing-by agent should register again.
+func (a *Agent) serve(ctx context.Context) error {
+	// A refused re-registration cancels ctx so the loops below stop; being
+	// replaced stops them through a.replaced. A running command runs under
+	// cmdCtx instead: shutdown and being replaced let it finish (see
+	// executeAndSubmit), and only a refused registration (a revoked token)
+	// kills it, so a revoked agent exits at once.
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	cmdCtx, kill := context.WithCancel(context.WithoutCancel(ctx))
+	defer kill()
+
 	// Start command polling loop in goroutine
 	pollDone := make(chan struct{})
+	var pollErr error
 	go func() {
 		defer close(pollDone)
-		a.runCommandPollLoop(ctx)
+		pollErr = a.loopStopped(a.runCommandPollLoop(ctx, cmdCtx), cancel, kill)
 	}()
 
-	// Start persistent stream client
-	go a.runStream(ctx)
+	// Start persistent stream client. It outlives a shutdown signal: the control
+	// plane treats a replaced agent whose stream closed as dead and fails its
+	// running commands, so the stream stays open until the in-flight command has
+	// reported, and while standing by, so sessions running on it finish.
+	streamCtx, stopStream := context.WithCancel(context.WithoutCancel(ctx))
+	streamDone := make(chan struct{})
+	defer func() { stopStream(); <-streamDone }()
+	go func() {
+		defer close(streamDone)
+		a.runStream(streamCtx)
+	}()
 
 	stopSync := a.startSync(ctx)
 
 	// Run heartbeat loop (blocks until stopped)
-	a.runHeartbeatLoop(ctx)
+	hbErr := a.loopStopped(a.runHeartbeatLoop(ctx), cancel, kill)
 	stopSync()
 
 	// Let an in-flight command report its result before the connection closes,
 	// so its caller gets an answer instead of waiting for the command timeout.
 	<-pollDone
-	return nil
+	select {
+	case <-a.replacedC():
+		return a.standBy(ctx)
+	default:
+	}
+	if hbErr != nil {
+		return hbErr
+	}
+	return pollErr
+}
+
+// loopStopped handles the error a heartbeat or poll loop stopped with:
+// replaced stops the other loop, anything else cancels everything, and a
+// refused registration also kills the running command.
+func (a *Agent) loopStopped(err error, cancel, kill context.CancelFunc) error {
+	if errors.Is(err, errReplaced) {
+		a.markReplaced()
+		return nil
+	}
+	if errors.Is(err, errRegistrationRejected) {
+		kill()
+	}
+	if err != nil {
+		cancel()
+	}
+	return err
 }
 
 // openWindow builds the window from config and hands it to the executor;
@@ -199,8 +384,10 @@ func (a *Agent) connect(ctx context.Context) error {
 		return fmt.Errorf("dialing control plane: %w", err)
 	}
 
+	a.mu.Lock() // the poll and stream goroutines read client beside the id
 	a.conn = conn
 	a.client = agentpb.NewAgentServiceClient(conn)
+	a.mu.Unlock()
 	log.Printf("Connected to control plane")
 	return nil
 }
@@ -233,7 +420,7 @@ func (a *Agent) register(ctx context.Context) error {
 	}
 
 	if !resp.Success {
-		return fmt.Errorf("registration rejected: %s", resp.ErrorMessage)
+		return fmt.Errorf("%w: %s", errRegistrationRejected, resp.ErrorMessage)
 	}
 
 	a.mu.Lock()
@@ -248,9 +435,10 @@ func (a *Agent) register(ctx context.Context) error {
 	return nil
 }
 
-func (a *Agent) runHeartbeatLoop(ctx context.Context) {
-	// Default to 30 second interval, will be updated from server response
-	interval := 30 * time.Second
+// runHeartbeatLoop sends heartbeats until stopped. It returns an error only
+// when the control plane refused re-registration or replaced this agent.
+func (a *Agent) runHeartbeatLoop(ctx context.Context) error {
+	interval := initialHeartbeatInterval
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 
@@ -259,10 +447,8 @@ func (a *Agent) runHeartbeatLoop(ctx context.Context) {
 		case <-ticker.C:
 			nextInterval, err := a.sendHeartbeat(ctx)
 			if err != nil {
-				log.Printf("Heartbeat failed: %v", err)
-				// Try to reconnect on heartbeat failure
-				if reconnectErr := a.reconnect(ctx); reconnectErr != nil {
-					log.Printf("Reconnect failed: %v", reconnectErr)
+				if err := a.recoverHeartbeat(ctx, err); err != nil {
+					return err
 				}
 				continue
 			}
@@ -276,13 +462,36 @@ func (a *Agent) runHeartbeatLoop(ctx context.Context) {
 
 		case <-a.stopCh:
 			log.Printf("Heartbeat loop stopping")
-			return
+			return nil
+
+		case <-a.replacedC():
+			return nil
 
 		case <-ctx.Done():
 			log.Printf("Context cancelled, stopping heartbeat loop")
-			return
+			return nil
 		}
 	}
+}
+
+// recoverHeartbeat reconnects after a failed heartbeat. It returns an error
+// only when this agent was replaced (it then stands by, see standBy) or its
+// registration is refused: every retry would be refused too, so the agent
+// exits instead of waiting for the liveness probe to restart it.
+func (a *Agent) recoverHeartbeat(ctx context.Context, hbErr error) error {
+	log.Printf("Heartbeat failed: %v", hbErr)
+	if err := replacedErr(hbErr); err != nil {
+		return err
+	}
+	err := a.reconnect(ctx)
+	if errors.Is(err, errRegistrationRejected) {
+		log.Printf("%v; exiting", err)
+		return fmt.Errorf("registering with control plane: %w", err)
+	}
+	if err != nil {
+		log.Printf("Reconnect failed: %v", err)
+	}
+	return nil
 }
 
 func (a *Agent) sendHeartbeat(ctx context.Context) (time.Duration, error) {
@@ -358,8 +567,11 @@ func (a *Agent) reconnect(ctx context.Context) error {
 
 		// Re-register after successful connection
 		if err := a.register(ctx); err != nil {
-			log.Printf("Re-registration failed: %v", err)
 			a.disconnect()
+			if errors.Is(err, errRegistrationRejected) {
+				return err
+			}
+			log.Printf("Re-registration failed: %v", err)
 			time.Sleep(backoff)
 			continue
 		}
@@ -371,36 +583,44 @@ func (a *Agent) reconnect(ctx context.Context) error {
 	return fmt.Errorf("failed to reconnect after %d attempts", maxRetries)
 }
 
-// runCommandPollLoop polls control plane for pending commands and executes them.
-func (a *Agent) runCommandPollLoop(ctx context.Context) {
+// runCommandPollLoop polls control plane for pending commands until ctx ends
+// and executes them under cmdCtx. It returns an error only when this agent
+// was replaced.
+func (a *Agent) runCommandPollLoop(ctx, cmdCtx context.Context) error {
 	ticker := time.NewTicker(DefaultPollInterval)
 	defer ticker.Stop()
 
 	for {
 		select {
 		case <-ticker.C:
-			a.pollAndExecuteCommands(ctx)
+			if err := a.pollAndExecuteCommands(ctx, cmdCtx); err != nil {
+				return err
+			}
 
 		case <-a.stopCh:
 			log.Printf("Command poll loop stopping")
-			return
+			return nil
+
+		case <-a.replacedC():
+			return nil
 
 		case <-ctx.Done():
 			log.Printf("Context cancelled, stopping command poll loop")
-			return
+			return nil
 		}
 	}
 }
 
-// pollAndExecuteCommands polls for pending commands and executes them.
-func (a *Agent) pollAndExecuteCommands(ctx context.Context) {
+// pollAndExecuteCommands polls for pending commands and executes them. It
+// returns errReplaced when a newer agent replaced this one.
+func (a *Agent) pollAndExecuteCommands(ctx, cmdCtx context.Context) error {
 	a.mu.RLock()
 	agentID := a.agentID
 	client := a.client
 	a.mu.RUnlock()
 
 	if agentID == "" || client == nil {
-		return
+		return nil
 	}
 
 	// Poll for pending commands
@@ -412,17 +632,23 @@ func (a *Agent) pollAndExecuteCommands(ctx context.Context) {
 	})
 	if err != nil {
 		// Don't log on every poll failure - connection issues are handled by heartbeat
-		return
+		return a.replacedFor(err, agentID)
 	}
 
 	// Execute each command
 	for _, cmd := range resp.Commands {
 		log.Printf("Executing command %s: %v", cmd.RequestId, cmd.Command)
-		a.executeAndSubmit(ctx, cmd)
+		a.executeAndSubmit(cmdCtx, cmd)
 	}
+	return nil
 }
 
-// executeAndSubmit executes a command and submits the result to control plane.
+// executeAndSubmit executes a command under ctx and submits the result to
+// control plane. ctx is the serve loop's cmdCtx, which shutdown never cancels:
+// a stopping agent (the old pod of a rollout) lets the command finish and
+// reports its real result. The pod's termination grace period bounds that; if
+// SIGKILL comes first, the control plane fails the command when the agent's
+// stream closes. Only a revoked token cancels ctx and kills the command.
 func (a *Agent) executeAndSubmit(ctx context.Context, cmd *agentpb.CommandRequest) {
 	// Determine timeout
 	timeout := time.Duration(cmd.TimeoutSeconds) * time.Second
@@ -443,17 +669,13 @@ func (a *Agent) executeAndSubmit(ctx context.Context, cmd *agentpb.CommandReques
 	if result.Error != nil {
 		submitReq.ErrorMessage = result.Error.Error()
 	}
-	if ctx.Err() != nil {
-		submitReq.ErrorMessage = "agent shut down while the command was running; retry it"
-	}
 
 	// Submit result to control plane
 	a.mu.RLock()
 	client := a.client
 	a.mu.RUnlock()
 
-	// Not tied to ctx: a command interrupted by shutdown must still be reported.
-	submitCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
+	submitCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 
 	_, err := client.SubmitCommandResult(submitCtx, submitReq)

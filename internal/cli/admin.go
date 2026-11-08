@@ -2,6 +2,7 @@ package cli
 
 import (
 	"bufio"
+	"errors"
 	"fmt"
 	"os"
 	"strconv"
@@ -118,7 +119,7 @@ func init() {
 
 	adminAuditCmd.Flags().StringVar(&auditUser, "user", "", "filter by user email")
 	adminAuditCmd.Flags().StringVar(&auditCluster, "cluster", "", "filter by cluster name")
-	adminAuditCmd.Flags().StringVar(&auditStatus, "status", "", "filter by status (success/failed/denied/timeout)")
+	adminAuditCmd.Flags().StringVar(&auditStatus, "status", "", "filter by status (success/failed/denied/timeout/canceled)")
 	adminAuditCmd.Flags().IntVar(&auditLimit, "limit", 50, "maximum number of entries to show")
 }
 
@@ -222,7 +223,7 @@ func runAdminTokensCreate(cmd *cobra.Command, args []string) error {
 	}
 	fmt.Printf("Agent token for cluster %q created.\n\n", tok.ClusterName)
 	fmt.Printf("  %s\n\n", tok.Token)
-	fmt.Println("Store it now — it cannot be retrieved again. Set it as the agent's control_plane.token.")
+	fmt.Println("Store it now — it cannot be retrieved again. Set it as the agent's control_plane.token (controlPlane.token in the Helm chart).")
 	return nil
 }
 
@@ -253,7 +254,11 @@ func runAdminTokensRevoke(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
-	if err := client.RevokeAgentToken(args[0]); err != nil {
+	err = client.RevokeAgentToken(args[0])
+	if errors.Is(err, errTokenNotFound) {
+		return err
+	}
+	if err != nil {
 		return fmt.Errorf("failed to revoke agent token: %w", err)
 	}
 	fmt.Printf("Agent token %q revoked.\n", args[0])

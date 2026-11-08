@@ -157,7 +157,7 @@ func TestGuardrail_NonProdClusterUnaffected(t *testing.T) {
 	agents := NewAgentStore()
 	agents.Register(&AgentInfo{ID: "a2", ClusterName: "dev-1"})
 	srv := NewHTTPServer(agents, NewCommandQueue(),
-		NewAuthHandlers(store, jm, time.Hour), NewAdminHandlers(store, testPepper), eng,
+		NewAuthHandlers(store, jm, time.Hour), NewAdminHandlers(store, testPepper, nil), eng,
 		NewAuditRecorder(store), nil, jm)
 	token := userToken(t, jm, store, "dev@corp.com")
 

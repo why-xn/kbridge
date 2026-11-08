@@ -40,9 +40,9 @@ func engineFor(t *testing.T, doc string) *Engine {
 }
 
 func TestDesiredBindings(t *testing.T) {
-	both := []string{"kbridge:alice", "kbridge:bob"}
 	alice := []string{"kbridge:alice"}
-	viewer := DesiredBinding{Name: "kbridge-viewer-view", ClusterRole: "view", Users: both}
+	// bound alice does not inherit the default viewer role; only unbound bob does
+	viewer := DesiredBinding{Name: "kbridge-viewer-view", ClusterRole: "view", Users: []string{"kbridge:bob"}}
 	edit := func(ns string) DesiredBinding {
 		return DesiredBinding{Name: "kbridge-developer-edit", Namespace: ns, ClusterRole: "edit", Users: alice}
 	}

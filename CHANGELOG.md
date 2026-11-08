@@ -172,6 +172,20 @@ granting access until removed), e.g.
 
 ### Security
 
+- **Revoking an agent token disconnects its agents at once.** The agent is
+  dropped from the control plane, its queued and running commands fail with
+  `agent is disconnected`, `kb clusters list` shows the cluster
+  `disconnected`, and the agent exits when its re-registration is refused.
+  Before, a connected agent kept serving on a revoked token until it
+  happened to re-register. Rotate by issuing the new token first.
+- **`~/.kbridge/config.yaml` is private.** The CLI creates it 0600 (directory
+  0700) and tightens an existing file on the next write; it holds the access
+  and refresh tokens.
+- **`default` applies only to users with no binding.** A bound user holds
+  exactly the roles in their binding; before, every user also held the
+  default role and the agent bound its `clusterAccess` to everyone. A policy
+  that relied on that must list the default role in the binding
+  (`roles: ["viewer", "developer"]`).
 - **kubectl on the agent no longer holds the agent's credentials.** Before,
   the agent ran kubectl with its own ServiceAccount (cluster-admin by chart
   default) and passed user arguments through. A user allowed to run any
@@ -254,6 +268,46 @@ agents' `controlPlane.url` at the new Service name.
 
 ### Fixed
 
+- **A rolling update of the agent no longer causes an outage.** An agent
+  that a newer registration replaced is told so (`agent replaced by a newer
+  registration for this cluster`) and stands by until Kubernetes stops its
+  pod instead of re-registering and taking the cluster back from the new
+  pod. A one-shot command running on the old pod finishes there (within the
+  pod's termination grace period); a stream it serves (`logs -f`, `exec -it`,
+  `port-forward`) ends when the old pod stops. If the new agent dies first,
+  the standing-by agent registers again within 30 s and serves the cluster.
+- **A command for a known cluster whose agent is absent answers `agent is
+  disconnected`** (503, audited) instead of `cluster not found`.
+- **A streaming command cut off by the agent going away says so**
+  (`Error: agent disconnected`, exit 1) instead of exiting silently; the
+  control plane sends the reason in an `X-Kbridge-Error` trailer.
+- **Revoking an unknown token id is an error** (`token not found`, exit 1)
+  instead of a false success.
+- **Commands refused because the cluster is disconnected are audited** as
+  `failed` with `agent is disconnected`, so every attempt is recorded.
+- **`kb clusters list` shows every cluster the control plane knows**, sorted
+  by name, with `disconnected` for one whose agent is not registered, for
+  example right after a control plane restart.
+- **`make docker` works without arguments** (`VERSION` defaults to
+  `git describe`), and the installer docs put `KBRIDGE_VERSION` on the `sh`
+  side of the pipe where it is read.
+- **A dead agent shows as disconnected within seconds.** The control plane
+  marks an agent disconnected the moment its gRPC stream closes and pings it
+  every 5 s, so `kb clusters list` and queued commands no longer wait up to
+  60 s for the heartbeat timeout.
+- **`kb edit` accepts an editor with arguments** (`KUBE_EDITOR="code --wait"`),
+  and, like kubectl, runs a value with quotes or backslashes through `sh`
+  (`KUBE_EDITOR='sed -i s/replicas:\ 1/replicas:\ 2/'`).
+- **`kb admin rbac status` explains an `accessCeiling` refusal.** A binding
+  to a ClusterRole outside the agent chart's `accessCeiling.clusterRoles`
+  now reads `clusterRole <name> is outside this cluster's accessCeiling ...;
+  ask the cluster owner to raise it` instead of the raw API server 403.
+- **`-o go-template-file` and friends get their own refusal**, pointing at
+  the inline `-o go-template='...'` form rather than the `--from-file` hint.
+- **The agent token message names the Helm value** (`controlPlane.token`)
+  next to the config key.
+- **`install.sh` creates a custom `KBRIDGE_INSTALL_DIR`** instead of falling
+  back to `sudo` when it does not exist yet.
 - **Policy changes reach the running control plane.** A `helm upgrade` that
   changed `rbac.policy` left the old policy in force: the pod restart covered
   only the config Secret, and the kubelet's ConfigMap update did not fire the

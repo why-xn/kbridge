@@ -121,9 +121,13 @@ func TestHTTPServer_ListClusters_WithAgents(t *testing.T) {
 	}
 }
 
+// getPodsBody is a valid exec body: the body is parsed before the cluster is
+// looked up, so a disconnected cluster's refusal can audit the command.
+var getPodsBody = []byte(`{"command":["get","pods"]}`)
+
 func TestHTTPServer_ExecCommand_ClusterNotFound(t *testing.T) {
 	srv, _, _ := newTestHTTPServer()
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/clusters/nonexistent/exec", nil)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/clusters/nonexistent/exec", bytes.NewReader(getPodsBody))
 	rec := httptest.NewRecorder()
 
 	srv.Handler().ServeHTTP(rec, req)
@@ -142,6 +146,24 @@ func TestHTTPServer_ExecCommand_ClusterNotFound(t *testing.T) {
 	}
 }
 
+// A cluster whose agent was dropped by token revocation reads disconnected,
+// as `kb clusters list` shows it, not unknown.
+func TestHTTPServer_ExecCommand_RevokedCluster(t *testing.T) {
+	srv, store, _ := newTestHTTPServer()
+	store.Register(&AgentInfo{ID: "agent-1", ClusterName: "test-cluster", TokenID: "tok-1"})
+	store.DropByToken("tok-1")
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/clusters/test-cluster/exec", bytes.NewReader(getPodsBody))
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+
+	var resp map[string]string
+	_ = json.Unmarshal(rec.Body.Bytes(), &resp)
+	if rec.Code != http.StatusServiceUnavailable || resp["error"] != "cluster agent is disconnected" {
+		t.Fatalf("got %d %q, want 503 'cluster agent is disconnected'", rec.Code, resp["error"])
+	}
+}
+
 func TestHTTPServer_ExecCommand_AgentDisconnected(t *testing.T) {
 	srv, store, _ := newTestHTTPServer()
 
@@ -155,7 +177,7 @@ func TestHTTPServer_ExecCommand_AgentDisconnected(t *testing.T) {
 	store.agents["agent-1"].Status = AgentStatusDisconnected
 	store.mu.Unlock()
 
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/clusters/test-cluster/exec", nil)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/clusters/test-cluster/exec", bytes.NewReader(getPodsBody))
 	rec := httptest.NewRecorder()
 
 	srv.Handler().ServeHTTP(rec, req)
@@ -238,7 +260,7 @@ func newCapabilityTestServer(t *testing.T, caps []string) (*HTTPServer, *Command
 	agents.Register(&AgentInfo{ID: "a1", ClusterName: "prod", Capabilities: caps})
 	queue, sm := NewCommandQueue(), NewSessionManager(10)
 	srv := NewHTTPServer(agents, queue, NewAuthHandlers(store, jm, time.Hour),
-		NewAdminHandlers(store, testPepper), nil, nil, sm, jm)
+		NewAdminHandlers(store, testPepper, nil), nil, nil, sm, jm)
 	token, _ := jm.GenerateAccessToken(&auth.UserClaims{UserID: "u1", Email: "alice@x"})
 	return srv, queue, sm, token
 }

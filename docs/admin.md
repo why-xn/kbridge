@@ -58,17 +58,30 @@ curl -X POST https://control-plane:8080/api/v1/admin/agent-tokens \
 # revoke: DELETE /api/v1/admin/agent-tokens/{id}
 ```
 
-**Rotation:** issue a new token, update the agent, then revoke the old one. The
-agent re-registers on its next connection.
+**Revocation is immediate.** Revoking a token disconnects every agent using it
+at once: its queued commands fail with `agent is disconnected`, `kb clusters
+list` shows the cluster `disconnected`, and the agent cannot register again, so
+its pod stops (CrashLoopBackOff) until it is given a new token. A dead agent
+shows `disconnected` within seconds too; see
+[operations](operations.md#agent).
+
+**Rotation:** issue a new token, update the agent, then revoke the old one. In
+that order nothing is cut off: the agent already runs on the new token. The
+update rolls the agent pod; the new pod takes over the cluster as soon as it
+registers, and the old one stands by until Kubernetes stops it, finishing any
+command it was running within the pod's termination grace period (see
+[operations](operations.md#agent-token-rotation)). A stream it was serving (`logs -f`, `exec -it`,
+`port-forward`) ends when the old pod stops; run it again.
 
 For local development you can instead seed a token via the control plane's `bootstrap`
 config (see [configuration](configuration.md)).
 
 ## Audit logs
 
-Every command attempt is recorded (status `success`, `failed`, `denied`, or
-`timeout`) with user, cluster, command, namespace, exit code, duration, and
-client IP.
+Every command attempt is recorded (status `success`, `failed`, `denied`,
+`timeout`, or `canceled`) with user, cluster, command, namespace, exit code,
+duration, and client IP. A command refused because the cluster's agent is disconnected is
+recorded as `failed` with the error `agent is disconnected` and no exit code.
 
 ```bash
 kb admin audit --cluster prod --status denied --limit 100

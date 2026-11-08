@@ -1,6 +1,7 @@
 package kubeargs
 
 import (
+	"fmt"
 	"os"
 	"os/exec"
 	"regexp"
@@ -12,13 +13,14 @@ import (
 const (
 	connMsg = "flag %s is not allowed: kbridge manages the cluster connection"
 	fileMsg = "flag %s is not allowed: the agent does not read local files; build the object locally with 'kubectl create ... --dry-run=client -o yaml' and send it with 'kb apply -f -'"
+	outMsg  = "flag %s %s is not allowed: the agent does not read local files; write the template inline with -o %s='...'"
 	fMsg    = `-f only accepts "-" on the agent: the kb CLI uploads local files and URLs`
 	verbMsg = "kubectl %s is not supported through kbridge"
 	termMsg = "flag %s must be written as %s=<value> before --"
 	leadMsg = "flag %s must come after the command or be written as %s=<value>"
 )
 
-func sprintf(f, a string) string { return strings.Replace(f, "%s", a, 1) }
+func sprintf(f string, a ...any) string { return fmt.Sprintf(f, a...) }
 
 func term(flag string) string { return strings.ReplaceAll(termMsg, "%s", flag) }
 
@@ -44,8 +46,10 @@ func TestCheck(t *testing.T) {
 		{"apply -k ./d", sprintf(fileMsg, "-k")},
 		{"create configmap x --from-file=/var/run/kbridge/sa/token", sprintf(fileMsg, "--from-file")},
 		{"create secret tls x --cert=/a --key=/b", sprintf(fileMsg, "--cert")},
-		{"get pods -o go-template-file=/t", sprintf(fileMsg, "-o")},
-		{"get pods --output=custom-columns-file=/t", sprintf(fileMsg, "--output")},
+		{"get pods -o go-template-file=/t", sprintf(outMsg, "-o", "go-template-file", "go-template")},
+		{"get pods -o=go-template-file=/t", sprintf(outMsg, "-o", "go-template-file", "go-template")},
+		{"get pods -ojsonpath-file=/t", sprintf(outMsg, "-o", "jsonpath-file", "jsonpath")},
+		{"get pods --output=custom-columns-file=/t", sprintf(outMsg, "--output", "custom-columns-file", "custom-columns")},
 		{"patch deploy x --patch-file /p", sprintf(fileMsg, "--patch-file")},
 		{"cp /etc/hosts default/x:/tmp/h", sprintf(verbMsg, "cp")},
 		{"proxy", sprintf(verbMsg, "proxy")},

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -112,6 +113,46 @@ func TestGRPCServer_Register_RevokedToken(t *testing.T) {
 	}
 	if resp.ErrorMessage != "agent token revoked" {
 		t.Errorf("want 'agent token revoked', got %q", resp.ErrorMessage)
+	}
+}
+
+// revokeDuringRegister revokes the agent token the way HandleRevokeAgentToken
+// does (DB first, then drop) when Register persists the cluster: after
+// Authenticate passed and before the agent is tracked.
+type revokeDuringRegister struct {
+	*SQLiteStore
+	agents *AgentStore
+	hash   string
+}
+
+func (r *revokeDuringRegister) UpdateCluster(ctx context.Context, c *Cluster) error {
+	tok, err := r.GetAgentTokenByHash(ctx, r.hash)
+	if err != nil || tok == nil {
+		return fmt.Errorf("finding token: %v", err)
+	}
+	if err := r.RevokeAgentToken(ctx, tok.ID); err != nil {
+		return err
+	}
+	r.agents.DropByToken(tok.ID)
+	return r.SQLiteStore.UpdateCluster(ctx, c)
+}
+
+func TestGRPCServer_Register_RevokedDuringRegister(t *testing.T) {
+	db := newTestStore(t)
+	seedClusterToken(t, db, testClusterName, testAgentToken, nil)
+	agents := NewAgentStore()
+	hook := &revokeDuringRegister{SQLiteStore: db, agents: agents, hash: hashAgentToken(testPepper, testAgentToken)}
+	srv := NewGRPCServer(agents, NewCommandQueue(), NewAgentAuthenticator(hook, testPepper), NewSessionManager(10))
+
+	resp, err := srv.Register(context.Background(), &agentpb.RegisterRequest{AgentToken: testAgentToken, ClusterName: testClusterName})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if resp.Success || resp.ErrorMessage != "agent token revoked" {
+		t.Fatalf("resp = %+v, want refused with 'agent token revoked'", resp)
+	}
+	if _, ok := agents.GetByClusterName(testClusterName); ok {
+		t.Fatal("agent registered with a token revoked during registration")
 	}
 }
 
@@ -655,5 +696,108 @@ func TestGRPCServer_Register_ReplacedAgentCommands(t *testing.T) {
 	p, _ := cmdQueue.Get(pending)
 	if p.AgentID != second.AgentId || p.Status != CommandStatusPending {
 		t.Errorf("pending command: agent %s status %s, want moved to %s and still pending", p.AgentID, p.Status, second.AgentId)
+	}
+}
+
+// A dead agent's stream ends long before its heartbeat times out; the cluster
+// must read disconnected as soon as the stream closes, unless the stream that
+// closed is no longer the agent's current one.
+func TestOpenStream_CloseMarksDisconnected(t *testing.T) {
+	tests := []struct {
+		name string
+		// between runs after the first stream opened and before it closes; it
+		// returns the agent id expected to stay connected, or "" for none.
+		between       func(t *testing.T, srv *GRPCServer, first string) string
+		wantQueuedErr string
+	}{
+		{"stream close marks the agent disconnected", func(*testing.T, *GRPCServer, string) string { return "" },
+			`cluster "test-cluster": agent is disconnected`},
+		{"replacement agent is unaffected", registerReplacement, ""},
+		{"re-opened stream is unaffected", reopenStream, ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			srv, agents, queue := newTestGRPCServer(t)
+			agents.OnDisconnect = failQueuedOnDisconnect(queue)
+			reg, _ := srv.Register(context.Background(), &agentpb.RegisterRequest{AgentToken: testAgentToken, ClusterName: testClusterName})
+			cmdID, _ := queue.Enqueue(reg.AgentId, testClusterName, "", []string{"get", "pods"}, "default", 30, nil)
+			fs := newFakeOpenStream(reg.AgentId)
+			done := make(chan struct{})
+			go func() { _ = srv.OpenStream(fs); close(done) }()
+			fs.waitRegistered(t)
+			live := tt.between(t, srv, reg.AgentId)
+			close(fs.incoming)
+			<-done
+
+			assertStreamCloseOutcome(t, srv, reg.AgentId, live)
+			if tt.wantQueuedErr != "" {
+				assertQueuedFailed(t, queue, cmdID, tt.wantQueuedErr)
+			}
+		})
+	}
+}
+
+func registerReplacement(t *testing.T, srv *GRPCServer, _ string) string {
+	resp, err := srv.Register(context.Background(), &agentpb.RegisterRequest{AgentToken: testAgentToken, ClusterName: testClusterName})
+	if err != nil || !resp.Success {
+		t.Fatalf("register replacement: %v", err)
+	}
+	return resp.AgentId
+}
+
+// reopenStream reopens the agent's stream after a blip marked it disconnected;
+// the new stream alone must mark it connected again.
+func reopenStream(t *testing.T, srv *GRPCServer, first string) string {
+	srv.agents.MarkAgentDisconnected(first)
+	go func() { _ = srv.OpenStream(newFakeOpenStream(first)) }()
+	time.Sleep(100 * time.Millisecond)
+	return first
+}
+
+func assertStreamCloseOutcome(t *testing.T, srv *GRPCServer, first, live string) {
+	t.Helper()
+	if live == "" {
+		a, ok := srv.agents.Get(first)
+		if !ok || a.Status != AgentStatusDisconnected {
+			t.Fatalf("agent after stream close = %+v, want disconnected", a)
+		}
+		return
+	}
+	a, ok := srv.agents.Get(live)
+	if !ok || a.Status != AgentStatusConnected {
+		t.Fatalf("agent %s = %+v, want still connected", live, a)
+	}
+	if live == first {
+		if _, err := srv.sessions.Start(first, "", []string{"logs"}, ""); err != nil {
+			t.Fatalf("re-opened stream was unregistered by the old one: %v", err)
+		}
+	}
+}
+
+func assertQueuedFailed(t *testing.T, q *CommandQueue, id, want string) {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	res, err := q.WaitForResult(ctx, id)
+	if err != nil || res.ErrorMessage != want {
+		t.Fatalf("queued command: res=%+v err=%v, want %q", res, err, want)
+	}
+}
+
+// A heartbeat from a live agent heals a transient stream drop.
+func TestHeartbeat_ReconnectsAfterStreamDrop(t *testing.T) {
+	srv, agents, _ := newTestGRPCServer(t)
+	reg, _ := srv.Register(context.Background(), &agentpb.RegisterRequest{AgentToken: testAgentToken, ClusterName: testClusterName})
+	if !agents.MarkAgentDisconnected(reg.AgentId) {
+		t.Fatal("MarkAgentDisconnected = false for a connected agent")
+	}
+	if agents.MarkAgentDisconnected(reg.AgentId) {
+		t.Error("MarkAgentDisconnected = true for an already disconnected agent")
+	}
+	if _, err := srv.Heartbeat(context.Background(), &agentpb.HeartbeatRequest{AgentId: reg.AgentId}); err != nil {
+		t.Fatalf("heartbeat: %v", err)
+	}
+	if a, _ := agents.Get(reg.AgentId); a.Status != AgentStatusConnected {
+		t.Fatalf("status after heartbeat = %s, want connected", a.Status)
 	}
 }

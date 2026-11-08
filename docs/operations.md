@@ -118,8 +118,21 @@ chart version rather than overriding the image tag. From a clone, use
 
 ## Agent-Token Rotation
 
-Hot rotation (no reconnect) is not implemented; each rotation costs one brief
-agent reconnect. Issue the new token first:
+Hot rotation (no reconnect) is not implemented; each rotation rolls the agent
+pod. That costs no outage: the new pod serves the cluster as soon as it
+registers, and the old one, once replaced, stands by until Kubernetes stops it
+(it does not exit or register again while the new agent is connected, so it
+does not take the cluster back). If the new agent dies or disconnects first, the
+standing-by agent registers again within 30 s and serves the cluster. A
+command running on the old pod finishes there, within the pod's termination
+grace period (`terminationGracePeriodSeconds`, 30 s by default); a longer one
+is killed with the pod and fails with `agent shut down while the command was
+running; retry it`. A stream the old pod serves (`logs -f`, `exec -it`,
+`port-forward`) ends when it stops. A replaced agent that is never stopped
+exits after 10 minutes with `replaced by a newer agent and never stopped:
+exiting`; Kubernetes restarts it and it takes the cluster over, so two
+replicas for one cluster swap it about every 10 minutes. Run one agent replica
+per cluster (`replicaCount: 1`, the chart default). Issue the new token first:
 
 ```bash
 kb admin agent-tokens create --cluster <cluster-name>
@@ -156,6 +169,10 @@ kb admin agent-tokens list --cluster <cluster-name>  # the old token's ID
 kb admin agent-tokens revoke <old-token-id>
 ```
 
+Revoke only after the agent is back on the new token: revocation disconnects
+any agent still using the old one at once, and that agent stops
+(CrashLoopBackOff) until it gets a new token.
+
 If the control plane's `auth.token_pepper` (or `jwt_secret`) is rotated, all existing
 agent tokens become invalid and must be re-issued.
 
@@ -177,7 +194,7 @@ kb admin rbac status
 # CLUSTER   VERSION   STATE    ERRORS  REPORTED
 # prod      426e2298  in sync  0       2026-11-05T20:09:44Z
 # staging   1c9b07aa  drift    1       2026-11-05T20:09:41Z
-#     binding kbridge-developer-admin: POST /apis/rbac.authorization.k8s.io/v1/namespaces/team-a/rolebindings: 403 ...
+#     binding kbridge-developer-admin: clusterRole admin is outside this cluster's accessCeiling (agent chart value accessCeiling.clusterRoles); ask the cluster owner to raise it
 ```
 
 | State | Meaning |
@@ -189,10 +206,13 @@ kb admin rbac status
 Someone editing a managed binding by hand is not drift for long: the agent
 puts it back within a few seconds. Common errors:
 
-- `403` on create or update: the binding needs more than the agent chart's
-  `accessCeiling` allows. Either raise the ceiling (`accessCeiling.clusterRoles`,
-  `accessCeiling.namespaces`, `accessCeiling.clusterWide`) with
-  `helm upgrade`, or change the policy.
+- `clusterRole <name> is outside this cluster's accessCeiling`: policy binds a
+  ClusterRole the agent chart's `accessCeiling.clusterRoles` does not list.
+  The cluster owner adds it with `helm upgrade`, or you change the policy.
+- any other `403` on create or update: the binding is in a namespace outside
+  `accessCeiling.namespaces`, or is cluster-wide while
+  `accessCeiling.clusterWide` is false. Raise that value with `helm upgrade`,
+  or change the policy.
 - `namespace "<ns>" is reserved for the kbridge agent`: policy names the
   agent's own namespace or a `protectedNamespaces` entry. Remove it from the
   policy; the agent never writes there.
@@ -258,6 +278,19 @@ livenessProbe:
 
 If the agent stops sending heartbeats (e.g., the gRPC stream to the control plane drops),
 the file goes stale and Kubernetes will restart the pod.
+
+The control plane notices a dead agent within seconds, without waiting for
+heartbeats: when the agent's gRPC stream closes, `kb clusters list` shows the
+cluster `disconnected` and its queued commands fail with `agent is
+disconnected`. If the agent's process died the stream closes at once; if its
+node vanished, keepalive pings (every 5 s, 5 s to answer) close it within
+about 10 s. An agent that is still alive reconnects and its next heartbeat
+shows it `connected` again.
+
+The agent runs one-shot commands (`get`, `apply`, `exec` without `-it`, ...)
+one at a time, so a long one delays the others on the same cluster, for every
+user, until it ends. Interactive exec, `logs -f`, `get -w` and `port-forward`
+run on the agent's stream and are not delayed.
 
 View agent logs:
 

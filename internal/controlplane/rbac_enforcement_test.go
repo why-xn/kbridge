@@ -31,7 +31,7 @@ func newRBACTestServerWithStore(t *testing.T, policyYAML string, store *SQLiteSt
 	agents.Register(&AgentInfo{ID: "a1", ClusterName: "prod", Capabilities: []string{capImpersonation}})
 
 	srv := NewHTTPServer(agents, NewCommandQueue(),
-		NewAuthHandlers(store, jm, time.Hour), NewAdminHandlers(store, testPepper), eng,
+		NewAuthHandlers(store, jm, time.Hour), NewAdminHandlers(store, testPepper, nil), eng,
 		NewAuditRecorder(store), nil, jm)
 	return srv, jm
 }

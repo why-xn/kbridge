@@ -276,7 +276,7 @@ func TestAgentStore_Concurrent(t *testing.T) {
 func TestMarkDisconnected_FailsQueuedCommands(t *testing.T) {
 	store := NewAgentStore()
 	q := NewCommandQueue()
-	store.OnDisconnect = failQueuedOnDisconnect(store, q)
+	store.OnDisconnect = failQueuedOnDisconnect(q)
 	store.Register(&AgentInfo{ID: "agent-1", ClusterName: "test"})
 	id, _ := q.Enqueue("agent-1", "test", "", []string{"get", "pods"}, "default", 30, nil)
 
@@ -290,5 +290,76 @@ func TestMarkDisconnected_FailsQueuedCommands(t *testing.T) {
 	res, err := q.WaitForResult(ctx, id)
 	if err != nil || res.ErrorMessage != `cluster "test": agent is disconnected` {
 		t.Fatalf("res=%v err=%v, want failed result", res, err)
+	}
+}
+
+// A dropped agent must not keep serving sessions it had open.
+func TestDropByToken_ClosesAgentSessions(t *testing.T) {
+	store, sm := NewAgentStore(), NewSessionManager(10)
+	store.OnDisconnect = onAgentDisconnect(NewCommandQueue(), sm)
+	store.Register(&AgentInfo{ID: "agent-1", ClusterName: "test", TokenID: "tok-1"})
+	sm.RegisterAgentStream("agent-1", &fakeSender{})
+	sess, err := sm.Start("agent-1", "", []string{"logs", "-f", "p"}, "")
+	if err != nil {
+		t.Fatalf("start: %v", err)
+	}
+
+	store.DropByToken("tok-1")
+
+	if _, ok := <-sess.Output; ok {
+		t.Error("session output still open after the agent was dropped")
+	}
+	if _, err := sm.Start("agent-1", "", []string{"logs"}, ""); err != ErrNoAgentStream {
+		t.Errorf("start after drop: err = %v, want ErrNoAgentStream", err)
+	}
+}
+
+func TestDropByToken(t *testing.T) {
+	tests := []struct {
+		name        string
+		token       string
+		wantDropped []string
+		wantLeft    string
+	}{
+		{"drops only the agents of that token", "tok-a", []string{"agent-a"}, "agent-b"},
+		{"unknown token drops nothing", "tok-x", nil, "agent-a"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			store := NewAgentStore()
+			var fired []string
+			store.OnDisconnect = func(id, cluster string) { fired = append(fired, id+"/"+cluster) }
+			store.Register(&AgentInfo{ID: "agent-a", ClusterName: "a", TokenID: "tok-a"})
+			store.Register(&AgentInfo{ID: "agent-b", ClusterName: "b", TokenID: "tok-b"})
+
+			got := store.DropByToken(tt.token)
+			if len(got) != len(tt.wantDropped) || (len(got) == 1 && got[0] != tt.wantDropped[0]) {
+				t.Fatalf("dropped = %v, want %v", got, tt.wantDropped)
+			}
+			if len(fired) != len(tt.wantDropped) || (len(fired) == 1 && fired[0] != "agent-a/a") {
+				t.Errorf("OnDisconnect fired %v, want one per dropped agent", fired)
+			}
+			for _, id := range tt.wantDropped {
+				if _, ok := store.Get(id); ok {
+					t.Errorf("agent %s still in store", id)
+				}
+			}
+			if _, ok := store.Get(tt.wantLeft); !ok {
+				t.Errorf("agent %s was dropped, want kept", tt.wantLeft)
+			}
+		})
+	}
+}
+
+func TestDropByToken_ClusterListedUntilReRegister(t *testing.T) {
+	store := NewAgentStore()
+	store.Register(&AgentInfo{ID: "agent-a", ClusterName: "a", TokenID: "tok-a"})
+	store.DropByToken("tok-a")
+	if got := store.RevokedClusters(); len(got) != 1 || got[0] != "a" {
+		t.Fatalf("revoked clusters = %v, want [a]", got)
+	}
+	store.Register(&AgentInfo{ID: "agent-a2", ClusterName: "a", TokenID: "tok-new"})
+	if got := store.RevokedClusters(); len(got) != 0 {
+		t.Fatalf("revoked clusters after re-register = %v, want none", got)
 	}
 }

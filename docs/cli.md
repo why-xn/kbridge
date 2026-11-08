@@ -27,7 +27,9 @@ Invalidates the refresh token on the server and clears the local token.
 ## Clusters
 
 ### `kb clusters list` (alias `ls`)
-Lists clusters registered with the control plane and their status.
+Lists every cluster the control plane knows, sorted by name, and its status.
+A cluster with no agent registered (for example right after a control plane
+restart, until its agent reconnects) shows `disconnected`.
 
 ```bash
 kb clusters list
@@ -53,6 +55,12 @@ kb logs deploy/api -n prod
 kb edit configmap app-config
 kb get nodes
 ```
+
+**Editing (`kb edit`).** The editor comes from `KUBE_EDITOR`, `EDITOR` or
+`VISUAL` (default `vi`). It may take arguments (`KUBE_EDITOR="code --wait"`).
+As with kubectl, a value with a quote or backslash is run by `sh`, so shell
+quoting works (`KUBE_EDITOR='sed -i s/replicas:\ 1/replicas:\ 2/'`); any other
+value is split on spaces. On Windows the value is always split on spaces.
 
 **Local manifests (`-f`).** kubectl runs on the agent, so the CLI reads local
 `-f` inputs — files, directories (`-R` to recurse) and `-` (stdin) — and sends

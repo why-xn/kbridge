@@ -7,6 +7,8 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"github.com/spf13/viper"
 )
 
 func TestControlPlaneClient_ListClusters(t *testing.T) {
@@ -383,6 +385,22 @@ func TestControlPlaneClient_RevokeAgentToken(t *testing.T) {
 
 	if err := NewControlPlaneClient(server.URL).RevokeAgentToken("tok-1"); err != nil {
 		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+// kb admin agent-tokens revoke <unknown id> prints "Error: token not found".
+func TestRunAdminTokensRevoke_NotFound(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+		w.Write([]byte(`{"error":"token not found"}`)) //nolint:errcheck
+	}))
+	defer server.Close()
+	viper.Set(ConfigKeyControlPlaneURL, server.URL)
+	t.Cleanup(func() { viper.Set(ConfigKeyControlPlaneURL, "") })
+
+	err := runAdminTokensRevoke(nil, []string{"not-a-uuid"})
+	if err == nil || err.Error() != "token not found" {
+		t.Fatalf("want error %q, got %v", "token not found", err)
 	}
 }
 

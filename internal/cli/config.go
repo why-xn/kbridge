@@ -40,7 +40,7 @@ func initConfig() {
 	viper.SetConfigType("yaml")
 
 	// Create config directory if it doesn't exist
-	if err := os.MkdirAll(configDir(), 0755); err != nil {
+	if err := os.MkdirAll(configDir(), 0700); err != nil {
 		fmt.Fprintln(os.Stderr, "Error: unable to create config directory:", err)
 	}
 
@@ -71,5 +71,9 @@ func errNoControlPlaneURL() error {
 
 // saveConfig writes the current configuration to the config file
 func saveConfig() error {
-	return viper.WriteConfigAs(configFile())
+	if err := viper.WriteConfigAs(configFile()); err != nil {
+		return err
+	}
+	// viper writes 0644 and the file holds tokens; fixes an existing file too.
+	return os.Chmod(configFile(), 0600)
 }

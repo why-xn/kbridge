@@ -35,13 +35,18 @@ type Server struct {
 
 // failQueuedOnDisconnect fails a dropped agent's commands with the message the
 // CLI shows for a disconnected cluster, so the user sees one wording.
-func failQueuedOnDisconnect(store *AgentStore, q *CommandQueue) func(string) {
-	return func(id string) {
-		name := id
-		if a, ok := store.Get(id); ok {
-			name = a.ClusterName
-		}
-		q.FailForAgent(id, fmt.Sprintf("cluster %q: agent is disconnected", name))
+func failQueuedOnDisconnect(q *CommandQueue) func(string, string) {
+	return func(id, cluster string) {
+		q.FailForAgent(id, fmt.Sprintf("cluster %q: agent is disconnected", cluster))
+	}
+}
+
+// onAgentDisconnect fails a dropped agent's commands and closes its streams.
+func onAgentDisconnect(q *CommandQueue, sm *SessionManager) func(string, string) {
+	failQueued := failQueuedOnDisconnect(q)
+	return func(id, cluster string) {
+		failQueued(id, cluster)
+		sm.DropAgent(id)
 	}
 }
 
@@ -49,7 +54,6 @@ func failQueuedOnDisconnect(store *AgentStore, q *CommandQueue) func(string) {
 func NewServer(cfg *Config) (*Server, error) {
 	agentStore := NewAgentStore()
 	commandQueue := NewCommandQueue()
-	agentStore.OnDisconnect = failQueuedOnDisconnect(agentStore, commandQueue)
 
 	// Open SQLite store
 	dbStore, err := NewSQLiteStore(cfg.Database.Path)
@@ -76,7 +80,7 @@ func NewServer(cfg *Config) (*Server, error) {
 	// Set up auth components
 	jwtManager := auth.NewJWTManager(cfg.Auth.JWTSecret, cfg.Auth.AccessTokenExpiry)
 	authHandlers := NewAuthHandlers(dbStore, jwtManager, cfg.Auth.RefreshTokenExpiry)
-	adminHandlers := NewAdminHandlers(dbStore, cfg.AgentTokenPepper())
+	adminHandlers := NewAdminHandlers(dbStore, cfg.AgentTokenPepper(), agentStore)
 	authenticator := NewAgentAuthenticator(dbStore, cfg.AgentTokenPepper())
 	auditRecorder := NewAuditRecorder(dbStore)
 
@@ -94,6 +98,7 @@ func NewServer(cfg *Config) (*Server, error) {
 	}
 
 	sessionManager := NewSessionManager(cfg.Streams.MaxConcurrent)
+	agentStore.OnDisconnect = onAgentDisconnect(commandQueue, sessionManager)
 	grantService := NewGrantService(dbStore, auditRecorder, cfg.Grants)
 	notifier := NewWebhookNotifier(cfg.Grants.Notify)
 	grantService.SetNotifier(notifier)
@@ -111,7 +116,7 @@ func NewServer(cfg *Config) (*Server, error) {
 		dbStore.Close()
 		return nil, fmt.Errorf("configuring grpc tls: %w", err)
 	}
-	grpcSrv := grpc.NewServer(grpcOpts...)
+	grpcSrv := grpc.NewServer(append(grpcOpts, agentKeepalive...)...)
 	grpcHandler.RegisterWithServer(grpcSrv)
 
 	var httpHandlerFunc http.Handler = httpHandler.Handler()

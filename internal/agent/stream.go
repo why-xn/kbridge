@@ -19,10 +19,17 @@ func outputTypeFor(stdout bool) agentpb.OutputType {
 }
 
 // runStream maintains the persistent OpenStream connection, reconnecting until
-// ctx is cancelled.
+// ctx is cancelled or the control plane refuses it because a newer agent
+// replaced this one.
 func (a *Agent) runStream(ctx context.Context) {
 	for ctx.Err() == nil {
-		if err := a.openAndServeStream(ctx); err != nil && ctx.Err() == nil {
+		client, id := a.currentClient()
+		err := a.openAndServeStream(ctx, client, id)
+		if a.replacedFor(err, id) != nil {
+			a.markReplaced()
+			return
+		}
+		if err != nil && ctx.Err() == nil {
 			log.Printf("stream closed: %v; reconnecting in %s", err, streamReconnectDelay)
 			select {
 			case <-time.After(streamReconnectDelay):
@@ -33,14 +40,11 @@ func (a *Agent) runStream(ctx context.Context) {
 	}
 }
 
-func (a *Agent) openAndServeStream(ctx context.Context) error {
-	stream, err := a.client.OpenStream(ctx)
+func (a *Agent) openAndServeStream(ctx context.Context, client agentpb.AgentServiceClient, agentID string) error {
+	stream, err := client.OpenStream(ctx)
 	if err != nil {
 		return err
 	}
-	a.mu.RLock()
-	agentID := a.agentID
-	a.mu.RUnlock()
 	if err := stream.Send(&agentpb.AgentStreamMessage{Msg: &agentpb.AgentStreamMessage_Register{
 		Register: &agentpb.StreamRegister{AgentId: agentID},
 	}}); err != nil {

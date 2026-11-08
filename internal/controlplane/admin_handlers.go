@@ -4,7 +4,9 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"errors"
 	"fmt"
+	"log"
 	"net/http"
 	"strconv"
 	"time"
@@ -25,12 +27,14 @@ const ClusterStatusPending = "pending"
 type AdminHandlers struct {
 	store  Store
 	pepper string
+	agents *AgentStore
 }
 
 // NewAdminHandlers creates a new AdminHandlers instance. pepper is the
-// server-side secret used to HMAC agent tokens at rest.
-func NewAdminHandlers(store Store, pepper string) *AdminHandlers {
-	return &AdminHandlers{store: store, pepper: pepper}
+// server-side secret used to HMAC agent tokens at rest; agents is the live
+// agent registry a token revocation drops agents from.
+func NewAdminHandlers(store Store, pepper string, agents *AgentStore) *AdminHandlers {
+	return &AdminHandlers{store: store, pepper: pepper, agents: agents}
 }
 
 type createAgentTokenRequest struct {
@@ -321,13 +325,21 @@ func parseTimeParam(s string) (*time.Time, error) {
 	return &t, nil
 }
 
-// HandleRevokeAgentToken revokes an agent token by ID. Revocation is idempotent.
+// HandleRevokeAgentToken revokes an agent token by ID. Revocation is
+// idempotent; an unknown ID is 404 so a mistyped one is not reported revoked.
 func (h *AdminHandlers) HandleRevokeAgentToken(c *gin.Context) {
 	id := c.Param("id")
-	if err := h.store.RevokeAgentToken(c.Request.Context(), id); err != nil {
+	err := h.store.RevokeAgentToken(c.Request.Context(), id)
+	if errors.Is(err, ErrAgentTokenNotFound) {
+		c.JSON(http.StatusNotFound, gin.H{"error": "token not found"})
+		return
+	}
+	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
 		return
 	}
+	dropped := h.agents.DropByToken(id)
+	log.Printf("Agent token %s revoked: %d connected agent(s) dropped", id, len(dropped))
 	c.JSON(http.StatusOK, gin.H{"message": "token revoked"})
 }
 

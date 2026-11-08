@@ -5,6 +5,7 @@ import (
 	"log"
 	"log/slog"
 	"net/http"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -191,42 +192,76 @@ func (s *HTTPServer) handleHealth(c *gin.Context) {
 	})
 }
 
-// handleListClusters returns a list of registered clusters.
+// handleListClusters returns every known cluster, sorted by name.
 func (s *HTTPServer) handleListClusters(c *gin.Context) {
-	agents := s.agentStore.List()
-
-	clusters := make([]ClusterResponse, 0, len(agents))
-	for _, agent := range agents {
-		clusters = append(clusters, ClusterResponse{
-			Name:   agent.ClusterName,
-			Status: agent.Status,
-		})
+	statuses, err := s.clusterStatuses(c.Request.Context())
+	if err != nil {
+		log.Printf("listing clusters: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
+		return
 	}
+	clusters := make([]ClusterResponse, 0, len(statuses))
+	for name, status := range statuses {
+		clusters = append(clusters, ClusterResponse{Name: name, Status: status})
+	}
+	slices.SortFunc(clusters, func(a, b ClusterResponse) int { return strings.Compare(a.Name, b.Name) })
+	c.JSON(http.StatusOK, gin.H{"clusters": clusters})
+}
 
-	c.JSON(http.StatusOK, gin.H{
-		"clusters": clusters,
-	})
+// clusterStatuses maps each known cluster to its status. A persisted cluster
+// (after a control plane restart, all of them until their agents register
+// again) or a revoked one is disconnected unless an agent is registered for
+// it; the persisted status is not used, it is stale after a restart.
+func (s *HTTPServer) clusterStatuses(ctx context.Context) (map[string]string, error) {
+	statuses := make(map[string]string)
+	if s.adminHandlers != nil {
+		persisted, err := s.adminHandlers.store.ListClusters(ctx)
+		if err != nil {
+			return nil, err
+		}
+		for _, cl := range persisted {
+			statuses[cl.Name] = AgentStatusDisconnected
+		}
+	}
+	for _, name := range s.agentStore.RevokedClusters() {
+		statuses[name] = AgentStatusDisconnected
+	}
+	for _, agent := range s.agentStore.List() {
+		statuses[agent.ClusterName] = agent.Status
+	}
+	return statuses, nil
+}
+
+// connectedAgent returns the cluster's agent if it is connected, or answers
+// 404 or 503. A known cluster without a registered agent (persisted, or its
+// agent dropped by token revocation) is disconnected, as the clusters list
+// shows it, not unknown; 404 is only for a name nobody knows. A 503 is audited
+// as a failed attempt of req, so every command attempt is recorded.
+func (s *HTTPServer) connectedAgent(c *gin.Context, clusterName string, req ExecRequest) (*AgentInfo, bool) {
+	agent, exists := s.agentStore.GetByClusterName(clusterName)
+	if !exists {
+		statuses, err := s.clusterStatuses(c.Request.Context())
+		if err != nil {
+			log.Printf("looking up cluster %s: %v", clusterName, err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
+			return nil, false
+		}
+		if _, known := statuses[clusterName]; !known {
+			c.JSON(http.StatusNotFound, gin.H{"error": "cluster not found"})
+			return nil, false
+		}
+	}
+	if !exists || agent.Status != AgentStatusConnected {
+		s.recordExecAudit(c, clusterName, req, AuditStatusFailed, nil, nil, "agent is disconnected")
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "cluster agent is disconnected"})
+		return nil, false
+	}
+	return agent, true
 }
 
 // handleExecCommand executes a kubectl command on a cluster.
 func (s *HTTPServer) handleExecCommand(c *gin.Context) {
 	clusterName := c.Param("name")
-
-	// Check if agent exists and is connected
-	agent, exists := s.agentStore.GetByClusterName(clusterName)
-	if !exists {
-		c.JSON(http.StatusNotFound, gin.H{
-			"error": "cluster not found",
-		})
-		return
-	}
-
-	if agent.Status != AgentStatusConnected {
-		c.JSON(http.StatusServiceUnavailable, gin.H{
-			"error": "cluster agent is disconnected",
-		})
-		return
-	}
 
 	// Parse request body
 	var req ExecRequest
@@ -242,6 +277,11 @@ func (s *HTTPServer) handleExecCommand(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"error": "command is required",
 		})
+		return
+	}
+
+	agent, ok := s.connectedAgent(c, clusterName, req)
+	if !ok {
 		return
 	}
 
@@ -459,16 +499,6 @@ func (s *HTTPServer) recordExecResult(c *gin.Context, cluster string, req ExecRe
 // to the client over a chunked HTTP response.
 func (s *HTTPServer) handleStreamCommand(c *gin.Context) {
 	clusterName := c.Param("name")
-	agent, exists := s.agentStore.GetByClusterName(clusterName)
-	if !exists {
-		c.JSON(http.StatusNotFound, gin.H{"error": "cluster not found"})
-		return
-	}
-	if agent.Status != AgentStatusConnected {
-		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "cluster agent is disconnected"})
-		return
-	}
-
 	var req ExecRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request: " + err.Error()})
@@ -476,6 +506,10 @@ func (s *HTTPServer) handleStreamCommand(c *gin.Context) {
 	}
 	if len(req.Command) == 0 {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "command is required"})
+		return
+	}
+	agent, ok := s.connectedAgent(c, clusterName, req)
+	if !ok {
 		return
 	}
 	if !requireImpersonation(c, agent) || !s.authorizeExec(c, clusterName, &req) {
@@ -493,7 +527,7 @@ func (s *HTTPServer) handleStreamCommand(c *gin.Context) {
 	}
 
 	c.Header("Content-Type", "text/plain; charset=utf-8")
-	c.Header("Trailer", exitCodeTrailer)
+	c.Header("Trailer", exitCodeTrailer+", "+errorTrailer)
 	c.Status(http.StatusOK)
 	flusher, _ := c.Writer.(http.Flusher)
 	start := time.Now()
@@ -502,6 +536,9 @@ func (s *HTTPServer) handleStreamCommand(c *gin.Context) {
 
 	exitCode, errMsg := sess.Wait()
 	c.Writer.Header().Set(exitCodeTrailer, strconv.Itoa(int(exitCode)))
+	if errMsg != "" {
+		c.Writer.Header().Set(errorTrailer, errMsg)
+	}
 	status := AuditStatusSuccess
 	if c.Request.Context().Err() != nil {
 		status = AuditStatusCanceled
@@ -515,6 +552,10 @@ func (s *HTTPServer) handleStreamCommand(c *gin.Context) {
 
 // exitCodeTrailer reports the remote kubectl exit code once a stream ends.
 const exitCodeTrailer = "X-Kbridge-Exit-Code"
+
+// errorTrailer reports why a stream ended without a result (e.g. the agent
+// went away), so the CLI can say so; older CLIs ignore it.
+const errorTrailer = "X-Kbridge-Error"
 
 // streamSessionToClient copies session output to the response until the session
 // ends or the client disconnects (which cancels the session).

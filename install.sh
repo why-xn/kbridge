@@ -9,6 +9,7 @@ INSTALL_DIR="${KBRIDGE_INSTALL_DIR:-/usr/local/bin}"
 
 fail() { echo "install: $1" >&2; exit 1; }
 warn() { echo "install: $1" >&2; }
+case "$INSTALL_DIR" in /*) ;; *) fail "KBRIDGE_INSTALL_DIR must be an absolute path" ;; esac
 gh_tag() { curl -fsSL "$1" | grep '"tag_name"' | head -1 | cut -d'"' -f4; }
 
 os="$(uname -s | tr '[:upper:]' '[:lower:]')"
@@ -46,10 +47,12 @@ echo "Verifying checksum ..."
 
 tar -xzf "${tmp}/${archive}" -C "$tmp" kb || fail "extract failed"
 
+mkdir -p "$INSTALL_DIR" 2>/dev/null || true
 if [ -w "$INSTALL_DIR" ]; then
   install -m 0755 "${tmp}/kb" "${INSTALL_DIR}/kb"
 else
   echo "Elevating to install into ${INSTALL_DIR} (set KBRIDGE_INSTALL_DIR to avoid sudo)"
+  sudo mkdir -p "$INSTALL_DIR"
   sudo install -m 0755 "${tmp}/kb" "${INSTALL_DIR}/kb"
 fi
 

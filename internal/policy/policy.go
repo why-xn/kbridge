@@ -60,15 +60,17 @@ func (r Rule) allows(req AccessRequest) bool {
 }
 
 // rolesFor returns the role names that apply to subject: every binding whose
-// subject pattern matches, plus the default role when set.
+// subject pattern matches, or the default role when no binding matches.
 func (p *Policy) rolesFor(subject string) []string {
 	var roles []string
+	matched := false
 	for _, b := range p.Bindings {
 		if MatchPattern(b.Subject, subject) {
 			roles = append(roles, b.Roles...)
+			matched = true
 		}
 	}
-	if p.Default != "" {
+	if !matched && p.Default != "" {
 		roles = append(roles, p.Default)
 	}
 	return roles

@@ -36,7 +36,7 @@ func TestAgentAuthenticator_Authenticate(t *testing.T) {
 		cluster := seedClusterToken(t, store, "prod", "secret-token", nil)
 		authn := NewAgentAuthenticator(store, testPepper)
 
-		got, err := authn.Authenticate(context.Background(), "secret-token", "prod")
+		got, _, err := authn.Authenticate(context.Background(), "secret-token", "prod")
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -48,7 +48,7 @@ func TestAgentAuthenticator_Authenticate(t *testing.T) {
 	t.Run("unknown token is invalid", func(t *testing.T) {
 		store := newTestStore(t)
 		authn := NewAgentAuthenticator(store, testPepper)
-		_, err := authn.Authenticate(context.Background(), "nope", "prod")
+		_, _, err := authn.Authenticate(context.Background(), "nope", "prod")
 		if !errors.Is(err, ErrInvalidAgentToken) {
 			t.Fatalf("want ErrInvalidAgentToken, got %v", err)
 		}
@@ -60,7 +60,7 @@ func TestAgentAuthenticator_Authenticate(t *testing.T) {
 			at.IsRevoked = true
 		})
 		authn := NewAgentAuthenticator(store, testPepper)
-		_, err := authn.Authenticate(context.Background(), "secret-token", "prod")
+		_, _, err := authn.Authenticate(context.Background(), "secret-token", "prod")
 		if !errors.Is(err, ErrRevokedAgentToken) {
 			t.Fatalf("want ErrRevokedAgentToken, got %v", err)
 		}
@@ -73,7 +73,7 @@ func TestAgentAuthenticator_Authenticate(t *testing.T) {
 			at.ExpiresAt = &past
 		})
 		authn := NewAgentAuthenticator(store, testPepper)
-		_, err := authn.Authenticate(context.Background(), "secret-token", "prod")
+		_, _, err := authn.Authenticate(context.Background(), "secret-token", "prod")
 		if !errors.Is(err, ErrExpiredAgentToken) {
 			t.Fatalf("want ErrExpiredAgentToken, got %v", err)
 		}
@@ -83,7 +83,7 @@ func TestAgentAuthenticator_Authenticate(t *testing.T) {
 		store := newTestStore(t)
 		seedClusterToken(t, store, "prod", "secret-token", nil)
 		authn := NewAgentAuthenticator(store, testPepper)
-		_, err := authn.Authenticate(context.Background(), "secret-token", "staging")
+		_, _, err := authn.Authenticate(context.Background(), "secret-token", "staging")
 		if !errors.Is(err, ErrClusterMismatch) {
 			t.Fatalf("want ErrClusterMismatch, got %v", err)
 		}
@@ -93,7 +93,7 @@ func TestAgentAuthenticator_Authenticate(t *testing.T) {
 		store := newTestStore(t)
 		cluster := seedClusterToken(t, store, "prod", "secret-token", nil)
 		authn := NewAgentAuthenticator(store, testPepper)
-		got, err := authn.Authenticate(context.Background(), "secret-token", "")
+		got, _, err := authn.Authenticate(context.Background(), "secret-token", "")
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -107,7 +107,7 @@ func TestAgentAuthenticator_Authenticate(t *testing.T) {
 		seedClusterToken(t, store, "prod", "secret-token", nil)
 		// Verifier configured with a different pepper than the one used to seal.
 		authn := NewAgentAuthenticator(store, "a-different-pepper")
-		_, err := authn.Authenticate(context.Background(), "secret-token", "prod")
+		_, _, err := authn.Authenticate(context.Background(), "secret-token", "prod")
 		if !errors.Is(err, ErrInvalidAgentToken) {
 			t.Fatalf("want ErrInvalidAgentToken, got %v", err)
 		}
@@ -123,7 +123,7 @@ func TestAgentAuthenticator_RecordsLastUsed(t *testing.T) {
 		authn := NewAgentAuthenticator(store, testPepper)
 
 		before := time.Now().Add(-time.Second)
-		if _, err := authn.Authenticate(ctx, "secret-token", "prod"); err != nil {
+		if _, _, err := authn.Authenticate(ctx, "secret-token", "prod"); err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
 
@@ -146,7 +146,7 @@ func TestAgentAuthenticator_RecordsLastUsed(t *testing.T) {
 		})
 		authn := NewAgentAuthenticator(store, testPepper)
 
-		if _, err := authn.Authenticate(ctx, "secret-token", "prod"); !errors.Is(err, ErrRevokedAgentToken) {
+		if _, _, err := authn.Authenticate(ctx, "secret-token", "prod"); !errors.Is(err, ErrRevokedAgentToken) {
 			t.Fatalf("want ErrRevokedAgentToken, got %v", err)
 		}
 

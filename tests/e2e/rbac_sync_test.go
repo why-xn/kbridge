@@ -61,8 +61,8 @@ func TestRBACSync_RevertsDrift(t *testing.T) {
 }
 
 // TestRBACSync_ReportsCeiling maps the developer to `admin`, which the e2e
-// ceiling leaves out: the cluster refuses that binding, the status shows the
-// 403, and the other bindings stay.
+// ceiling leaves out: the cluster refuses that binding, the status explains
+// the ceiling, and the other bindings stay.
 func TestRBACSync_ReportsCeiling(t *testing.T) {
 	ensureUser(t, developerEmail)
 	waitDeveloperBound(t)
@@ -72,8 +72,9 @@ func TestRBACSync_ReportsCeiling(t *testing.T) {
 `)
 	want := "binding kbridge-developer-admin:"
 	errLine := waitSyncError(t, want)
-	if !strings.Contains(errLine, "403") {
-		t.Errorf("error %q does not carry the 403", errLine)
+	const ceilingCopy = "clusterRole admin is outside this cluster's accessCeiling (agent chart value accessCeiling.clusterRoles); ask the cluster owner to raise it"
+	if !strings.Contains(errLine, ceilingCopy) {
+		t.Errorf("error %q does not explain the ceiling: want %q", errLine, ceilingCopy)
 	}
 	stdout, _, _ := runCLI(t, "admin", "rbac", "status")
 	if !strings.Contains(stdout, "drift") || !strings.Contains(stdout, want) {

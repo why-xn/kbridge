@@ -15,6 +15,8 @@ var (
 	ErrRevokedAgentToken = errors.New("agent token revoked")
 	ErrExpiredAgentToken = errors.New("agent token expired")
 	ErrClusterMismatch   = errors.New("token not valid for requested cluster")
+	// ErrAgentTokenNotFound is returned when revoking an id no token has.
+	ErrAgentTokenNotFound = errors.New("agent token not found")
 )
 
 // AgentAuthenticator validates agent registration tokens against the persistent
@@ -42,36 +44,37 @@ func hashAgentToken(pepper, token string) string {
 }
 
 // Authenticate verifies a plaintext agent token and returns the cluster it is
-// bound to. requestedCluster, when non-empty, must match the token's cluster.
-func (a *AgentAuthenticator) Authenticate(ctx context.Context, plaintext, requestedCluster string) (*Cluster, error) {
+// bound to and the token's id. requestedCluster, when non-empty, must match
+// the token's cluster.
+func (a *AgentAuthenticator) Authenticate(ctx context.Context, plaintext, requestedCluster string) (*Cluster, string, error) {
 	token, err := a.store.GetAgentTokenByHash(ctx, hashAgentToken(a.pepper, plaintext))
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 	if token == nil {
-		return nil, ErrInvalidAgentToken
+		return nil, "", ErrInvalidAgentToken
 	}
 	if token.IsRevoked {
-		return nil, ErrRevokedAgentToken
+		return nil, "", ErrRevokedAgentToken
 	}
 	if token.ExpiresAt != nil && time.Now().After(*token.ExpiresAt) {
-		return nil, ErrExpiredAgentToken
+		return nil, "", ErrExpiredAgentToken
 	}
 
 	cluster, err := a.store.GetClusterByID(ctx, token.ClusterID)
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 	if cluster == nil {
-		return nil, ErrInvalidAgentToken
+		return nil, "", ErrInvalidAgentToken
 	}
 	if requestedCluster != "" && requestedCluster != cluster.Name {
-		return nil, ErrClusterMismatch
+		return nil, "", ErrClusterMismatch
 	}
 
 	// Record last use for staleness detection. Best-effort: a failed touch must
 	// not deny an otherwise valid agent.
 	_ = a.store.TouchAgentToken(ctx, token.ID, time.Now().UTC())
 
-	return cluster, nil
+	return cluster, token.ID, nil
 }

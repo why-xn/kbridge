@@ -12,11 +12,22 @@ import (
 	"github.com/why-xn/kbridge/api/proto/agentpb"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/keepalive"
 	"google.golang.org/grpc/status"
 )
 
 // DefaultHeartbeatInterval is the default interval between heartbeats in seconds.
 const DefaultHeartbeatInterval = 30
+
+// agentKeepalive makes a vanished agent's stream end within about 10s. A pod
+// that dies has its TCP connection closed by the kernel, but a node that
+// disappears closes nothing, and without pings the stream would only be
+// noticed dead at the 60s heartbeat timeout. MinTime matches Time so agent
+// pings at that rate are not rejected as abuse.
+var agentKeepalive = []grpc.ServerOption{
+	grpc.KeepaliveParams(keepalive.ServerParameters{Time: 5 * time.Second, Timeout: 5 * time.Second}),
+	grpc.KeepaliveEnforcementPolicy(keepalive.EnforcementPolicy{MinTime: 5 * time.Second, PermitWithoutStream: true}),
+}
 
 // GRPCServer handles gRPC requests from agents.
 type GRPCServer struct {
@@ -60,7 +71,7 @@ func (s *GRPCServer) Register(ctx context.Context, req *agentpb.RegisterRequest)
 	}
 
 	// Validate agent token against the persistent store and resolve its cluster.
-	cluster, err := s.authn.Authenticate(ctx, req.GetAgentToken(), req.GetClusterName())
+	cluster, tokenID, err := s.authn.Authenticate(ctx, req.GetAgentToken(), req.GetClusterName())
 	if err != nil {
 		log.Printf("Agent token rejected for cluster=%s: %v", req.GetClusterName(), err)
 		return &agentpb.RegisterResponse{
@@ -81,6 +92,7 @@ func (s *GRPCServer) Register(ctx context.Context, req *agentpb.RegisterRequest)
 		ID:          agentID,
 		ClusterName: cluster.Name,
 		Token:       req.GetAgentToken(),
+		TokenID:     tokenID,
 		Capabilities: req.GetCapabilities(),
 	}
 
@@ -91,15 +103,37 @@ func (s *GRPCServer) Register(ctx context.Context, req *agentpb.RegisterRequest)
 	log.Printf("Agent registered: id=%s, cluster=%s, capabilities=%v", agentID, cluster.Name, info.Capabilities)
 	for _, old := range replaced {
 		moved := s.cmdQueue.Reassign(old, agentID)
-		// Only running commands remain on the old agent; it will never report them.
-		failed := s.cmdQueue.FailForAgent(old, "agent shut down while the command was running; retry it")
+		failed := s.failRunningIfGone(old)
 		log.Printf("Agent %s replaces previous agent %s for cluster=%s (%d queued command(s) moved, %d running failed)", agentID, old, cluster.Name, moved, failed)
+	}
+	if err := s.recheckToken(ctx, req.GetAgentToken(), tokenID); err != nil {
+		return &agentpb.RegisterResponse{Success: false, ErrorMessage: registrationErrorMessage(err)}, nil
 	}
 
 	return &agentpb.RegisterResponse{
 		Success: true,
 		AgentId: agentID,
 	}, nil
+}
+
+// recheckToken re-reads the token once the agent is tracked and drops the agent
+// if it is no longer valid. A revoke writes the DB before dropping agents, so
+// a revoke racing this Register is seen either by its drop or by this check.
+func (s *GRPCServer) recheckToken(ctx context.Context, plaintext, tokenID string) error {
+	tok, err := s.authn.store.GetAgentTokenByHash(ctx, hashAgentToken(s.authn.pepper, plaintext))
+	switch {
+	case err != nil:
+		err = fmt.Errorf("re-reading agent token: %w", err)
+	case tok == nil:
+		err = ErrInvalidAgentToken
+	case tok.IsRevoked:
+		err = ErrRevokedAgentToken
+	default:
+		return nil
+	}
+	s.agents.DropByToken(tokenID)
+	log.Printf("Agent registration for token %s refused after insert: %v", tokenID, err)
+	return err
 }
 
 // markClusterConnected updates the persisted cluster record to reflect a freshly
@@ -143,7 +177,7 @@ func (s *GRPCServer) Heartbeat(ctx context.Context, req *agentpb.HeartbeatReques
 	// Update heartbeat in store
 	if !s.agents.UpdateHeartbeat(req.GetAgentId(), agentStatus) {
 		log.Printf("Heartbeat from unknown agent: id=%s", req.GetAgentId())
-		return nil, status.Error(codes.NotFound, "agent not registered")
+		return nil, s.notRegistered(req.GetAgentId(), codes.NotFound)
 	}
 
 	return &agentpb.HeartbeatResponse{
@@ -162,7 +196,7 @@ func (s *GRPCServer) GetPendingCommands(ctx context.Context, req *agentpb.GetPen
 
 	// Verify agent is registered
 	if _, exists := s.agents.Get(agentID); !exists {
-		return nil, status.Error(codes.NotFound, "agent not registered")
+		return nil, s.notRegistered(agentID, codes.NotFound)
 	}
 
 	// Get pending commands for this agent
@@ -235,11 +269,13 @@ func (s *GRPCServer) OpenStream(stream agentpb.AgentService_OpenStreamServer) er
 		return status.Error(codes.InvalidArgument, "first message must be StreamRegister")
 	}
 	if _, ok := s.agents.Get(reg.GetAgentId()); !ok {
-		return status.Error(codes.NotFound, "agent not registered")
+		return s.notRegistered(reg.GetAgentId(), codes.NotFound)
 	}
 
 	s.sessions.RegisterAgentStream(reg.GetAgentId(), stream)
-	defer s.sessions.UnregisterAgentStream(reg.GetAgentId())
+	// A reopened stream is proof of life: do not wait for the next heartbeat.
+	s.agents.UpdateHeartbeat(reg.GetAgentId(), AgentStatusConnected)
+	defer s.streamClosed(reg.GetAgentId(), stream)
 	log.Printf("Agent stream opened: id=%s", reg.GetAgentId())
 
 	for {
@@ -249,6 +285,48 @@ func (s *GRPCServer) OpenStream(stream agentpb.AgentService_OpenStreamServer) er
 		}
 		s.sessions.Route(msg)
 	}
+}
+
+// streamClosed unregisters an agent's stream and, if it was still the agent's
+// current one, marks the agent disconnected: a dead agent's stream ends long
+// before its heartbeat times out.
+func (s *GRPCServer) streamClosed(agentID string, stream streamSender) {
+	if !s.sessions.UnregisterAgentStream(agentID, stream) {
+		return
+	}
+	if s.agents.MarkAgentDisconnected(agentID) {
+		log.Printf("Agent stream closed: id=%s marked disconnected", agentID)
+	} else if s.agents.WasReplaced(agentID) {
+		s.failRunningIfGone(agentID)
+	}
+}
+
+// failRunningIfGone fails the commands still running on a replaced agent once
+// it has no open stream, so it cannot report them. A replaced agent with its
+// stream open is standing by and finishes them; its stream closing then
+// fails what is left. Only running commands remain: Register moved the queued
+// ones.
+func (s *GRPCServer) failRunningIfGone(agentID string) int {
+	if s.sessions.HasAgentStream(agentID) {
+		return 0
+	}
+	n := s.cmdQueue.FailForAgent(agentID, "agent shut down while the command was running; retry it")
+	if n > 0 {
+		log.Printf("Replaced agent %s closed its stream: %d running command(s) failed", agentID, n)
+	}
+	return n
+}
+
+// notRegistered is the answer to a call from an id the store does not hold. An
+// id a newer agent replaced gets FailedPrecondition while that newer agent is
+// connected, so it stands by instead of re-registering and taking the cluster
+// back. Once the newer agent is gone, it gets code like any unknown id, so a
+// standing-by agent registers again and the cluster is served.
+func (s *GRPCServer) notRegistered(agentID string, code codes.Code) error {
+	if s.agents.ReplacerConnected(agentID) {
+		return status.Error(codes.FailedPrecondition, "agent replaced by a newer registration for this cluster")
+	}
+	return status.Error(code, "agent not registered")
 }
 
 // generateAgentID creates a unique identifier for an agent using random bytes.

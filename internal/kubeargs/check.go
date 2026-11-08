@@ -50,6 +50,12 @@ func fileErr(flag string) error {
 	return fmt.Errorf("flag %s is not allowed: the agent does not read local files; build the object locally with 'kubectl create ... --dry-run=client -o yaml' and send it with 'kb apply -f -'", flag)
 }
 
+// outputFileErr refuses -o <kind>-file=... with the inline form that would work.
+func outputFileErr(flag, val string) error {
+	kind, _, _ := strings.Cut(strings.TrimPrefix(val, "="), "=")
+	return fmt.Errorf("flag %s %s is not allowed: the agent does not read local files; write the template inline with -o %s='...'", flag, kind, strings.TrimSuffix(kind, "-file"))
+}
+
 // Check refuses kubectl arguments that change the connection, read local files,
 // or run verbs that act on the agent's own environment. It never parses manifests.
 // A value flag can swallow "--", so "--" ends the check only for a container-command verb.
@@ -159,7 +165,7 @@ func checkLongFlag(tok, next string) error {
 	case name == "--filename":
 		return checkFilename(val)
 	case name == "--output" && strings.Contains(val, "-file="):
-		return fileErr(name)
+		return outputFileErr(name, val)
 	}
 	return nil
 }
@@ -183,7 +189,7 @@ func walkShortCluster(tok, next, verb string) error {
 		case c == 'f':
 			return checkFilename(rest)
 		case c == 'o' && strings.Contains(rest, "-file="):
-			return fileErr("-o")
+			return outputFileErr("-o", rest)
 		case shortValueFlags[c]:
 			return nil
 		case slices.Contains(connectionFlags, "-"+string(c)):
