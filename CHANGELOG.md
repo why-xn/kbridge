@@ -126,6 +126,9 @@ plane wires the service, which it does by default.
   poll response carrying it is in flight: the poll runs under the context
   that only a revoked token cancels, so the command runs and is reported.
   This also made `TestAgent_ShutdownLetsInFlightCommandFinish` fail on CI.
+- The policy watcher starts from the hash of the content it loaded rather than
+  re-reading the file when its goroutine starts, so a ConfigMap update that
+  lands in between is no longer missed until the next change.
 - A refused command no longer prints its error three times with cobra usage
   text appended; errors from the kubectl path are printed once.
 - `kb policy` writes its verdict to stdout rather than stderr, so it can be

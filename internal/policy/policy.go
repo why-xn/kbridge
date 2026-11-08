@@ -160,17 +160,19 @@ func anyVerb(verbs []string, verb string) bool {
 // Engine holds the active policy and supports lock-free hot-swapping.
 type Engine struct {
 	current atomic.Pointer[Policy]
+	loaded  atomic.Pointer[[sha256.Size]byte] // hash of the content current came from
 	path    string
 }
 
 // NewEngineFromFile loads a policy from path into a new engine.
 func NewEngineFromFile(path string) (*Engine, error) {
-	policy, err := loadPolicyFile(path)
+	policy, hash, err := loadPolicyFile(path)
 	if err != nil {
 		return nil, err
 	}
 	e := &Engine{path: path}
 	e.current.Store(policy)
+	e.loaded.Store(&hash)
 	return e, nil
 }
 
@@ -191,12 +193,14 @@ func NewEngineFromBytes(data []byte) (*Engine, error) {
 	return NewEngine(p), nil
 }
 
-func loadPolicyFile(path string) (*Policy, error) {
+// loadPolicyFile parses the file and returns the hash of the bytes it parsed.
+func loadPolicyFile(path string) (*Policy, [sha256.Size]byte, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return nil, fmt.Errorf("reading policy file: %w", err)
+		return nil, [sha256.Size]byte{}, fmt.Errorf("reading policy file: %w", err)
 	}
-	return Parse(data)
+	p, err := Parse(data)
+	return p, sha256.Sum256(data), err
 }
 
 // Allows reports whether subject may perform req under the current policy.
@@ -210,11 +214,12 @@ func (e *Engine) Reload() error {
 	if e.path == "" {
 		return nil
 	}
-	policy, err := loadPolicyFile(e.path)
+	policy, hash, err := loadPolicyFile(e.path)
 	if err != nil {
 		return err
 	}
 	e.current.Store(policy)
+	e.loaded.Store(&hash)
 	return nil
 }
 
@@ -232,6 +237,7 @@ func (e *Engine) Watch(stop <-chan struct{}) {
 		return
 	}
 	watcher := e.watchDir()
+	interval := policyPollInterval
 	go func() {
 		var events <-chan fsnotify.Event
 		var errs <-chan error
@@ -239,7 +245,7 @@ func (e *Engine) Watch(stop <-chan struct{}) {
 			defer watcher.Close()
 			events, errs = watcher.Events, watcher.Errors
 		}
-		e.watchLoop(events, errs, stop)
+		e.watchLoop(events, errs, stop, interval)
 	}()
 }
 
@@ -259,11 +265,13 @@ func (e *Engine) watchDir() *fsnotify.Watcher {
 	return watcher
 }
 
-func (e *Engine) watchLoop(events <-chan fsnotify.Event, errs <-chan error, stop <-chan struct{}) {
-	ticker := time.NewTicker(policyPollInterval)
+func (e *Engine) watchLoop(events <-chan fsnotify.Event, errs <-chan error, stop <-chan struct{}, interval time.Duration) {
+	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 	target := filepath.Clean(e.path)
-	last := fileHash(e.path)
+	// Start from what was loaded, not from the file as it is now: a change
+	// made between the load and this goroutine starting must still be seen.
+	last := *e.loaded.Load()
 	for {
 		select {
 		case ev, ok := <-events:
