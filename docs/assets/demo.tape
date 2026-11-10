@@ -1,6 +1,7 @@
 # The README demo (docs/assets/demo.gif). To regenerate after a release:
 #   scripts/demo-env.sh      # kind cluster + published charts, users, policy
 #   make demo                # renders this tape in the VHS container
+#   make demo-light          # the same in a light theme, to demo-light.gif
 # Record against a fresh environment: the audit step lists every attempt.
 Output docs/assets/demo.gif
 
