@@ -2,5 +2,6 @@ apiVersion: v2
 name: kbridge-control-plane
 description: kbridge control plane (HTTP API + gRPC for agents)
 type: application
+icon: https://raw.githubusercontent.com/why-xn/kbridge/master/docs/assets/kbridge-logo.svg
 version: 0.3.0-alpha.1
 appVersion: "v0.3.0-alpha.1"
