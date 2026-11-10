@@ -8,13 +8,13 @@
 ![Go](https://img.shields.io/github/go-mod/go-version/why-xn/kbridge)
 ![License](https://img.shields.io/badge/license-Apache%202.0-blue)
 
-> **Status: alpha** (`v0.3.0-alpha.1`). Config keys, the RBAC policy schema,
-> and REST API paths may change between releases, and it is not yet recommended
-> for unattended production use.
-
 A lightweight access gateway that lets you manage multiple Kubernetes clusters from a central control plane, without needing to distribute kubeconfig files, open inbound firewall rules, or set up VPN access.
 
 ![A developer logs in, sees two clusters, lists and scales pods in team-a, is refused secrets in kube-system with the reason; the admin sees both clusters in sync, reads the same secrets, and audits every attempt](docs/assets/demo.gif)
+
+> **Status: alpha** (`v0.3.0-alpha.1`). Config keys, the RBAC policy schema,
+> and REST API paths may change between releases, and it is not yet recommended
+> for unattended production use.
 
 ## How it works
 
