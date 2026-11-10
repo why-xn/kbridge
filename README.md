@@ -1,4 +1,7 @@
-# kbridge
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/kbridge-logo-dark.svg">
+  <img src="docs/assets/kbridge-logo.svg" alt="kbridge" width="320">
+</picture>
 
 ![CI](https://github.com/why-xn/kbridge/actions/workflows/ci.yml/badge.svg)
 ![Release](https://img.shields.io/github/v/release/why-xn/kbridge?include_prereleases)
