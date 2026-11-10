@@ -15,6 +15,8 @@ A lightweight, secure CLI tool for managing and accessing multiple Kubernetes cl
 curl -fsSL https://raw.githubusercontent.com/why-xn/kbridge/master/install.sh | sh
 ```
 
+![A developer logs in, sees two clusters, lists and scales pods in team-a, is refused secrets in kube-system with the reason; the admin sees both clusters in sync, reads the same secrets, and audits every attempt](docs/assets/demo.gif)
+
 ## Problem
 
 Giving an engineer access to a Kubernetes cluster usually means handing out a
