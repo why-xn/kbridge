@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-"""Renders docs/assets/architecture.gif: how one command travels through kbridge.
+"""Renders docs/assets/architecture.gif and architecture-light.gif: how one command
+travels through kbridge.
 
     python3 docs/assets/architecture.py            # needs Pillow and DejaVu fonts
 
@@ -12,11 +13,17 @@ import textwrap
 
 from PIL import Image, ImageDraw, ImageFont
 
-OUT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "architecture.gif")
+HERE = os.path.dirname(os.path.abspath(__file__))
 W, H, FPS, LENGTH = 1280, 640, 10, 21
 
-BG, PANEL, LINE, TEXT, DIM = "#1e1e2e", "#313244", "#45475a", "#cdd6f4", "#7f849c"
-BLUE, MAUVE, GREEN, RED, YELLOW = "#89b4fa", "#cba6f7", "#a6e3a1", "#f38ba8", "#f9e2af"
+# The README serves one or the other through a <picture> element by theme.
+THEMES = {
+    "architecture.gif": dict(BG="#1e1e2e", PANEL="#313244", LINE="#45475a", TEXT="#cdd6f4", DIM="#7f849c",
+                             BLUE="#89b4fa", MAUVE="#cba6f7", GREEN="#a6e3a1", RED="#f38ba8", YELLOW="#f9e2af"),
+    "architecture-light.gif": dict(BG="#ffffff", PANEL="#f6f8fa", LINE="#d0d7de", TEXT="#1f2328", DIM="#656d76",
+                                   BLUE="#0969da", MAUVE="#8250df", GREEN="#1a7f37", RED="#cf222e", YELLOW="#9a6700"),
+}
+BG = PANEL = LINE = TEXT = DIM = BLUE = MAUVE = GREEN = RED = YELLOW = ""
 FONTS = "/usr/share/fonts/truetype/dejavu/"
 SANS = lambda s: ImageFont.truetype(FONTS + "DejaVuSans.ttf", s)
 BOLD = lambda s: ImageFont.truetype(FONTS + "DejaVuSans-Bold.ttf", s)
@@ -32,13 +39,14 @@ def between(t, a, b):
     return min(1.0, max(0.0, (t - a) / (b - a)))
 
 
-def box(d, r, border=LINE, fill=PANEL):
+def box(d, r, border=None, fill=None):
     x, y, w, h = r
+    border, fill = border or LINE, fill or PANEL
     d.rounded_rectangle((x, y, x + w, y + h), 10, fill=fill, outline=border, width=2)
 
 
-def label(d, xy, s, font, fill=TEXT, anchor="la"):
-    d.text(xy, s, font=font, fill=fill, anchor=anchor)
+def label(d, xy, s, font, fill=None, anchor="la"):
+    d.text(xy, s, font=font, fill=fill or TEXT, anchor=anchor)
 
 
 def dot(d, path, p, color, r=6):
@@ -79,8 +87,9 @@ def laptop(d, lines):
     label(d, (x + 20, y + h - 36), "no kubeconfig, no cluster credential", SANS(13), DIM)
 
 
-def control_plane(d, checks, border=LINE):
+def control_plane(d, checks, border=None):
     x, y, w, h = CP
+    border = border or LINE
     box(d, CP, border)
     label(d, (x + 20, y + 18), "Control plane", BOLD(17))
     label(d, (x + 20, y + 44), "authenticate · authorize · route", SANS(13), DIM)
@@ -234,9 +243,12 @@ def scene(t):
 
 
 def main():
-    frames = [scene(i / FPS) for i in range(LENGTH * FPS)]
-    frames[0].save(OUT, save_all=True, append_images=frames[1:], duration=1000 // FPS, loop=0, optimize=True)
-    print(OUT, os.path.getsize(OUT), "bytes")
+    for name, colours in THEMES.items():
+        globals().update(colours)  # the drawing functions read the colour names as globals
+        out = os.path.join(HERE, name)
+        frames = [scene(i / FPS) for i in range(LENGTH * FPS)]
+        frames[0].save(out, save_all=True, append_images=frames[1:], duration=1000 // FPS, loop=0, optimize=True)
+        print(out, os.path.getsize(out), "bytes")
 
 
 if __name__ == "__main__":

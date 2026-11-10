@@ -18,7 +18,10 @@ A lightweight access gateway that lets you manage multiple Kubernetes clusters f
 
 ## How it works
 
-![Animated: both agents dial out to the control plane; an allowed command is checked, runs on the staging cluster as kbridge:dev@example.com and is audited; a refused command stops at the control plane and is audited too](docs/assets/architecture.gif)
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/architecture.gif">
+  <img src="docs/assets/architecture-light.gif" alt="Animated: both agents dial out to the control plane; an allowed command is checked, runs on the staging cluster as kbridge:dev@example.com and is audited; a refused command stops at the control plane and is audited too">
+</picture>
 
 1. **Each cluster runs a small agent** that dials out to the control plane over
    gRPC. No inbound port is opened and no kubeconfig leaves the cluster.
