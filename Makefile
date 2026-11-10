@@ -1,4 +1,4 @@
-.PHONY: build build-cli build-control-plane build-agent clean proto test test-e2e e2e-setup e2e-teardown kind-up kind-down certs docker docker-control-plane docker-agent docker-cli
+.PHONY: build build-cli build-control-plane build-agent clean proto test test-e2e e2e-setup e2e-teardown kind-up kind-down certs docker docker-control-plane docker-agent docker-cli demo
 
 # Container image settings (override on the command line, e.g. IMAGE_PREFIX=ghcr.io/acme VERSION=v0.3.0-alpha.1)
 IMAGE_PREFIX ?= kbridge
@@ -52,6 +52,13 @@ kind-up:
 # Delete the Kind cluster only
 kind-down:
 	./scripts/e2e-kind.sh cluster-down
+
+# Render the README demo from docs/assets/demo.tape against the environment that
+# scripts/demo-env.sh stood up (needs Docker). The developer logs in live, so
+# that home is a throwaway; the admin login comes from DEMO_HOME.
+DEMO_HOME ?= $(HOME)/kb-demo
+demo:
+	docker run --rm --network host -v "$(CURDIR):/vhs" -v "$$(mktemp -d):/home/dev" -v "$(DEMO_HOME)/admin:/home/admin" -v "$(DEMO_HOME)/bin/kb:/usr/local/bin/kb:ro" ghcr.io/charmbracelet/vhs docs/assets/demo.tape
 
 # Generate self-signed TLS certs for local development (into ./certs)
 certs:
