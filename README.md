@@ -10,7 +10,10 @@
 
 A lightweight access gateway that lets you manage multiple Kubernetes clusters from a central control plane, without needing to distribute kubeconfig files, open inbound firewall rules, or set up VPN access.
 
-![A developer logs in, sees two clusters, lists and scales pods in team-a, is refused secrets in kube-system with the reason; the admin sees both clusters in sync, reads the same secrets, and audits every attempt](docs/assets/demo.gif)
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/demo.gif">
+  <img src="docs/assets/demo-light.gif" alt="A developer logs in, sees two clusters, lists and scales pods in team-a, is refused secrets in kube-system with the reason; the admin sees both clusters in sync, reads the same secrets, and audits every attempt">
+</picture>
 
 > **Status: alpha** (`v0.3.0-alpha.1`). Config keys, the RBAC policy schema,
 > and REST API paths may change between releases, and it is not yet recommended

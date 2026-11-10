@@ -1,4 +1,4 @@
-.PHONY: build build-cli build-control-plane build-agent clean proto test test-e2e e2e-setup e2e-teardown kind-up kind-down certs docker docker-control-plane docker-agent docker-cli demo
+.PHONY: build build-cli build-control-plane build-agent clean proto test test-e2e e2e-setup e2e-teardown kind-up kind-down certs docker docker-control-plane docker-agent docker-cli demo demo-light
 
 # Container image settings (override on the command line, e.g. IMAGE_PREFIX=ghcr.io/acme VERSION=v0.3.0-alpha.1)
 IMAGE_PREFIX ?= kbridge
@@ -55,10 +55,15 @@ kind-down:
 
 # Render the README demo from docs/assets/demo.tape against the environment that
 # scripts/demo-env.sh stood up (needs Docker). The developer logs in live, so
-# that home is a throwaway; the admin login comes from DEMO_HOME.
+# that home is a throwaway; the admin login comes from DEMO_HOME. demo-light
+# renders the same tape in a light theme to demo-light.gif; each render needs a
+# fresh environment, since the audit step shows every attempt so far.
 DEMO_HOME ?= $(HOME)/kb-demo
+VHS = docker run -i --rm --network host -v "$(CURDIR):/vhs" -v "$$(mktemp -d):/home/dev" -v "$(DEMO_HOME)/admin:/home/admin" -v "$(DEMO_HOME)/bin/kb:/usr/local/bin/kb:ro" ghcr.io/charmbracelet/vhs
 demo:
-	docker run --rm --network host -v "$(CURDIR):/vhs" -v "$$(mktemp -d):/home/dev" -v "$(DEMO_HOME)/admin:/home/admin" -v "$(DEMO_HOME)/bin/kb:/usr/local/bin/kb:ro" ghcr.io/charmbracelet/vhs docs/assets/demo.tape
+	$(VHS) docs/assets/demo.tape
+demo-light:
+	sed 's/Catppuccin Mocha/Catppuccin Latte/; s#demo\.gif#demo-light.gif#' docs/assets/demo.tape | $(VHS)
 
 # Generate self-signed TLS certs for local development (into ./certs)
 certs:
