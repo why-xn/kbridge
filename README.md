@@ -46,9 +46,15 @@ The CLI, on Linux or macOS:
 curl -fsSL https://raw.githubusercontent.com/why-xn/kbridge/master/install.sh | sh
 ```
 
-`kb login` asks for the control plane URL the first time, then:
+No configuration file to write: the first login asks for the control plane
+URL and saves it, with your session, in `~/.kbridge/config.yaml`.
 
 ```bash
+kb login
+# Control plane URL: https://kbridge.example.com
+# Email: you@example.com
+# Password:
+# Login successful.
 kb clusters list
 kb clusters use <cluster>
 kb get pods -n <namespace>
