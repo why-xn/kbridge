@@ -31,7 +31,7 @@ MONO = lambda s: ImageFont.truetype(FONTS + "DejaVuSansMono.ttf", s)
 
 LAP, CP, DB = (40, 110, 340, 330), (460, 110, 340, 330), (460, 470, 340, 130)
 ST, PR, KA = (880, 110, 360, 160), (880, 300, 360, 160), (880, 490, 360, 110)
-USER, CLUSTER = "dev@example.com", "staging"
+USER, CLUSTER = "dev@example.com", "Cluster-A"
 
 
 def between(t, a, b):
@@ -79,7 +79,7 @@ def check(d, xy, state):
 def laptop(d, lines):
     x, y, w, h = LAP
     box(d, LAP)
-    label(d, (x + 20, y + 18), "Developer laptop", BOLD(17))
+    label(d, (x + 20, y + 18), "User", BOLD(17))
     label(d, (x + w - 20, y + 20), "kb CLI", MONO(13), BLUE, "ra")
     d.rounded_rectangle((x + 20, y + 56, x + w - 20, y + h - 60), 8, fill=BG)
     for i, (s, c) in enumerate(lines[-11:]):
@@ -233,7 +233,7 @@ def scene(t):
     control_plane(d, checks, border)
     database(d, rows)
     cluster(d, ST, CLUSTER, connected, active, who)
-    cluster(d, PR, "production", connected, False)
+    cluster(d, PR, "Cluster-B", connected, False)
     box(d, KA)
     label(d, (KA[0] + 20, KA[1] + 16), "Cluster audit log", BOLD(15))
     label(d, (KA[0] + 20, KA[1] + 44), "user: kbridge:" + USER if who or t >= 10.5 else "user: kbridge:<email>",
