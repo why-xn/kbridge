@@ -300,6 +300,10 @@ func cliHome(t *testing.T, token string) map[string]string {
 func TestGrantsCLI(t *testing.T) {
 	email, userTok := jitRequester(t, "edge-jit-cli@e2e.test")
 	installApprovalPolicy(t, email)
+	// The approved command must reach kubectl, so the agent has to have bound
+	// the new subject in the cluster; that happens on its next sync, not on
+	// the policy reload.
+	waitInSync(t)
 	userEnv := cliHome(t, userTok)
 
 	// The admin drives through the harness config; make sure it targets the
