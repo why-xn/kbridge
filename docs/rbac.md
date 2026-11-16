@@ -149,7 +149,7 @@ roles:
 | `clusterRole` | An existing ClusterRole to bind, such as `view` or `edit`. Required |
 | `namespaces` | Literal namespace names (no patterns). One RoleBinding per namespace |
 | `clusterWide` | `true` for one ClusterRoleBinding instead. Exactly one of `namespaces` or `clusterWide` must be set; the policy fails to load otherwise |
-| `requiresGrant` | `true` binds only the role's users who hold an approved, unexpired [grant](#just-in-time-access) for the cluster and namespace. See [Grant-gated bindings](#grant-gated-bindings) |
+| `requiresGrant` | **Next release.** `true` binds only the role's users who hold an approved, unexpired [grant](#just-in-time-access) for the cluster and namespace. See [Grant-gated bindings](#grant-gated-bindings) |
 
 What the agent creates:
 
@@ -207,6 +207,9 @@ A ClusterRoleBinding covers every namespace, including the protected ones; the
 agent's proxy still refuses every request into those.
 
 ## Guardrails
+
+> **Not yet released.** Not in v0.3.0-alpha.1, which ignores these keys and
+> commands. It ships in the next release.
 
 Role rules answer "may this person touch this resource at all?". Guardrails
 answer a narrower question: "is *this particular command* one we want run right
@@ -334,6 +337,9 @@ apply manifests needs `resources: ["*"]`, and guardrails on `apply` are scoped
 by verb and cluster rather than by `resources`.
 
 ## Just-in-time access
+
+> **Not yet released.** Not in v0.3.0-alpha.1, which ignores these keys and
+> commands. It ships in the next release.
 
 A `require-approval` guardrail is satisfied only by an **approved, unexpired
 grant**: a time-boxed permission one person requests and another approves.
@@ -549,11 +555,11 @@ reloads the same way as a file, and the next `helm upgrade` overwrites it.
 
 - Denied commands return `403` and are recorded in the audit log with status
   `denied` — useful for spotting over-broad expectations. Commands a guardrail
-  stopped are recorded as `blocked`, which separates "you never had this access"
-  from "you have it, but not for this command".
+  stopped are recorded as `blocked` (next release), which separates "you never
+  had this access" from "you have it, but not for this command".
 - Validation runs at load time: a binding or `default` that names an undefined
   role is rejected, as is a guardrail with no name, a duplicate name, or an
-  action other than `deny` or `require-reason`.
+  action other than `deny`, `require-reason` or `require-approval`.
 - `default` applies only to users no binding matches; a bound user does not
   inherit it. Keep it least-privilege (or omit it to deny unbound users
   entirely).

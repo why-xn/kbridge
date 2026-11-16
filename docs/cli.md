@@ -172,6 +172,9 @@ kb admin agent-tokens revoke <id>
 
 ### `kb admin grants` (alias `grant`)
 
+> **Not yet released.** Not in v0.3.0-alpha.1, which ignores these keys and
+> commands. It ships in the next release.
+
 Triage access requests. Requires the admin role.
 
 ```bash
@@ -222,6 +225,9 @@ fixes it, for example the Pod Security label a namespace is missing. See
 
 ## Access requests
 
+> **Not yet released.** Not in v0.3.0-alpha.1, which ignores these keys and
+> commands. It ships in the next release.
+
 ### `kb request [cluster]`
 
 Ask for time-boxed access to a cluster, for guardrails whose action is
@@ -251,6 +257,9 @@ kb grants --status pending
 ```
 
 ## Policy
+
+> **Not yet released.** Not in v0.3.0-alpha.1, which ignores these keys and
+> commands. It ships in the next release.
 
 ### `kb policy validate -f <file>`
 
@@ -288,11 +297,11 @@ status is `0` for `allowed` and `1` otherwise, so it can gate a CI job.
 - A `401` response means your token expired — run `kb login` again.
 - Permission errors (`403`) come from the RBAC policy; see [rbac.md](rbac.md).
   A `403` naming a guardrail means your role does permit the command, but a
-  guardrail stopped this particular invocation.
+  guardrail stopped this particular invocation. *(next release)*
 - A `403` saying approval is required means the command needs a grant: run
   `kb request <cluster> --reason "<why>"` and have someone approve it. See
-  [rbac.md](rbac.md#just-in-time-access).
+  [rbac.md](rbac.md#just-in-time-access). *(next release)*
 - `--reason "<why>"` supplies a justification for guardrails that require one.
   It works on every command (`kb delete pod api-0 --reason "INC-4521"`), is
   stripped before the command reaches kubectl, and is stored on the audit entry.
-  A reason must be at least 8 characters.
+  A reason must be at least 8 characters. *(next release)*

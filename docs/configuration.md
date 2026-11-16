@@ -54,9 +54,9 @@ streams:
 | `rbac.policy_file` | no | When empty, all authenticated users are allowed |
 | `tls.*` | no | When `enabled`, `cert_file` + `key_file` are required |
 | `streams.max_concurrent` | no | Cap on concurrent streaming sessions; `0`/unset → default 50 |
-| `grants.max_duration` / `grants.default_duration` | no | Bounds on just-in-time grants; unset → 8h / 1h |
+| `grants.max_duration` / `grants.default_duration` | no | **Next release.** Bounds on just-in-time grants; unset → 8h / 1h |
 | `auth.jwt_secret_file` / `auth.token_pepper_file` / `auth.admin_password_file` | no | Read the secret from a file instead of the key above; the Helm chart uses these for `auth.existingSecret` |
-| `grants.notify[]` | no | Webhooks for grant events. `url` and `secret` each accept a `_file` variant and env overrides `KBRIDGE_GRANTS_NOTIFY_<n>_URL` / `_SECRET` (+ `_FILE`), indexed by position. A chat webhook URL is a credential; keep it out of the file. See [rbac.md](rbac.md#notifications) |
+| `grants.notify[]` | no | **Next release.** Webhooks for grant events. `url` and `secret` each accept a `_file` variant and env overrides `KBRIDGE_GRANTS_NOTIFY_<n>_URL` / `_SECRET` (+ `_FILE`), indexed by position. A chat webhook URL is a credential; keep it out of the file. See [rbac.md](rbac.md#notifications) |
 
 ### Control plane environment variables
 
@@ -66,7 +66,7 @@ streams:
 | `KBRIDGE_JWT_SECRET` / `KBRIDGE_JWT_SECRET_FILE` | `auth.jwt_secret` / `auth.jwt_secret_file` | — |
 | `KBRIDGE_TOKEN_PEPPER` / `KBRIDGE_TOKEN_PEPPER_FILE` | `auth.token_pepper` / `auth.token_pepper_file` | — |
 | `KBRIDGE_ADMIN_PASSWORD` / `KBRIDGE_ADMIN_PASSWORD_FILE` | `auth.admin_password` / `auth.admin_password_file` | — |
-| `KBRIDGE_GRANTS_NOTIFY_<n>_URL` / `_SECRET` (+ `_FILE`) | `grants.notify[n].url` / `.secret` | — |
+| `KBRIDGE_GRANTS_NOTIFY_<n>_URL` / `_SECRET` (+ `_FILE`) | `grants.notify[n].url` / `.secret` (next release) | — |
 
 ## Agent (`agent.yaml`)
 

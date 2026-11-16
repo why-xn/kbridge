@@ -31,8 +31,9 @@ A lightweight access gateway that lets you manage multiple Kubernetes clusters f
 2. **You run `kb` with kubectl syntax.** The CLI sends your login token and the
    command to the control plane.
 3. **The control plane checks the command**: role rules decide first, then
-   guardrails may refuse it, demand a reason, or require an approved grant.
-   Nothing reaches a cluster without passing this one chokepoint.
+   guardrails may refuse it, demand a reason, or require an approved grant
+   (guardrails and grants: next release). Nothing reaches a cluster without
+   passing this one chokepoint.
 4. **The agent runs kubectl as you.** kubectl holds no credential of its own; it
    goes through a loopback proxy in the agent that impersonates
    `kbridge:<your email>`, so the cluster's RBAC and its own audit log see the
@@ -129,9 +130,9 @@ do things a proxy cannot:
 |---|---|
 | Credential sprawl | Users authenticate to the control plane; cluster credentials never leave the agent, and access is revoked centrally |
 | Network exposure | The agent dials out, so no inbound port, bastion, or VPN is required |
-| Standing access | Just-in-time grants: request a role for a bounded window with a reason, someone approves, and it expires on its own |
-| Mistakes reaching the cluster | Guardrails evaluate the command before it is forwarded, so a destructive operation is refused rather than recorded |
-| Records that do not answer the question | One audit log across every cluster, with the reason and the approval that admitted each command |
+| Standing access | Just-in-time grants: request a role for a bounded window with a reason, someone approves, and it expires on its own *(next release)* |
+| Mistakes reaching the cluster | Guardrails evaluate the command before it is forwarded, so a destructive operation is refused rather than recorded *(next release)* |
+| Records that do not answer the question | One audit log across every cluster, with the reason and the approval that admitted each command *(reason and approval: next release)* |
 
 Work is organized into five tracks: credential-free access, just-in-time
 authorization and guardrails, verifiable attribution and audit, governed access
@@ -339,6 +340,9 @@ See [docs/rbac.md](docs/rbac.md) for the full policy reference.
 
 ### Guardrails
 
+> **Not yet released.** Not in v0.3.0-alpha.1, which ignores these keys and
+> commands. It ships in the next release.
+
 Roles decide what a person may touch. Guardrails decide whether a *particular
 command* should run, and are evaluated after the roles so they can only take
 access away. Because kbridge sees the command rather than just the API call, a
@@ -381,6 +385,9 @@ kb policy test -f configs/rbac.yaml -u alice@corp.com -c prod-eu -- delete ns pa
 ```
 
 ### Just-in-time access
+
+> **Not yet released.** Not in v0.3.0-alpha.1, which ignores these keys and
+> commands. It ships in the next release.
 
 Guardrails can also require that someone *else* says yes. A `require-approval`
 guardrail is satisfied only by a time-boxed grant, so nobody changes production
