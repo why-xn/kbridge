@@ -61,6 +61,11 @@ kb get nodes
 As with kubectl, a value with a quote or backslash is run by `sh`, so shell
 quoting works (`KUBE_EDITOR='sed -i s/replicas:\ 1/replicas:\ 2/'`); any other
 value is split on spaces. On Windows the value is always split on spaces.
+`kb edit` reads the object, opens it, and saves it with `apply`, so the audit
+log records it as `apply -f -`, kubectl may warn about a missing
+`last-applied-configuration` annotation the first time, and when something
+else changed the object meanwhile the save fails with a `Conflict`: run
+`kb edit` again.
 
 **Local manifests (`-f`).** kubectl runs on the agent, so the CLI reads local
 `-f` inputs — files, directories (`-R` to recurse) and `-` (stdin) — and sends
@@ -92,6 +97,8 @@ interactive path. Without `-i` or `-t`, `kb exec` falls back to the one-shot
 path (same as `kb exec`). The `--` separator is required to pass flags to the
 remote command instead of to `kb` itself. Ctrl-C and Ctrl-D are forwarded to
 the remote shell, not to the CLI. There is no inactivity timeout on the session.
+In a script or a pipe, where stdin is not a terminal, use `-i` alone: `-it`
+without a terminal waits forever.
 
 ```bash
 kb exec -it <pod> -- sh                          # interactive shell (full TTY)
@@ -104,7 +111,7 @@ kb exec -i <pod> -- sh -c "cat /etc/hosts"       # stdin, no TTY
 Opens local TCP listeners that tunnel to the pod's ports through the control plane. Each
 port spec can be `LOCAL:REMOTE` (fixed local port), bare `REMOTE` (local equals
 remote), or `:REMOTE` (OS-assigned random local port). Multiple ports can be
-forwarded in a single command. Any TCP-based protocol works (Postgres, Redis,
+forwarded in a single command, each remote port once. Any TCP-based protocol works (Postgres, Redis,
 HTTP, etc.). Binds localhost only (v1). Press Ctrl-C to stop all listeners. There
 is no inactivity timeout — the session stays open until you stop it.
 
@@ -117,7 +124,10 @@ kb port-forward deploy/db 5432:5432 6379:6379    # multiple ports at once
 ```
 
 ### `kb status`
-Shows the current control plane URL, authenticated user, and active cluster.
+Shows the control plane URL, whether it answers, and the selected cluster with
+its status. It does not show who you are, and after `kb logout` it still
+reports the control plane as reachable; a command that answers
+`authentication required` is the cue to run `kb login`.
 
 ## Admin (requires the admin role)
 
@@ -195,8 +205,20 @@ kb admin audit --cluster prod --limit 100
 |------|-------------|---------|
 | `--user` | Filter by user email | — |
 | `--cluster` | Filter by cluster name | — |
-| `--status` | `success` / `failed` / `denied` / `timeout` | — |
+| `--status` | `success` / `failed` / `denied` / `canceled` | — |
 | `--limit` | Max entries | 50 |
+
+A command that hits its timeout is recorded as `failed` with exit code `-1`.
+The table shows time, user, cluster, status, exit code and command; the
+namespace, duration and client IP are in the API response only.
+
+### `kb admin rbac status`
+Shows, per cluster, whether the RoleBindings the agent manages match the
+policy's `clusterAccess`: columns `CLUSTER`, `VERSION` (hash of the desired
+bindings), `STATE` (`in sync` or `drift`), `ERRORS` and `REPORTED` (when the
+agent last reported). Each error is listed under its row with the command that
+fixes it, for example the Pod Security label a namespace is missing. See
+[rbac.md](rbac.md#cluster-bindings-clusteraccess).
 
 ## Access requests
 
