@@ -54,6 +54,10 @@ The CLI, on Linux or macOS:
 curl -fsSL https://raw.githubusercontent.com/why-xn/kbridge/master/install.sh | sh
 ```
 
+`kb` talks to a control plane someone has already deployed, with an account
+they created for you. To run your own, follow the Helm quick start in
+[docs/installation.md](docs/installation.md) first.
+
 No configuration file to write: the first login asks for the control plane
 URL and saves it, with your session, in `~/.kbridge/config.yaml`.
 
@@ -140,7 +144,8 @@ for AI agents, and extending the same door to systems beyond Kubernetes. See
 
 User-facing command-line tool. **kubectl by default** — anything that isn't a
 management command (`login`, `logout`, `status`, `clusters`, `admin`) is run as
-kubectl on the selected cluster. (`kbridge` remains as a back-compat alias.)
+kubectl on the selected cluster. (`make build` also creates a `kbridge` symlink
+for back-compat; the installer and the release archives ship `kb` only.)
 
 ```bash
 kb login                      # Login to the control plane
@@ -199,7 +204,7 @@ export KBRIDGE_JWT_SECRET="$(openssl rand -hex 32)"
 ./bin/kbridge-control-plane --config configs/control-plane.yaml
 ```
 
-**2. Start an agent (locally, set `kubernetes.kubeconfig` in `configs/agent.yaml` to an absolute path; in a pod the in-cluster defaults apply):**
+**2. Start an agent (locally, uncomment the `kubernetes:` block in `configs/agent.yaml` and set `kubeconfig:` to the absolute path of your kubeconfig; in a pod the in-cluster defaults apply):**
 ```bash
 ./bin/kbridge-agent --config configs/agent.yaml
 ```
@@ -229,9 +234,9 @@ database:
   driver: sqlite
   path: kbridge.db
 auth:
-  jwt_secret: "change-me"          # required
+  jwt_secret: ""                   # required, 32+ chars; or set KBRIDGE_JWT_SECRET
   admin_email: admin@kbridge.local # seeded on first start
-  admin_password: changeme
+  admin_password: admin123         # change after first login
 rbac:
   policy_file: configs/rbac.yaml   # empty = enforcement disabled
 tls:
@@ -279,31 +284,23 @@ token: ""
 
 ## Agent Deployment
 
-```yaml
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: kbridge-agent
-  namespace: kbridge-system
-spec:
-  replicas: 1
-  template:
-    spec:
-      serviceAccountName: kbridge-agent
-      containers:
-      - name: agent
-        image: kbridge-agent:latest
-        env:
-        - name: KBRIDGE_CONTROL_PLANE_URL
-          value: "control-plane.example.com:9090"
-        - name: KBRIDGE_CLUSTER_NAME
-          value: "production-us-east"
-        - name: KBRIDGE_AGENT_TOKEN
-          valueFrom:
-            secretKeyRef:
-              name: kbridge-agent
-              key: token
+Deploy the agent with the Helm chart, one release per cluster:
+
+```bash
+helm install kbridge-agent oci://ghcr.io/why-xn/charts/kbridge-agent \
+  -n kbridge --version 0.3.0-alpha.1 \
+  --set controlPlane.url=<control-plane-host>:9090 \
+  --set controlPlane.token=<token from kb admin agent-tokens create> \
+  --set cluster.name=<name the token was created for>
 ```
+
+The chart creates what the agent needs and a hand-written manifest would
+miss: the ServiceAccount, the ClusterRole for impersonation and binding
+management, the projected token at `/var/run/kbridge/sa` with the default
+token mount turned off, and an optional egress NetworkPolicy. See
+[docs/installation.md](docs/installation.md#helm-kubernetes) for the full
+quick start and [docs/production-install.md](docs/production-install.md) for
+TLS, Secrets and multi-cluster.
 
 ## Security Model
 
