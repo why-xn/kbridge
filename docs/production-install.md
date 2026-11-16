@@ -42,19 +42,67 @@ kubectl -n kbridge create secret generic kbridge-control-plane-secrets \
 
 ## 3. Install the Control Plane
 
+`auth.adminEmail` only names the account the chart seeds. What that account may
+do in clusters comes from the policy's `bindings`, and the chart's default
+policy binds `admin@kbridge.local`. Keep the two in step with a values file
+that carries both, and keep the file: every later `helm upgrade` passes it
+again.
+
+```yaml
+# values-control-plane.yaml
+auth:
+  existingSecret: kbridge-control-plane-secrets
+  adminEmail: admin@example.com
+persistence:
+  enabled: true
+ingress:
+  enabled: true
+  className: nginx
+  host: control-plane.example.com
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+  tls:
+    - secretName: kbridge-ingress-tls
+      hosts: [control-plane.example.com]
+rbac:
+  policy: |
+    default: viewer
+    roles:
+      - name: admin
+        rules:
+          - clusters: ["*"]
+            namespaces: ["*"]
+            resources: ["*"]
+            verbs: ["*"]
+        clusterAccess:
+          - clusters: ["*"]
+            clusterRole: cluster-admin
+            clusterWide: true
+      - name: viewer
+        rules:
+          - clusters: ["*"]
+            namespaces: ["*"]
+            resources: ["*"]
+            verbs: ["get", "list", "watch", "describe", "logs", "auth"]
+        clusterAccess:
+          - clusters: ["*"]
+            clusterRole: view
+            clusterWide: true
+    bindings:
+      - subject: admin@example.com
+        roles: ["admin"]
+```
+
 ```bash
 helm install kbridge-control-plane oci://ghcr.io/why-xn/charts/kbridge-control-plane \
-  -n kbridge --version 0.3.0-alpha.1 \
-  --set auth.existingSecret=kbridge-control-plane-secrets \
-  --set auth.adminEmail=admin@example.com \
-  --set persistence.enabled=true \
-  --set ingress.enabled=true \
-  --set ingress.className=nginx \
-  --set ingress.host=control-plane.example.com \
-  --set 'ingress.annotations.cert-manager\.io/cluster-issuer=letsencrypt-prod' \
-  --set 'ingress.tls[0].secretName=kbridge-control-plane-tls' \
-  --set 'ingress.tls[0].hosts[0]=control-plane.example.com'
+  -n kbridge --version 0.3.0-alpha.1 -f values-control-plane.yaml
 ```
+
+Never upgrade this release with `--set` flags alone. Without `-f` (or
+`--reuse-values`) Helm resets every other value to the chart defaults: the
+Ingress disappears, `auth.existingSecret` is dropped, and the control plane
+starts with the placeholder `jwt_secret` the chart ships, which is long enough
+to pass validation.
 
 Verify control plane is up:
 
@@ -127,7 +175,13 @@ Agents point `controlPlane.url` at the nginx LB host on port 9090.
 
 If you want the control plane pod itself to terminate TLS on :9090 (needed when using
 option B above, or for mTLS), create a cert-manager Certificate and enable the
-chart's `tls` stanza:
+chart's `tls` stanza.
+
+This is a second certificate. cert-manager already issues `kbridge-ingress-tls`
+for the Ingress from step 3 and owns that Certificate object; a Certificate with
+that name would be reverted to the Ingress host alone. The one below is for the
+listener agents dial, so its `dnsNames` must include every host an agent puts
+in `controlPlane.url`:
 
 ```yaml
 apiVersion: cert-manager.io/v1
@@ -145,12 +199,21 @@ spec:
     - kbridge-grpc.example.com
 ```
 
-Then add to your Helm install (or `helm upgrade`):
+Then add to `values-control-plane.yaml` and upgrade with the whole file:
+
+```yaml
+tls:
+  enabled: true
+  secretName: kbridge-control-plane-tls
+ingress:
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+    nginx.ingress.kubernetes.io/backend-protocol: HTTPS
+```
 
 ```bash
---set tls.enabled=true \
---set tls.secretName=kbridge-control-plane-tls \
---set 'ingress.annotations.nginx\.ingress\.kubernetes\.io/backend-protocol=HTTPS'
+helm upgrade kbridge-control-plane oci://ghcr.io/why-xn/charts/kbridge-control-plane \
+  -n kbridge --version 0.3.0-alpha.1 -f values-control-plane.yaml
 ```
 
 With `tls.enabled` the pod serves HTTPS on 8080 too, so the Ingress must talk
@@ -300,3 +363,11 @@ current. If the status is `disconnected`, check:
 3. TLS — if `controlPlane.tls.insecure` was not set and the cert is self-signed,
    provide the CA via `controlPlane.tls.caCert`.
 4. Token — `KBRIDGE_AGENT_TOKEN_FILE` must resolve to a valid, non-revoked token.
+5. Certificate name — the host in `controlPlane.url` must be one of the control
+   plane certificate's names. A mismatch logs only `dialing control plane:
+   context deadline exceeded`; check with
+   `openssl s_client -connect <host>:9090 -servername <host> -verify_hostname <host>`.
+6. NetworkPolicy — with `networkPolicy.enabled=true`, `controlPlaneTo` must
+   contain the address the agent dials and `controlPlanePort` the port. The
+   failure looks the same as 5; upgrade once with
+   `--set networkPolicy.enabled=false` to rule it out.
