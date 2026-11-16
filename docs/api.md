@@ -14,7 +14,10 @@ Unauthenticated. Returns `{"status":"healthy","version":"v0.3.0-alpha.1"}`;
 
 ### `POST /auth/login`
 Body: `{"email","password"}`. Returns `{access_token, refresh_token, expires_in}`.
-`401` on bad credentials, `403` if the account is disabled.
+`expires_in` is the refresh token's lifetime in seconds (`auth.refresh_token_expiry`,
+604800 by default); the access token itself lasts `auth.access_token_expiry`
+(1h), after which clients refresh. `401` on bad credentials, `403` if the
+account is disabled.
 
 ### `POST /auth/refresh`
 Body: `{"refresh_token"}`. Returns a new token pair (the old refresh token is
@@ -95,7 +98,8 @@ the attach endpoint — distinct from the one-shot `/exec` and the streaming
 | `cols` | no | Initial terminal width (columns) |
 
 **Auth:** `Authorization: Bearer <jwt>`. RBAC must grant the `exec` verb on
-`pods` for the target cluster and namespace.
+`pods` for the target cluster and namespace. `400` when no `command` parameter
+is given.
 
 **Frame protocol.** On `200` the response body is a length-prefixed frame
 stream. Frames from the client (stdin data, terminal resize events) flow
@@ -189,10 +193,11 @@ Lists users (password hashes are never serialized). Each user also carries:
 Body: `{"email","name","password","is_active?"}`. `409` on duplicate email.
 
 ### `PUT /api/v1/admin/users/{id}`
-Body: any of `{"name","is_active","password"}`. `404` if not found.
+Body: any of `{"name","is_active","password"}`. `404` if not found. `is_admin`
+is not settable; only the seeded admin account has it.
 
 ### `DELETE /api/v1/admin/users/{id}`
-Deletes the user.
+Deletes the user. Idempotent: `200` for an id that is already gone.
 
 ## Admin — clusters
 
