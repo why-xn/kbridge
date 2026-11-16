@@ -31,8 +31,9 @@ A lightweight access gateway that lets you manage multiple Kubernetes clusters f
 2. **You run `kb` with kubectl syntax.** The CLI sends your login token and the
    command to the control plane.
 3. **The control plane checks the command**: role rules decide first, then
-   guardrails may refuse it, demand a reason, or require an approved grant.
-   Nothing reaches a cluster without passing this one chokepoint.
+   guardrails may refuse it, demand a reason, or require an approved grant
+   (guardrails and grants: next release). Nothing reaches a cluster without
+   passing this one chokepoint.
 4. **The agent runs kubectl as you.** kubectl holds no credential of its own; it
    goes through a loopback proxy in the agent that impersonates
    `kbridge:<your email>`, so the cluster's RBAC and its own audit log see the
@@ -53,6 +54,10 @@ The CLI, on Linux or macOS:
 ```bash
 curl -fsSL https://raw.githubusercontent.com/why-xn/kbridge/master/install.sh | sh
 ```
+
+`kb` talks to a control plane someone has already deployed, with an account
+they created for you. To run your own, follow the Helm quick start in
+[docs/installation.md](docs/installation.md) first.
 
 No configuration file to write: the first login asks for the control plane
 URL and saves it, with your session, in `~/.kbridge/config.yaml`.
@@ -125,9 +130,9 @@ do things a proxy cannot:
 |---|---|
 | Credential sprawl | Users authenticate to the control plane; cluster credentials never leave the agent, and access is revoked centrally |
 | Network exposure | The agent dials out, so no inbound port, bastion, or VPN is required |
-| Standing access | Just-in-time grants: request a role for a bounded window with a reason, someone approves, and it expires on its own |
-| Mistakes reaching the cluster | Guardrails evaluate the command before it is forwarded, so a destructive operation is refused rather than recorded |
-| Records that do not answer the question | One audit log across every cluster, with the reason and the approval that admitted each command |
+| Standing access | Just-in-time grants: request a role for a bounded window with a reason, someone approves, and it expires on its own *(next release)* |
+| Mistakes reaching the cluster | Guardrails evaluate the command before it is forwarded, so a destructive operation is refused rather than recorded *(next release)* |
+| Records that do not answer the question | One audit log across every cluster, with the reason and the approval that admitted each command *(reason and approval: next release)* |
 
 Work is organized into five tracks: credential-free access, just-in-time
 authorization and guardrails, verifiable attribution and audit, governed access
@@ -140,7 +145,8 @@ for AI agents, and extending the same door to systems beyond Kubernetes. See
 
 User-facing command-line tool. **kubectl by default** — anything that isn't a
 management command (`login`, `logout`, `status`, `clusters`, `admin`) is run as
-kubectl on the selected cluster. (`kbridge` remains as a back-compat alias.)
+kubectl on the selected cluster. (`make build` also creates a `kbridge` symlink
+for back-compat; the installer and the release archives ship `kb` only.)
 
 ```bash
 kb login                      # Login to the control plane
@@ -199,7 +205,7 @@ export KBRIDGE_JWT_SECRET="$(openssl rand -hex 32)"
 ./bin/kbridge-control-plane --config configs/control-plane.yaml
 ```
 
-**2. Start an agent (locally, set `kubernetes.kubeconfig` in `configs/agent.yaml` to an absolute path; in a pod the in-cluster defaults apply):**
+**2. Start an agent (locally, uncomment the `kubernetes:` block in `configs/agent.yaml` and set `kubeconfig:` to the absolute path of your kubeconfig; in a pod the in-cluster defaults apply):**
 ```bash
 ./bin/kbridge-agent --config configs/agent.yaml
 ```
@@ -229,9 +235,9 @@ database:
   driver: sqlite
   path: kbridge.db
 auth:
-  jwt_secret: "change-me"          # required
+  jwt_secret: ""                   # required, 32+ chars; or set KBRIDGE_JWT_SECRET
   admin_email: admin@kbridge.local # seeded on first start
-  admin_password: changeme
+  admin_password: admin123         # change after first login
 rbac:
   policy_file: configs/rbac.yaml   # empty = enforcement disabled
 tls:
@@ -279,31 +285,23 @@ token: ""
 
 ## Agent Deployment
 
-```yaml
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: kbridge-agent
-  namespace: kbridge-system
-spec:
-  replicas: 1
-  template:
-    spec:
-      serviceAccountName: kbridge-agent
-      containers:
-      - name: agent
-        image: kbridge-agent:latest
-        env:
-        - name: KBRIDGE_CONTROL_PLANE_URL
-          value: "control-plane.example.com:9090"
-        - name: KBRIDGE_CLUSTER_NAME
-          value: "production-us-east"
-        - name: KBRIDGE_AGENT_TOKEN
-          valueFrom:
-            secretKeyRef:
-              name: kbridge-agent
-              key: token
+Deploy the agent with the Helm chart, one release per cluster:
+
+```bash
+helm install kbridge-agent oci://ghcr.io/why-xn/charts/kbridge-agent \
+  -n kbridge --version 0.3.0-alpha.1 \
+  --set controlPlane.url=<control-plane-host>:9090 \
+  --set controlPlane.token=<token from kb admin agent-tokens create> \
+  --set cluster.name=<name the token was created for>
 ```
+
+The chart creates what the agent needs and a hand-written manifest would
+miss: the ServiceAccount, the ClusterRole for impersonation and binding
+management, the projected token at `/var/run/kbridge/sa` with the default
+token mount turned off, and an optional egress NetworkPolicy. See
+[docs/installation.md](docs/installation.md#helm-kubernetes) for the full
+quick start and [docs/production-install.md](docs/production-install.md) for
+TLS, Secrets and multi-cluster.
 
 ## Security Model
 
@@ -341,6 +339,9 @@ bindings:
 See [docs/rbac.md](docs/rbac.md) for the full policy reference.
 
 ### Guardrails
+
+> **Not yet released.** Not in v0.3.0-alpha.1, which ignores these keys and
+> commands. It ships in the next release.
 
 Roles decide what a person may touch. Guardrails decide whether a *particular
 command* should run, and are evaluated after the roles so they can only take
@@ -384,6 +385,9 @@ kb policy test -f configs/rbac.yaml -u alice@corp.com -c prod-eu -- delete ns pa
 ```
 
 ### Just-in-time access
+
+> **Not yet released.** Not in v0.3.0-alpha.1, which ignores these keys and
+> commands. It ships in the next release.
 
 Guardrails can also require that someone *else* says yes. A `require-approval`
 guardrail is satisfied only by a time-boxed grant, so nobody changes production

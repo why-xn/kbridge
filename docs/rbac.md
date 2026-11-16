@@ -52,7 +52,7 @@ Subjects support the same wildcards, e.g. `*@dev.corp.com`.
 |------|--------------|
 | cluster | the target cluster (`kb clusters use`) |
 | verb | the first kubectl arg (`get`, `delete`, `apply`, …) |
-| resource | the resource type; `pods` for `logs`/`exec`/`cp`/etc.; `foo/name` → `foo` |
+| resource | the resource type; `pods` for `logs`/`exec`/`cp`/etc.; `foo/name` → `foo`; empty for commands that take a manifest (`apply -f`, `create -f`, `delete -f`, `replace -f`), which only a rule with `resources: ["*"]` admits |
 | namespace | `-n`/`--namespace`; `*` for `-A`/`--all-namespaces`; else `default` |
 
 A flag that takes a value must be written `--flag=value` when it comes before
@@ -83,7 +83,7 @@ roles:
       - clusters: ["dev-*", "staging"]
         namespaces: ["*"]
         resources: ["pods", "deployments", "services", "configmaps"]
-        verbs: ["get", "list", "watch", "describe", "logs", "exec", "apply"]
+        verbs: ["get", "list", "watch", "describe", "logs", "exec"]
 
   - name: viewer
     rules:
@@ -110,7 +110,10 @@ their roles, so the `dev.corp.com` users above cannot read prod. List the
 default role in a binding (`roles: ["viewer", "developer"]`) if its users
 should keep it. The chart's default policy and `configs/rbac.yaml` give `admin` a
 cluster-wide `cluster-admin` binding and `viewer` a cluster-wide `view` binding,
-so a fresh install works without edits.
+so a fresh install works without edits. Keep a binding for your seeded admin
+(`auth.admin_email`, `admin@kbridge.local` by default) when you replace that
+policy: an admin with no binding falls back to `default` like anyone else, and
+keeps `kb admin` but loses cluster access.
 
 ## Cluster bindings (`clusterAccess`)
 
@@ -146,7 +149,7 @@ roles:
 | `clusterRole` | An existing ClusterRole to bind, such as `view` or `edit`. Required |
 | `namespaces` | Literal namespace names (no patterns). One RoleBinding per namespace |
 | `clusterWide` | `true` for one ClusterRoleBinding instead. Exactly one of `namespaces` or `clusterWide` must be set; the policy fails to load otherwise |
-| `requiresGrant` | `true` binds only the role's users who hold an approved, unexpired [grant](#just-in-time-access) for the cluster and namespace. See [Grant-gated bindings](#grant-gated-bindings) |
+| `requiresGrant` | **Next release.** `true` binds only the role's users who hold an approved, unexpired [grant](#just-in-time-access) for the cluster and namespace. See [Grant-gated bindings](#grant-gated-bindings) |
 
 What the agent creates:
 
@@ -204,6 +207,9 @@ A ClusterRoleBinding covers every namespace, including the protected ones; the
 agent's proxy still refuses every request into those.
 
 ## Guardrails
+
+> **Not yet released.** Not in v0.3.0-alpha.1, which ignores these keys and
+> commands. It ships in the next release.
 
 Role rules answer "may this person touch this resource at all?". Guardrails
 answer a narrower question: "is *this particular command* one we want run right
@@ -324,11 +330,16 @@ guardrail can only take access away.
 
 ### Known limitation
 
-The resource is parsed as the first non-flag token after the verb, so
-`apply -f app.yaml` reports its resource as `app.yaml`. Scope guardrails on
-`apply` by verb and cluster rather than by `resources`.
+Commands that take a manifest (`apply -f`, `create -f`, `delete -f`,
+`replace -f`) carry no resource type: the policy cannot see what the file
+contains. A rule with a `resources` list never admits them, so a role that may
+apply manifests needs `resources: ["*"]`, and guardrails on `apply` are scoped
+by verb and cluster rather than by `resources`.
 
 ## Just-in-time access
+
+> **Not yet released.** Not in v0.3.0-alpha.1, which ignores these keys and
+> commands. It ships in the next release.
 
 A `require-approval` guardrail is satisfied only by an **approved, unexpired
 grant**: a time-boxed permission one person requests and another approves.
@@ -528,21 +539,27 @@ restart:
   at once from the file as it is on disk (it does not hurry a ConfigMap edit):
 
   ```bash
-  kill -HUP "$(pidof kbridge-control-plane)"
+  kill -HUP "$(pidof kbridge-control-plane)"                               # host process
+  kubectl -n kbridge exec deploy/kbridge-control-plane -- kill -HUP 1      # in a pod
   ```
 
 A reload that fails to parse or validate is logged and the previous policy
-stays active, so a bad edit never takes down enforcement.
+stays active, so a bad edit never takes down enforcement. That holds for the
+file paths above. Through Helm the control plane is restarted, so a bad
+`rbac.policy` keeps the new pod from starting: `helm upgrade` reports
+`deployed`, the pod logs `loading rbac policy: …` and crash-loops until the
+value is fixed and upgraded again. A direct edit of the rendered ConfigMap
+reloads the same way as a file, and the next `helm upgrade` overwrites it.
 
 ## Operational notes
 
 - Denied commands return `403` and are recorded in the audit log with status
   `denied` — useful for spotting over-broad expectations. Commands a guardrail
-  stopped are recorded as `blocked`, which separates "you never had this access"
-  from "you have it, but not for this command".
+  stopped are recorded as `blocked` (next release), which separates "you never
+  had this access" from "you have it, but not for this command".
 - Validation runs at load time: a binding or `default` that names an undefined
   role is rejected, as is a guardrail with no name, a duplicate name, or an
-  action other than `deny` or `require-reason`.
+  action other than `deny`, `require-reason` or `require-approval`.
 - `default` applies only to users no binding matches; a bound user does not
   inherit it. Keep it least-privilege (or omit it to deny unbound users
   entirely).

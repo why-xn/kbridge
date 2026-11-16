@@ -1,8 +1,9 @@
 # Configuration Reference
 
 All components follow the same pattern: `DefaultConfig() → LoadConfig(path) →
-Validate()`. Configs are YAML; the agent and CLI also honour environment
-variables.
+Validate()`. Configs are YAML; the control plane and the agent also honour the
+environment variables listed under each component. The CLI reads only its
+config file and the editor variables (`KUBE_EDITOR`, `EDITOR`, `VISUAL`).
 
 ## Control Plane (`control-plane.yaml`)
 
@@ -53,8 +54,19 @@ streams:
 | `rbac.policy_file` | no | When empty, all authenticated users are allowed |
 | `tls.*` | no | When `enabled`, `cert_file` + `key_file` are required |
 | `streams.max_concurrent` | no | Cap on concurrent streaming sessions; `0`/unset → default 50 |
-| `grants.max_duration` / `grants.default_duration` | no | Bounds on just-in-time grants; unset → 8h / 1h |
-| `grants.notify[]` | no | Webhooks for grant events. `url` and `secret` each accept a `_file` variant and env overrides `KBRIDGE_GRANTS_NOTIFY_<n>_URL` / `_SECRET` (+ `_FILE`), indexed by position. A chat webhook URL is a credential; keep it out of the file. See [rbac.md](rbac.md#notifications) |
+| `grants.max_duration` / `grants.default_duration` | no | **Next release.** Bounds on just-in-time grants; unset → 8h / 1h |
+| `auth.jwt_secret_file` / `auth.token_pepper_file` / `auth.admin_password_file` | no | Read the secret from a file instead of the key above; the Helm chart uses these for `auth.existingSecret` |
+| `grants.notify[]` | no | **Next release.** Webhooks for grant events. `url` and `secret` each accept a `_file` variant and env overrides `KBRIDGE_GRANTS_NOTIFY_<n>_URL` / `_SECRET` (+ `_FILE`), indexed by position. A chat webhook URL is a credential; keep it out of the file. See [rbac.md](rbac.md#notifications) |
+
+### Control plane environment variables
+
+| Variable | Overrides | Default |
+|----------|-----------|---------|
+| `KBRIDGE_CONFIG` | config file path | `configs/control-plane.yaml` |
+| `KBRIDGE_JWT_SECRET` / `KBRIDGE_JWT_SECRET_FILE` | `auth.jwt_secret` / `auth.jwt_secret_file` | — |
+| `KBRIDGE_TOKEN_PEPPER` / `KBRIDGE_TOKEN_PEPPER_FILE` | `auth.token_pepper` / `auth.token_pepper_file` | — |
+| `KBRIDGE_ADMIN_PASSWORD` / `KBRIDGE_ADMIN_PASSWORD_FILE` | `auth.admin_password` / `auth.admin_password_file` | — |
+| `KBRIDGE_GRANTS_NOTIFY_<n>_URL` / `_SECRET` (+ `_FILE`) | `grants.notify[n].url` / `.secret` (next release) | — |
 
 ## Agent (`agent.yaml`)
 
@@ -84,6 +96,8 @@ sync:
 
 | Key | Env var | Default | Meaning |
 |-----|---------|---------|---------|
+| `control_plane.token_file` | `KBRIDGE_AGENT_TOKEN_FILE` | empty | File holding the agent token; the Helm chart sets it for `controlPlane.existingSecret`. Precedence: `KBRIDGE_AGENT_TOKEN_FILE`, `KBRIDGE_AGENT_TOKEN`, `AGENT_TOKEN`, `token_file`, `token` |
+| `health_file` | — | `/tmp/kbridge-agent-healthy` | Touched while the agent is connected; the chart's exec probe reads it |
 | `kubernetes.server` | `KBRIDGE_KUBERNETES_SERVER` | `https://$KUBERNETES_SERVICE_HOST:$KUBERNETES_SERVICE_PORT` (port `443` if unset; empty outside a pod) | API server the agent's kubectl is pointed at |
 | `kubernetes.ca_file` | `KBRIDGE_KUBERNETES_CA_FILE` | `/var/run/kbridge/sa/ca.crt` | CA that verifies the API server |
 | `kubernetes.token_file` | `KBRIDGE_KUBERNETES_TOKEN_FILE` | `/var/run/kbridge/sa/token` | ServiceAccount token the agent uses for impersonation and binding sync |
@@ -100,6 +114,7 @@ Validation: `kubernetes.server` and `kubernetes.token_file` are required unless
 |----------|-----------|---------|
 | `KBRIDGE_CONFIG` | config file path | `configs/agent.yaml` |
 | `KBRIDGE_CONTROL_PLANE_URL` | `control_plane.url` | `localhost:9090` |
+| `KBRIDGE_AGENT_TOKEN_FILE` | `control_plane.token_file` | — |
 | `KBRIDGE_AGENT_TOKEN` / `AGENT_TOKEN` | `control_plane.token` | — |
 | `KBRIDGE_CLUSTER_NAME` | `cluster.name` | `default` |
 | `KBRIDGE_KUBERNETES_SERVER`, `KBRIDGE_KUBERNETES_CA_FILE`, `KBRIDGE_KUBERNETES_TOKEN_FILE`, `KBRIDGE_KUBECONFIG`, `KBRIDGE_PROTECTED_NAMESPACES`, `KBRIDGE_SYNC_INTERVAL` | see the table above | see the table above |

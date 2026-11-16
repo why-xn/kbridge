@@ -63,9 +63,11 @@ kubectl -n kbridge scale deploy/kbridge-control-plane --replicas=1
 ### Restore
 
 ```bash
-# Start the helper pod (above), then:
-kubectl -n kbridge exec kbridge-db -- rm -f /data/kbridge.db /data/kbridge.db-wal /data/kbridge.db-shm
-kubectl -n kbridge exec -i kbridge-db -- tar -C /data -xf - < kbridge-backup.tar
+# Start the helper pod (above), then restore the archive the backup step wrote.
+# The redirect is checked before anything runs, so a wrong path deletes nothing.
+BACKUP=kbridge-backup-20260115.tar
+kubectl -n kbridge exec -i kbridge-db -- \
+  sh -c 'rm -f /data/kbridge.db /data/kbridge.db-wal /data/kbridge.db-shm && tar -C /data -xf -' < "$BACKUP"
 kubectl -n kbridge delete pod kbridge-db
 kubectl -n kbridge scale deploy/kbridge-control-plane --replicas=1
 ```
@@ -233,13 +235,13 @@ permissions it renders.
 |---------|-------|------------|
 | **Agent won't connect** | gRPC port 9090 reachable from agent pod? | `kubectl -n kbridge exec deploy/kbridge-agent -- nc -zv <control-plane-host> 9090` |
 | | TLS CA mismatch? | Verify agent `control_plane.tls.ca_file` matches the cert served by the control plane |
-| | Token invalid or revoked? | `kb admin agent-tokens list` — the agent's token `PREFIX` must be listed with `REVOKED` `false` (agent tokens do not expire); issue a new one if not |
+| | Token invalid or revoked? | `kb admin agent-tokens list` — the agent's token `PREFIX` must be listed with `REVOKED` `false`; a token created with `--expires-in-days` also has an `expires_at` (`GET /api/v1/admin/agent-tokens`) that must be in the future. Issue a new one if not |
 | | `kb clusters list` shows "disconnected"? | Check agent logs: `kubectl -n kbridge logs deploy/kbridge-agent -f` |
 | **401 from `kb`** | Access token expired? | `kb` auto-refreshes; if the refresh token is also expired, run `kb login` |
-| | `jwt_secret` rotated on the control plane? | All sessions are invalidated — `kb login` required for all users |
+| | `jwt_secret` rotated on the control plane? | Users are refreshed silently while their refresh token is valid. The agents are what break: with `auth.token_pepper` empty, agent tokens are keyed by `jwt_secret`, so every agent is rejected with `invalid agent token` and crash-loops. Set a dedicated `token_pepper` before rotating, or re-issue every agent token afterwards |
 | **TLS errors** | Certificate mismatch? | Verify the SAN on the cert covers the hostname the agent/CLI uses; regenerate with `make certs` for dev |
 | | Self-signed cert rejected by CLI? | Set `insecure_skip_verify: true` in `~/.kbridge/config.yaml` (development only) |
-| **503 from `kb`** | Agent pod down? | `kubectl -n kbridge get pod -l app.kubernetes.io/name=kbridge-agent` |
+| **`kb` says `cluster "<name>": agent is disconnected`** (`503` on the API) | Agent pod down? | `kubectl -n kbridge get pod -l app.kubernetes.io/name=kbridge-agent` |
 | | Agent disconnected? | `kubectl -n kbridge logs deploy/kbridge-agent --tail=50`; check for reconnect loop |
 | | Agent heartbeat stale? | Exec probe reads `/tmp/kbridge-agent-healthy`; check `kubectl -n kbridge describe pod <agent-pod>` events |
 | **429 Too Many Requests** | Concurrent session limit hit? | Default `streams.max_concurrent=50`; increase in `control-plane.yaml` or reduce concurrent users |

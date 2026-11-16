@@ -54,8 +54,8 @@ api/proto/agentpb       generated gRPC code (never edited by hand)
 
 One dependency rule matters: **`internal/policy` imports nothing heavy.** It has
 no Gin, no gRPC, no database driver. That is what lets the CLI link it and
-evaluate a policy file offline, which is how `kb policy test` runs in CI without
-a control plane. `internal/controlplane/policy.go` is a thin alias shim so the
+evaluate a policy file offline, which is how `kb policy test` (next release)
+runs in CI without a control plane. `internal/controlplane/policy.go` is a thin alias shim so the
 server's call sites still read naturally.
 
 Changing `api/proto/agent.proto` means running `make proto`. The generated
@@ -166,6 +166,9 @@ over in-memory pipes rather than needing a live cluster.
 
 ## Authorization pipeline
 
+> **Not yet released.** The guardrail, reason and approval branches below ship
+> in the next release; v0.3.0-alpha.1 stops after the role rules.
+
 Every path funnels through one function, `authorizeExec`. There is no second
 authorization route to keep in sync, which is deliberate: a new command path
 inherits the full decision for free.
@@ -207,6 +210,9 @@ logged and the previous policy stays active, so a bad edit never disables
 enforcement.
 
 ## Just-in-time access
+
+> **Not yet released.** Not in v0.3.0-alpha.1, which ignores these keys and
+> commands. It ships in the next release.
 
 A `require-approval` guardrail is satisfied only by a grant someone else
 approved.
