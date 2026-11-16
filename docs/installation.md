@@ -27,8 +27,9 @@ curl -fsSL https://raw.githubusercontent.com/why-xn/kbridge/master/install.sh \
   | KBRIDGE_VERSION=v0.3.0-alpha.1 sh
 ```
 
-To install into a custom directory (default is `/usr/local/bin`; the installer
-creates it if it does not exist):
+The default directory is `/usr/local/bin`, which usually needs `sudo`; the
+installer asks for it when the directory is not writable. To install somewhere
+on your own `PATH` instead:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/why-xn/kbridge/master/install.sh \
@@ -41,9 +42,16 @@ and places the `kb` binary in the install directory.
 
 ### Manual download
 
-Download the binary for your platform directly from the
-[GitHub Releases page](https://github.com/why-xn/kbridge/releases), verify the
-checksum from `checksums.txt`, and place `kb` on your `$PATH`.
+The release assets are archives, `kb_<version>_<os>_<arch>.tar.gz` for Linux
+and macOS and `.zip` for Windows, plus `checksums.txt`. Download the one for
+your platform and the checksums file from the
+[GitHub Releases page](https://github.com/why-xn/kbridge/releases), then:
+
+```bash
+sha256sum -c --ignore-missing checksums.txt   # macOS: shasum -a 256 -c --ignore-missing checksums.txt
+tar -xzf kb_<version>_<os>_<arch>.tar.gz kb
+install -m 0755 kb ~/.local/bin/kb            # or anywhere on your PATH
+```
 
 ### Go install (fallback)
 
@@ -51,7 +59,9 @@ checksum from `checksums.txt`, and place `kb` on your `$PATH`.
 go install github.com/why-xn/kbridge/cmd/kb@latest
 ```
 
-This requires Go 1.25+ and places `kb` in `$GOPATH/bin`.
+This requires Go 1.25+ and places `kb` in `$GOPATH/bin`. It builds the newest
+tagged release, but without version stamping: `kb --version` prints `dev`.
+Prefer the installer when you need to report a version.
 
 ## From source (binaries)
 
@@ -61,11 +71,19 @@ Requires Go 1.25+.
 make build      # builds bin/kb (+ kbridge symlink), bin/kbridge-control-plane, bin/kbridge-agent
 ```
 
-Run the control plane and an agent with example configs:
+Run the control plane and an agent with the example configs. The control
+plane needs a JWT secret of at least 32 characters, and the agent needs a
+kubeconfig when it runs outside a pod:
 
 ```bash
+export KBRIDGE_JWT_SECRET="$(openssl rand -hex 32)"
 ./bin/kbridge-control-plane --config configs/control-plane.yaml
-./bin/kbridge-agent   --config configs/agent.yaml
+
+# In configs/agent.yaml, uncomment the kubernetes: block and set kubeconfig:
+# to the absolute path of your kubeconfig, then:
+./bin/kbridge-agent --config configs/agent.yaml
+
+./bin/kb login   # http://localhost:8080, admin@kbridge.local / admin123
 ```
 
 ## Docker
@@ -77,16 +95,30 @@ make docker                                  # builds all three images
 make docker IMAGE_PREFIX=ghcr.io/acme VERSION=v0.3.0-alpha.1
 ```
 
-Images produced (with defaults): `kbridge-control-plane:latest`,
-`kbridge-agent:latest`, `kbridge:latest`.
+Images are tagged with `git describe` (`dev` outside a git checkout), never
+`latest`; set `VERSION` to choose. `make docker VERSION=local` produces
+`kbridge-control-plane:local`, `kbridge-agent:local` and `kbridge:local`.
 
-Run the control plane:
+Run the published control plane image. The example config's paths do not
+exist in the image, so point the database at the `kbridge` user's home on a
+volume and mount the policy file next to the config:
 
 ```bash
+sed -e 's#path: kbridge.db#path: /home/kbridge/kbridge.db#' \
+    -e 's#policy_file: "configs/rbac.yaml"#policy_file: "/etc/kbridge/rbac.yaml"#' \
+    configs/control-plane.yaml > control-plane.docker.yaml
+docker volume create kbridge-data
 docker run -p 8080:8080 -p 9090:9090 \
-  -v "$PWD/configs/control-plane.yaml:/etc/kbridge/control-plane.yaml:ro" \
-  kbridge-control-plane:latest
+  -e KBRIDGE_JWT_SECRET="$(openssl rand -hex 32)" \
+  -v kbridge-data:/home/kbridge \
+  -v "$PWD/control-plane.docker.yaml:/etc/kbridge/control-plane.yaml:ro" \
+  -v "$PWD/configs/rbac.yaml:/etc/kbridge/rbac.yaml:ro" \
+  ghcr.io/why-xn/kbridge-control-plane:v0.3.0-alpha.1
+curl http://localhost:8080/health   # {"status":"healthy"}
 ```
+
+Use the tag from `make docker` in place of the published image to run a local
+build.
 
 ## Helm (Kubernetes)
 
@@ -165,13 +197,16 @@ cluster, create and label the `kbridge` namespace there first and set
 
 ### Step 4: Label namespaces where kbridge grants `edit`
 
+The default policy grants only `view` and `cluster-admin`, so the quick start
+needs no label. Do this when you add a role whose `clusterAccess` binds `edit`
+(or any role that can create pods) in a namespace:
+
 ```bash
 kubectl label ns <ns> pod-security.kubernetes.io/enforce=baseline
 ```
 
-Without the label kbridge will not grant `edit` (or any role that can create
-pods) in that namespace: the agent refuses the binding and
-`kb admin rbac status` shows the command to fix it.
+Without the label the agent refuses that binding and `kb admin rbac status`
+shows the command to fix it.
 
 `cluster.name` must match the `--cluster` the token was created for. For a
 production install, keep the token in a Kubernetes Secret and point the chart at
