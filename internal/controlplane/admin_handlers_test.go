@@ -559,3 +559,47 @@ func TestAdminHandler_ListAuditLogs_NamespaceCommandParams(t *testing.T) {
 		t.Errorf("want total 1, got %d", resp.Total)
 	}
 }
+
+func TestAdminClusters_ReportsHeartbeatAndFirstConnection(t *testing.T) {
+	db := newTestStore(t)
+	ctx := context.Background()
+	seen := time.Date(2026, 11, 18, 10, 0, 0, 0, time.UTC)
+	for _, cl := range []*Cluster{{Name: "fresh"}, {Name: "live", LastSeenAt: &seen}} {
+		if err := db.CreateCluster(ctx, cl); err != nil {
+			t.Fatalf("seed cluster: %v", err)
+		}
+	}
+	agents := NewAgentStore()
+	live := &AgentInfo{ID: "a1", ClusterName: "live"}
+	agents.Register(live)
+	live.LastSeen = seen // Register stamps now; pin it to assert the exact value
+	jm := auth.NewJWTManager("test-secret-at-least-32-chars!!", time.Hour)
+	srv := NewHTTPServer(agents, NewCommandQueue(), nil, NewAdminHandlers(db, testPepper, agents), nil, nil, nil, jm)
+	get := func(isAdmin bool) *httptest.ResponseRecorder {
+		tok, _ := jm.GenerateAccessToken(&auth.UserClaims{UserID: "u1", Email: "u@example.com", IsAdmin: isAdmin})
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/admin/clusters", nil)
+		req.Header.Set("Authorization", "Bearer "+tok)
+		w := httptest.NewRecorder()
+		srv.Handler().ServeHTTP(w, req)
+		return w
+	}
+
+	if w := get(false); w.Code != http.StatusForbidden {
+		t.Fatalf("non-admin: want 403, got %d", w.Code)
+	}
+	w := get(true)
+	var out struct {
+		Clusters []AdminCluster `json:"clusters"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &out); err != nil || len(out.Clusters) != 2 {
+		t.Fatalf("admin: %d %s (%v)", w.Code, w.Body.String(), err)
+	}
+	fresh, got := out.Clusters[0], out.Clusters[1]
+	if fresh.Name != "fresh" || fresh.Status != AgentStatusDisconnected || fresh.EverConnected || fresh.LastHeartbeat != nil {
+		t.Errorf("fresh = %+v", fresh)
+	}
+	if got.Name != "live" || got.Status != AgentStatusConnected || !got.EverConnected ||
+		got.LastHeartbeat == nil || !got.LastHeartbeat.Equal(seen) {
+		t.Errorf("live = %+v", got)
+	}
+}

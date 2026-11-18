@@ -142,6 +142,8 @@ func (s *HTTPServer) setupRoutes() {
 				admin.GET("/audit", s.adminHandlers.HandleListAuditLogs)
 
 				admin.GET("/rbac/status", s.handleRBACStatus)
+
+				admin.GET("/clusters", s.handleAdminClusters)
 			}
 		}
 	}
@@ -167,6 +169,51 @@ func (s *HTTPServer) handleListClusters(c *gin.Context) {
 		clusters = append(clusters, ClusterResponse{Name: name, Status: status})
 	}
 	slices.SortFunc(clusters, func(a, b ClusterResponse) int { return strings.Compare(a.Name, b.Name) })
+	c.JSON(http.StatusOK, gin.H{"clusters": clusters})
+}
+
+// AdminCluster is a cluster as the admin console sees it. A disconnected
+// cluster that never connected is waiting for its agent's first registration.
+type AdminCluster struct {
+	Name          string     `json:"name"`
+	Status        string     `json:"status"`
+	LastHeartbeat *time.Time `json:"last_heartbeat"`
+	EverConnected bool       `json:"ever_connected"`
+	CreatedAt     time.Time  `json:"created_at"`
+}
+
+// handleAdminClusters lists every known cluster with its agent's last
+// heartbeat and whether an agent ever connected, sorted by name.
+func (s *HTTPServer) handleAdminClusters(c *gin.Context) {
+	ctx := c.Request.Context()
+	statuses, err := s.clusterStatuses(ctx)
+	if err != nil {
+		log.Printf("listing admin clusters: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
+		return
+	}
+	persisted, err := s.adminHandlers.store.ListClusters(ctx)
+	if err != nil {
+		log.Printf("listing admin clusters: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
+		return
+	}
+	byName := make(map[string]*Cluster, len(persisted))
+	for _, cl := range persisted {
+		byName[cl.Name] = cl
+	}
+	clusters := make([]AdminCluster, 0, len(statuses))
+	for name, status := range statuses {
+		ac := AdminCluster{Name: name, Status: status}
+		if cl := byName[name]; cl != nil {
+			ac.EverConnected, ac.CreatedAt = cl.LastSeenAt != nil, cl.CreatedAt
+		}
+		if agent, ok := s.agentStore.GetByClusterName(name); ok {
+			ac.LastHeartbeat = &agent.LastSeen
+		}
+		clusters = append(clusters, ac)
+	}
+	slices.SortFunc(clusters, func(a, b AdminCluster) int { return strings.Compare(a.Name, b.Name) })
 	c.JSON(http.StatusOK, gin.H{"clusters": clusters})
 }
 

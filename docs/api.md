@@ -182,6 +182,25 @@ Body: any of `{"name","is_active","password"}`. `404` if not found.
 ### `DELETE /api/v1/admin/users/{id}`
 Deletes the user.
 
+## Admin — clusters
+
+### `GET /api/v1/admin/clusters`
+Every known cluster, sorted by name. Returns:
+
+```json
+{ "clusters": [ {
+  "name": "prod",
+  "status": "connected",
+  "last_heartbeat": "<RFC3339 of the agent's last heartbeat; null when no agent is registered>",
+  "ever_connected": true,
+  "created_at": "<RFC3339>"
+} ] }
+```
+
+`status` follows the same rule as `GET /api/v1/clusters`. `ever_connected` is
+false until an agent first registers, so `disconnected` with
+`ever_connected: false` means the cluster is waiting for its agent.
+
 ## Admin — RBAC sync
 
 ### `GET /api/v1/admin/rbac/status`
