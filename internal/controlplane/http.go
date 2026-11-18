@@ -13,6 +13,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/why-xn/kbridge/internal/auth"
 	"github.com/why-xn/kbridge/internal/kubeargs"
+	"github.com/why-xn/kbridge/internal/version"
 )
 
 // ClusterResponse represents a cluster in API responses.
@@ -149,10 +150,12 @@ func (s *HTTPServer) setupRoutes() {
 	}
 }
 
-// handleHealth returns the health status of the control plane.
+// handleHealth returns the health status and the release tag, which the
+// console's sign-in page shows.
 func (s *HTTPServer) handleHealth(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
-		"status": "healthy",
+		"status":  "healthy",
+		"version": version.Version,
 	})
 }
 

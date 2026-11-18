@@ -513,6 +513,7 @@ const STATUS_COLOR = { success: 'green', denied: 'orange', failed: 'red', timeou
 const PAGE_SIZES = [25, 50, 100, 200];
 const RANGES = [['', 'Any Time'], ['1h', 'Last Hour', 3600e3], ['24h', 'Last 24 Hours', 86400e3], ['7d', 'Last 7 Days', 7 * 86400e3], ['custom', 'Custom Range…']];
 const EXPORT_CAP = 10000;
+const ANY_TIME = '1970-01-01T00:00:00Z'; // Any Time is explicit so it survives in the hash
 const presetFrom = new Map(); // from timestamp -> preset id, so the Time select can name what was picked
 
 function auditFilters(params) {
@@ -527,6 +528,7 @@ function auditFilters(params) {
 function auditQuery(f, page, per) {
   const q = new URLSearchParams();
   for (const k of AUDIT_KEYS) if (f[k]) q.set(k, f[k]);
+  if (!f.from && !f.to) q.set('from', new Date(Date.now() - 86400e3).toISOString().slice(0, 19) + 'Z');
   q.set('page', page);
   q.set('per_page', per);
   return '/api/v1/admin/audit?' + q.toString();
@@ -626,7 +628,8 @@ function isoToLocal(iso) {
 function pickRange(st, id) {
   const r = RANGES.find((x) => x[0] === id);
   if (id === 'custom') return showCustom(st.ui, true);
-  if (!r[2]) return setFilters(st, { from: '', to: '' });
+  if (id === '') return setFilters(st, { from: ANY_TIME, to: '' });
+  if (id === '24h') return setFilters(st, { from: '', to: '' }); // the default: no from/to in the hash
   const from = new Date(Date.now() - r[2]).toISOString().slice(0, 19) + 'Z';
   presetFrom.set(from, id);
   setFilters(st, { from, to: '' });
@@ -659,9 +662,9 @@ function syncFilterForm(st) {
   fillClusterSelect(st);
   for (const b of ui.seg.children) b.setAttribute('aria-pressed', String(b.dataset.status === f.status));
   const preset = !f.to && presetFrom.get(f.from);
-  const id = !f.from && !f.to ? '' : preset || 'custom';
+  const id = !f.from && !f.to ? '24h' : f.from === ANY_TIME && !f.to ? '' : preset || 'custom';
   ui.range.value = id;
-  ui.fromInput.value = f.from ? isoToLocal(f.from) : '';
+  ui.fromInput.value = f.from && f.from !== ANY_TIME ? isoToLocal(f.from) : '';
   ui.toInput.value = f.to ? isoToLocal(f.to) : '';
   showCustom(ui, id === 'custom');
   renderLive(st);
@@ -1087,8 +1090,17 @@ function loginLayout() {
       h('div', { class: 'login-top' }, logo(),
         h('div', {}, h('h1', { text: 'Sign in' }), h('p', {}, 'Admin console. Everyone else uses ', h('code', { text: 'kb login' }), '.'))),
       ui.banner, form),
-    h('footer', { class: 'login-foot' }, h('span', { text: 'kbridge' }), themeButton()));
+    h('footer', { class: 'login-foot' }, versionLabel(), themeButton()));
   return ui;
+}
+
+// versionLabel reads the release tag from /health; without it the footer says just kbridge.
+function versionLabel() {
+  const span = h('span', { text: 'kbridge' });
+  fetch('/health', { cache: 'no-store' }).then((r) => (r.ok ? r.json() : {})).then((b) => {
+    if (b && typeof b.version === 'string' && b.version) span.textContent = 'kbridge ' + b.version;
+  }).catch(() => {});
+  return span;
 }
 
 function arc() {
