@@ -267,6 +267,8 @@ func (h *AdminHandlers) HandleListAuditLogs(c *gin.Context) {
 		UserEmail:   c.Query("user"),
 		ClusterName: c.Query("cluster"),
 		Status:      c.Query("status"),
+		Namespace:   c.Query("namespace"),
+		Command:     c.Query("command"),
 		Page:        atoiDefault(c.Query("page"), 1),
 		PerPage:     clampPerPage(atoiDefault(c.Query("per_page"), defaultAuditPerPage)),
 	}

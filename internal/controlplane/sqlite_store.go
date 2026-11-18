@@ -511,6 +511,18 @@ func (s *SQLiteStore) ListAuditLogs(ctx context.Context, filter AuditLogFilter) 
 	return logs, total, rows.Err()
 }
 
+// maxCommandFilterLen bounds the LIKE pattern a caller can make the database scan with.
+const maxCommandFilterLen = 200
+
+var likeEscaper = strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`)
+
+func truncateRunes(s string, n int) string {
+	if r := []rune(s); len(r) > n {
+		return string(r[:n])
+	}
+	return s
+}
+
 func buildAuditFilter(f AuditLogFilter) (string, []any) {
 	var clauses []string
 	var args []any
@@ -525,6 +537,14 @@ func buildAuditFilter(f AuditLogFilter) (string, []any) {
 	if f.Status != "" {
 		clauses = append(clauses, "status = ?")
 		args = append(args, f.Status)
+	}
+	if f.Namespace != "" {
+		clauses = append(clauses, "namespace = ?")
+		args = append(args, f.Namespace)
+	}
+	if f.Command != "" {
+		clauses = append(clauses, `command LIKE ? ESCAPE '\' COLLATE NOCASE`)
+		args = append(args, "%"+likeEscaper.Replace(truncateRunes(f.Command, maxCommandFilterLen))+"%")
 	}
 	if f.From != nil {
 		clauses = append(clauses, "created_at >= ?")

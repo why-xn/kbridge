@@ -534,3 +534,28 @@ func assertClusterListed(t *testing.T, srv *HTTPServer, name, want string) {
 		t.Fatalf("clusters = %+v, want %s %s", out.Clusters, name, want)
 	}
 }
+
+func TestAdminHandler_ListAuditLogs_NamespaceCommandParams(t *testing.T) {
+	ah, store := newTestAdminHandlers(t)
+	for _, l := range []AuditLog{
+		{Command: "get pods -n team-a", Namespace: "team-a"},
+		{Command: "get secrets -n kube-system", Namespace: "kube-system"},
+	} {
+		l.UserEmail, l.ClusterName, l.Status = "u@test.com", "prod", "success"
+		if err := store.CreateAuditLog(context.Background(), &l); err != nil {
+			t.Fatalf("create audit log: %v", err)
+		}
+	}
+	w := doRequest(t, "GET", "/audit", ah.HandleListAuditLogs,
+		"GET", "/audit?namespace=team-a&command=pods", nil)
+	if w.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d: %s", w.Code, w.Body.String())
+	}
+	var resp struct{ Total int }
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if resp.Total != 1 {
+		t.Errorf("want total 1, got %d", resp.Total)
+	}
+}

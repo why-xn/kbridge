@@ -632,3 +632,47 @@ func TestSQLiteStore_AuditLogs(t *testing.T) {
 		t.Run(tc.name, tc.fn)
 	}
 }
+
+func TestListAuditLogs_FiltersByNamespaceAndCommand(t *testing.T) {
+	store := newTestStore(t)
+	ctx := context.Background()
+	for _, l := range []AuditLog{
+		{Command: "get pods -n team-a", Namespace: "team-a"},
+		{Command: "get secrets -n kube-system", Namespace: "kube-system"},
+		{Command: "get 100%_done", Namespace: "default"},
+	} {
+		l.UserEmail, l.ClusterName, l.Status = "u@test.com", "prod", "success"
+		if err := store.CreateAuditLog(ctx, &l); err != nil {
+			t.Fatalf("create audit log: %v", err)
+		}
+	}
+
+	tests := []struct {
+		name   string
+		filter AuditLogFilter
+		want   string
+	}{
+		{"namespace exact", AuditLogFilter{Namespace: "team-a"}, "get pods -n team-a"},
+		{"command case-insensitive", AuditLogFilter{Command: "SECRETS"}, "get secrets -n kube-system"},
+		{"percent is literal", AuditLogFilter{Command: "%"}, "get 100%_done"},
+		{"underscore is literal", AuditLogFilter{Command: "_"}, "get 100%_done"},
+		{"filters combine", AuditLogFilter{Namespace: "kube-system", Command: "pods"}, ""},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			logs, total, err := store.ListAuditLogs(ctx, tc.filter)
+			if err != nil {
+				t.Fatalf("list: %v", err)
+			}
+			if tc.want == "" {
+				if total != 0 {
+					t.Fatalf("want 0 rows, got %d", total)
+				}
+				return
+			}
+			if total != 1 || logs[0].Command != tc.want {
+				t.Fatalf("want 1 row %q, got total %d", tc.want, total)
+			}
+		})
+	}
+}

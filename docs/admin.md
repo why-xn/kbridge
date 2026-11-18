@@ -87,8 +87,8 @@ recorded as `failed` with the error `agent is disconnected` and no exit code.
 kb admin audit --cluster prod --status denied --limit 100
 ```
 
-Or `GET /api/v1/admin/audit` with `user`, `cluster`, `status`, `from`/`to`
-(RFC3339), `page`, `per_page` filters.
+Or `GET /api/v1/admin/audit` with `user`, `cluster`, `status`, `namespace`,
+`command` (substring), `from`/`to` (RFC3339), `page`, `per_page` filters.
 
 Logs older than `audit.retention_days` are pruned automatically every
 `audit.cleanup_interval` (configured in `control-plane.yaml`).
