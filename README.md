@@ -156,8 +156,9 @@ export KBRIDGE_JWT_SECRET="$(openssl rand -hex 32)"
 ./bin/kb get pods -A
 ```
 
-Admins can also open the read-only console at `https://<control-plane>/ui/`
-(see [docs/console.md](docs/console.md)).
+Admins can also open the read-only console at `http://localhost:8080/ui/`
+(or `https://<control-plane>/ui/` in a real install; see
+[docs/console.md](docs/console.md)).
 
 See [docs/installation.md](docs/installation.md) for binary, Docker, and Helm
 installs, and the [Documentation](#documentation) section below for full references.

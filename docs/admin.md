@@ -1,8 +1,11 @@
 # Admin Guide
 
-Administrative operations require a user with the `admin` role (granted via the
-[RBAC policy](rbac.md) bindings). The first admin is seeded from `auth.admin_*`
-in `control-plane.yaml` on first startup.
+Administrative operations (`kb admin …` and `/api/v1/admin/*`) require the
+admin account the control plane seeds from `auth.admin_*` in
+`control-plane.yaml` on first start. The admin flag lives on that user record,
+and there is no command or API call that grants it to another user yet. The
+`admin` role in the [RBAC policy](rbac.md) is a different thing: it decides
+which kubectl commands a user may run, not who may administer kbridge.
 
 These tasks are driven primarily through the `kb admin …` CLI (run
 `kb login` as an admin first); the equivalent HTTP API is shown as a

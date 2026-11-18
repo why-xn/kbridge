@@ -7,8 +7,10 @@ Open `https://<control-plane>/ui/`. The root path `/` redirects there.
 
 ## Who can use it
 
-Only users with the `admin` role. Sign in with your kbridge email and
-password. Anyone else is told to use `kb login`.
+Only kbridge admin accounts: the account seeded from `auth.admin_*` on first
+startup. The policy's `admin` role governs kubectl access only and does not
+open the console. Sign in with your kbridge email and password. Anyone else is
+told to use `kb login`.
 
 The session lives in the browser tab. It ends when you close the tab, sign
 out, or the refresh token expires (`auth.refresh_token_expiry`, 168h by
