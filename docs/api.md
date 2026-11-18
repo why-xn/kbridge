@@ -238,3 +238,5 @@ Binding sync state of each connected cluster, sorted by cluster name. Returns:
 Query params: `user`, `cluster`, `status`, `namespace` (exact), `command`
 (case-insensitive substring, first 200 characters), `from`/`to` (RFC3339),
 `page`, `per_page` (max 200). Returns `{logs, total, page, per_page}`, newest first.
+An entry's `namespace` is the one kbridge enforced: the command's `-n`/`--namespace`, else the
+request's `namespace` field, else `default`; `*` for `-A`.

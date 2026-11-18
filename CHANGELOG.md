@@ -23,6 +23,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `last_command`, `last_cluster`, `last_command_at`, and `denied_7d`.
 - **`GET /health` also returns `version`.**
 
+### Changed
+
+- **Audit entries record the namespace kbridge enforced.** It comes from the
+  command's `-n`/`--namespace` (any form), else `default`, and is `*` for
+  `-A`. It used to be the namespace the client sent, which was empty for a
+  plain `kb get pods` and could differ from where the command ran.
+
 ## [0.3.0-alpha.1] - 2026-11-06
 
 ### Added

@@ -427,7 +427,7 @@ func (s *HTTPServer) recordExecAudit(c *gin.Context, cluster string, req ExecReq
 	entry := &AuditLog{
 		ClusterName:  cluster,
 		Command:      strings.Join(req.Command, " "),
-		Namespace:    req.Namespace,
+		Namespace:    parseAccessRequest(cluster, req.Command, req.Namespace).Namespace, // what was enforced, not the client's claim
 		Status:       status,
 		ExitCode:     exitCode,
 		DurationMs:   durationMs,

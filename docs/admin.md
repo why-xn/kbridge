@@ -83,7 +83,8 @@ config (see [configuration](configuration.md)).
 
 Every command attempt is recorded (status `success`, `failed`, `denied`,
 `timeout`, or `canceled`) with user, cluster, command, namespace, exit code,
-duration, and client IP. A command refused because the cluster's agent is disconnected is
+duration, and client IP. The namespace is the one kbridge enforced: the
+command's `-n`/`--namespace`, else `default`, and `*` for `-A`. A command refused because the cluster's agent is disconnected is
 recorded as `failed` with the error `agent is disconnected` and no exit code.
 
 ```bash

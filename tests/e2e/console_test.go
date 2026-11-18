@@ -85,7 +85,7 @@ func TestConsole(t *testing.T) {
 
 	t.Run("audit filters by namespace and command", func(t *testing.T) {
 		_, code := httpPostAuth(t, fmt.Sprintf("%s/api/v1/clusters/%s/exec", base, *clusterName), authToken,
-			map[string]any{"command": []string{"get", "pods"}, "namespace": "default"})
+			map[string]any{"command": []string{"get", "pods"}}) // no -n: recorded as the enforced default
 		if code != http.StatusOK {
 			t.Fatalf("exec: want 200, got %d", code)
 		}
