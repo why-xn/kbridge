@@ -201,6 +201,12 @@ func (s *HTTPServer) handleAdminClusters(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
 		return
 	}
+	c.JSON(http.StatusOK, gin.H{"clusters": s.adminClusters(statuses, persisted)})
+}
+
+// adminClusters joins each cluster's status with its persisted record and
+// its agent's last heartbeat, sorted by name.
+func (s *HTTPServer) adminClusters(statuses map[string]string, persisted []*Cluster) []AdminCluster {
 	byName := make(map[string]*Cluster, len(persisted))
 	for _, cl := range persisted {
 		byName[cl.Name] = cl
@@ -217,7 +223,7 @@ func (s *HTTPServer) handleAdminClusters(c *gin.Context) {
 		clusters = append(clusters, ac)
 	}
 	slices.SortFunc(clusters, func(a, b AdminCluster) int { return strings.Compare(a.Name, b.Name) })
-	c.JSON(http.StatusOK, gin.H{"clusters": clusters})
+	return clusters
 }
 
 // clusterStatuses maps each known cluster to its status. A persisted cluster

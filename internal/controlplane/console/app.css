@@ -11,6 +11,8 @@
   --info-bg:rgba(10,132,255,0.18); --info-fg:#8cc4ff; --row-sel:#0a64d0; --disabled:#48484a;
   --role-bg:rgba(10,132,255,0.18); --role-fg:#8cc4ff; --admin-bg:#f5f5f7; --admin-fg:#1c1c1e;
   --icon-bg:#3a3a3c; --icon-fg:#4da3ff; --fresh:rgba(10,132,255,0.28);
+  --focus:rgba(10,132,255,0.6); --switch-off:rgba(120,120,128,0.32);
+  --knob-shadow:0 1px 3px rgba(0,0,0,0.3); --seg-shadow:0 1px 3px rgba(0,0,0,0.18);
   color-scheme: dark;
 }
 :root[data-theme="light"] {
@@ -29,7 +31,7 @@
 /* The sign-in screen has its own palette. */
 :root .login, :root[data-theme="dark"] .login {
   --bg:#111113; --card:#1c1c1e; --card-line:#2c2c2e; --brand:#2F6BFF; --arc:rgba(47,107,255,0.16);
-  --field:#2c2c2e; --field-line:#48484a; --red:#ff6961;
+  --field:#2c2c2e; --field-line:#48484a; --red:#ff6961; --focus:rgba(47,107,255,0.6);
 }
 :root[data-theme="light"] .login {
   --bg:#f5f5f7; --card:#ffffff; --card-line:#e5e5ea; --brand:#2459d9; --arc:rgba(47,107,255,0.10);
@@ -43,7 +45,7 @@ body {
 }
 a { color:var(--link); }
 button, input, select { font:inherit; }
-button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible { outline:3px solid rgba(10,132,255,0.6); outline-offset:1px; }
+button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible { outline:3px solid var(--focus); outline-offset:1px; }
 input::placeholder { color:var(--muted); }
 code, pre, .mono { font-family:ui-monospace, 'SF Mono', Menlo, monospace; }
 .vh { position:absolute; width:1px; height:1px; overflow:hidden; clip:rect(0 0 0 0); white-space:nowrap; }
@@ -71,12 +73,12 @@ code, pre, .mono { font-family:ui-monospace, 'SF Mono', Menlo, monospace; }
 .appearance span { font-size:13px; color:var(--text2); }
 .switch {
   position:relative; flex:none; width:44px; height:26px; border-radius:13px; border:0; padding:0; cursor:pointer;
-  transition:background 200ms; background:rgba(120,120,128,0.32);
+  transition:background 200ms; background:var(--switch-off);
 }
 .switch[aria-checked="true"] { background:#30d158; }
 .switch span {
   position:absolute; top:2px; left:2px; width:22px; height:22px; border-radius:50%; background:#ffffff;
-  box-shadow:0 1px 3px rgba(0,0,0,0.3); transition:transform 200ms;
+  box-shadow:var(--knob-shadow); transition:transform 200ms;
 }
 .switch[aria-checked="true"] span { transform:translateX(18px); }
 .signed-label { font-size:12px; color:var(--muted); }
@@ -107,7 +109,7 @@ code, pre, .mono { font-family:ui-monospace, 'SF Mono', Menlo, monospace; }
 .banner-text { font-size:13px; }
 .seg { display:inline-flex; align-self:flex-start; flex-wrap:wrap; background:var(--seg); border-radius:9px; padding:2px; gap:2px; }
 .seg button { border:0; border-radius:7px; padding:0 16px; min-height:30px; cursor:pointer; font-size:13px; background:transparent; color:var(--text2); }
-.seg button[aria-pressed="true"] { background:var(--seg-on); color:var(--text); font-weight:600; box-shadow:0 1px 3px rgba(0,0,0,0.18); }
+.seg button[aria-pressed="true"] { background:var(--seg-on); color:var(--text); font-weight:600; box-shadow:var(--seg-shadow); }
 .dot { flex:none; display:inline-block; width:10px; height:10px; border-radius:50%; background:var(--gray); }
 .dot.sm { width:8px; height:8px; }
 .c-green { color:var(--green); } .bg-green { background:var(--green); }
@@ -339,7 +341,6 @@ code, pre, .mono { font-family:ui-monospace, 'SF Mono', Menlo, monospace; }
 .signin:disabled { opacity:0.7; cursor:default; }
 .login-foot { position:relative; display:flex; align-items:center; gap:16px; color:var(--muted); font-size:12px; }
 .theme-btn { display:inline-flex; align-items:center; gap:6px; background:transparent; border:0; color:var(--muted); cursor:pointer; min-height:32px; padding:0 4px; font-size:12px; }
-.login button:focus-visible, .login a:focus-visible, .login input:focus-visible { outline-color:rgba(47,107,255,0.6); }
 
 @media (max-width:640px) {
   .main { padding:24px 16px 40px; }

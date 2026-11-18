@@ -600,15 +600,15 @@ type UserActivity struct {
 	DeniedSince   int // denied entries at or after since
 }
 
+const userActivityQuery = `SELECT a.user_email, a.command, a.cluster_name, a.created_at, d.denied
+	 FROM audit_logs a
+	 JOIN (SELECT user_email, MAX(created_at) AS m,
+	              SUM(status = 'denied' AND created_at >= ?) AS denied
+	       FROM audit_logs GROUP BY user_email) d
+	   ON a.user_email = d.user_email AND a.created_at = d.m`
+
 func (s *SQLiteStore) UserActivity(ctx context.Context, since time.Time) (map[string]UserActivity, error) {
-	rows, err := s.db.QueryContext(ctx,
-		`SELECT a.user_email, a.command, a.cluster_name, a.created_at, d.denied
-		 FROM audit_logs a
-		 JOIN (SELECT user_email, MAX(created_at) AS m,
-		              SUM(status = 'denied' AND created_at >= ?) AS denied
-		       FROM audit_logs GROUP BY user_email) d
-		   ON a.user_email = d.user_email AND a.created_at = d.m`,
-		since.UTC().Format(timeFormat))
+	rows, err := s.db.QueryContext(ctx, userActivityQuery, since.UTC().Format(timeFormat))
 	if err != nil {
 		return nil, fmt.Errorf("query user activity: %w", err)
 	}
