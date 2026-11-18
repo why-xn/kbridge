@@ -501,8 +501,8 @@ function emptyClusters() {
         h('div', { class: 'step-hint', text: 'The token is printed once. The cluster appears here right away, waiting for its agent.' })),
       installStep(name), waitStep()),
     h('div', { class: 'doc-links' },
-      h('a', { href: 'https://github.com/why-xn/kbridge/blob/master/docs/installation.md#helm-kubernetes', text: 'Installation Guide ›' }),
-      h('a', { href: 'https://github.com/why-xn/kbridge/blob/master/docs/production-install.md', text: 'Production Install ›' })));
+      h('a', { href: 'https://github.com/why-xn/kbridge/blob/v0.3.1-alpha.1/docs/installation.md#helm-kubernetes', text: 'Installation Guide ›' }),
+      h('a', { href: 'https://github.com/why-xn/kbridge/blob/v0.3.1-alpha.1/docs/production-install.md', text: 'Production Install ›' })));
 }
 
 /* ---------- Audit Log ---------- */
@@ -834,6 +834,16 @@ function toCSV(rows) {
   return lines.join('\r\n') + '\r\n';
 }
 
+// exportWindow pins the time range at export start, so rows that arrive while
+// pages load neither repeat at a page boundary nor push rows past the end.
+// It ends at the last whole second: rows in the current one may still land.
+function exportWindow(f, now) {
+  const iso = (ms) => new Date(ms).toISOString().slice(0, 19) + 'Z';
+  const end = Math.floor(now / 1000) * 1000 - 1000;
+  const from = f.from || (f.to ? '' : iso(now - 86400e3));
+  return { ...f, from, to: iso(Math.min(end, f.to ? Date.parse(f.to) : end)) };
+}
+
 async function fetchAllAudit(f) {
   const rows = [];
   for (let page = 1; rows.length < EXPORT_CAP; page++) {
@@ -850,7 +860,7 @@ async function exportCSV(st) {
   btn.disabled = true;
   note.classList.add('hidden');
   try {
-    const { rows, capped } = await fetchAllAudit(st.f);
+    const { rows, capped } = await fetchAllAudit(exportWindow(st.f, Date.now()));
     download(toCSV(rows), 'kbridge-audit-' + new Date().toISOString().replace(/[-:]/g, '').slice(0, 15) + 'Z.csv');
     note.textContent = capped ? 'First 10,000 rows exported; narrow the filters for the rest.' : '';
     note.classList.toggle('hidden', !capped);
