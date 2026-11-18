@@ -6,6 +6,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -273,4 +274,121 @@ func fileHash(path string) [sha256.Size]byte {
 		return [sha256.Size]byte{}
 	}
 	return sha256.Sum256(data)
+}
+
+// RolesFor returns the roles that apply to subject and whether they come from
+// the default role. A nil engine (RBAC off) has none.
+func (e *PolicyEngine) RolesFor(subject string) (roles []string, isDefault bool) {
+	if e == nil {
+		return nil, false
+	}
+	p := e.current.Load()
+	roles = p.rolesFor(subject)
+	if len(roles) == 1 && p.Default == roles[0] {
+		isDefault = true
+		for _, b := range p.Bindings {
+			if matchPattern(b.Subject, subject) {
+				isDefault = false
+			}
+		}
+	}
+	return roles, isDefault
+}
+
+// AccessSummary is one cluster-level line of what a subject may do.
+type AccessSummary struct {
+	Cluster    string   `json:"cluster"`    // known cluster name, or "*" for every cluster
+	Namespaces []string `json:"namespaces"` // ["*"] means all namespaces
+	Level      string   `json:"level"`      // "read-only" | "read-write"
+}
+
+var readOnlyVerbs = map[string]bool{"get": true, "list": true, "watch": true, "describe": true,
+	"logs": true, "auth": true, "top": true, "explain": true, "version": true, "api-resources": true}
+
+func ruleLevel(r PolicyRule) string {
+	for _, v := range r.Verbs {
+		if !readOnlyVerbs[strings.ToLower(strings.TrimSpace(v))] {
+			return "read-write"
+		}
+	}
+	return "read-only"
+}
+
+// AccessFor summarises what subject's roles allow, resolved against the known
+// cluster names. A nil engine returns nil; no matching role returns empty.
+func (e *PolicyEngine) AccessFor(subject string, clusters []string) []AccessSummary {
+	if e == nil {
+		return nil
+	}
+	p := e.current.Load()
+	active := map[string]bool{}
+	for _, name := range p.rolesFor(subject) {
+		active[name] = true
+	}
+	ns := map[accessKey]map[string]bool{}
+	add := func(cluster string, r PolicyRule) {
+		k := accessKey{cluster, ruleLevel(r)}
+		if ns[k] == nil {
+			ns[k] = map[string]bool{}
+		}
+		for _, n := range r.Namespaces {
+			ns[k][n] = true
+		}
+	}
+	for _, role := range p.Roles {
+		for _, r := range role.Rules {
+			if !active[role.Name] {
+				continue
+			}
+			if anyEqual(r.Clusters, "*") {
+				add("*", r)
+				continue
+			}
+			for _, c := range clusters {
+				if anyMatch(r.Clusters, c) {
+					add(c, r)
+				}
+			}
+		}
+	}
+	return sortedAccess(ns)
+}
+
+type accessKey struct{ cluster, level string }
+
+func anyEqual(list []string, want string) bool {
+	for _, s := range list {
+		if s == want {
+			return true
+		}
+	}
+	return false
+}
+
+// sortedAccess merges namespaces per (cluster, level) and orders the result:
+// read-write first, then "*" before names, then by name.
+func sortedAccess(ns map[accessKey]map[string]bool) []AccessSummary {
+	out := []AccessSummary{}
+	for k, set := range ns {
+		names := []string{}
+		for n := range set {
+			names = append(names, n)
+		}
+		sort.Strings(names)
+		if set["*"] {
+			names = []string{"*"}
+		}
+		out = append(out, AccessSummary{k.cluster, names, k.level})
+	}
+	sort.Slice(out, func(i, j int) bool {
+		a, b := out[i], out[j]
+		if a.Level != b.Level {
+			return a.Level == "read-write"
+		}
+		if (a.Cluster == "*") != (b.Cluster == "*") {
+			return a.Cluster == "*"
+		}
+		return a.Cluster < b.Cluster
+	})
+	return out
 }

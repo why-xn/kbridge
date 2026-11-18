@@ -591,3 +591,37 @@ func (s *SQLiteStore) CleanupOldAuditLogs(ctx context.Context, before time.Time)
 	}
 	return int(n), nil
 }
+
+// UserActivity is a user's latest audit entry plus their recent denials.
+type UserActivity struct {
+	LastCommand   string
+	LastCluster   string
+	LastCommandAt time.Time
+	DeniedSince   int // denied entries at or after since
+}
+
+func (s *SQLiteStore) UserActivity(ctx context.Context, since time.Time) (map[string]UserActivity, error) {
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT a.user_email, a.command, a.cluster_name, a.created_at, d.denied
+		 FROM audit_logs a
+		 JOIN (SELECT user_email, MAX(created_at) AS m,
+		              SUM(status = 'denied' AND created_at >= ?) AS denied
+		       FROM audit_logs GROUP BY user_email) d
+		   ON a.user_email = d.user_email AND a.created_at = d.m`,
+		since.UTC().Format(timeFormat))
+	if err != nil {
+		return nil, fmt.Errorf("query user activity: %w", err)
+	}
+	defer rows.Close()
+	out := map[string]UserActivity{}
+	for rows.Next() {
+		var email, at string
+		var u UserActivity
+		if err := rows.Scan(&email, &u.LastCommand, &u.LastCluster, &at, &u.DeniedSince); err != nil {
+			return nil, fmt.Errorf("scan user activity: %w", err)
+		}
+		u.LastCommandAt, _ = time.Parse(timeFormat, at)
+		out[email] = u
+	}
+	return out, rows.Err()
+}

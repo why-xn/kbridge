@@ -603,3 +603,55 @@ func TestAdminClusters_ReportsHeartbeatAndFirstConnection(t *testing.T) {
 		t.Errorf("live = %+v", got)
 	}
 }
+
+func TestAdminHandler_ListUsers_RolesAndActivity(t *testing.T) {
+	ah, store := newTestAdminHandlers(t)
+	ctx := context.Background()
+	store.CreateUser(ctx, &User{Email: "alice@corp.com", Name: "A", PasswordHash: "h", IsActive: true})
+	store.CreateUser(ctx, &User{Email: "stranger@x.com", Name: "S", PasswordHash: "h", IsActive: true})
+	store.CreateCluster(ctx, &Cluster{Name: "staging", Status: "offline"})
+	store.CreateAuditLog(ctx, &AuditLog{UserEmail: "alice@corp.com", ClusterName: "staging", Command: "get pods", Status: "success"})
+	store.CreateAuditLog(ctx, &AuditLog{UserEmail: "alice@corp.com", ClusterName: "staging", Command: "delete pod", Status: "denied"})
+	ah.SetPolicy(engineFor(t, samplePolicy))
+
+	w := doRequest(t, "GET", "/api/v1/admin/users", ah.HandleListUsers, "GET", "/api/v1/admin/users", nil)
+	var resp struct {
+		Users []map[string]any `json:"users"`
+	}
+	json.Unmarshal(w.Body.Bytes(), &resp)
+	by := map[string]map[string]any{}
+	for _, u := range resp.Users {
+		by[u["email"].(string)] = u
+	}
+	a, s := by["alice@corp.com"], by["stranger@x.com"]
+	if a["roles"].([]any)[0] != "admin" || a["default_role"] != false || a["denied_7d"] != float64(1) || a["last_cluster"] != "staging" {
+		t.Errorf("alice = %v", a)
+	}
+	if a["last_command_at"] == nil || a["access"] == nil {
+		t.Errorf("alice missing fields: %v", a)
+	}
+	if s["default_role"] != true || s["denied_7d"] != float64(0) {
+		t.Errorf("stranger = %v", s)
+	}
+	if _, ok := s["last_command"]; ok {
+		t.Error("user without activity must omit last_command")
+	}
+}
+
+func TestAdminHandler_ListUsers_NoPolicy(t *testing.T) {
+	ah, store := newTestAdminHandlers(t)
+	store.CreateUser(context.Background(), &User{Email: "a@x.com", Name: "A", PasswordHash: "h", IsActive: true})
+	w := doRequest(t, "GET", "/api/v1/admin/users", ah.HandleListUsers, "GET", "/api/v1/admin/users", nil)
+	if w.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d", w.Code)
+	}
+	var resp struct {
+		Users []map[string]any `json:"users"`
+	}
+	json.Unmarshal(w.Body.Bytes(), &resp)
+	for _, k := range []string{"roles", "access"} {
+		if _, ok := resp.Users[0][k]; ok {
+			t.Errorf("%s must be omitted without a policy", k)
+		}
+	}
+}

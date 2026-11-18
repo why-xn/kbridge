@@ -171,7 +171,14 @@ Revokes a token (idempotent).
 ## Admin — users
 
 ### `GET /api/v1/admin/users`
-Lists users (password hashes are never serialized).
+Lists users (password hashes are never serialized). Each user also carries:
+
+- `roles` and `access`: the policy roles that apply and what they allow, per cluster:
+  `{"cluster","namespaces","level"}`, where `cluster` `*` means every cluster, `["*"]` means
+  all namespaces, and `level` is `read-only` or `read-write`. Both are omitted when RBAC is off.
+- `default_role`: true when `roles` came from the policy `default`, not a binding.
+- `last_command`, `last_cluster`, `last_command_at`: the latest audit entry; omitted when the user has none.
+- `denied_7d`: denied commands in the last 7 days.
 
 ### `POST /api/v1/admin/users`
 Body: `{"email","name","password","is_active?"}`. `409` on duplicate email.
