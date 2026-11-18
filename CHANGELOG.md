@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Admin console at `/ui/`.** A read-only web view for admins: cluster
+  connection and policy sync, the audit log with filters and CSV export, agent
+  tokens, and users with their roles and access. It loads nothing from outside
+  the control plane and is served with a strict Content-Security-Policy.
+  `ui.enabled` (default `true`, env `KBRIDGE_UI_ENABLED`, chart `ui.enabled`)
+  turns it off. See [docs/console.md](docs/console.md).
+- **Audit API filters `namespace` and `command`.** `namespace` matches exactly;
+  `command` is a case-insensitive substring. See [docs/api.md](docs/api.md#admin--audit).
+- **`GET /api/v1/admin/clusters`** lists every known cluster with its status,
+  last heartbeat, and whether an agent ever connected.
+- **`GET /api/v1/admin/users` adds** `roles`, `default_role`, `access`,
+  `last_command`, `last_cluster`, `last_command_at`, and `denied_7d`.
+- **`GET /health` also returns `version`.**
+
 ## [0.3.0-alpha.1] - 2026-11-06
 
 ### Added

@@ -8,6 +8,9 @@ These tasks are driven primarily through the `kb admin …` CLI (run
 `kb login` as an admin first); the equivalent HTTP API is shown as a
 secondary option. See the [CLI reference](cli.md) and [API reference](api.md).
 
+Admins can also see clusters, the audit log, agent tokens, and users in the
+read-only [admin console](console.md) at `https://<control-plane>/ui/`.
+
 ## Users
 
 Users authenticate to the control plane; their permissions come from the policy file
