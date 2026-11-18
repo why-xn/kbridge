@@ -176,7 +176,11 @@ Lists users (password hashes are never serialized). Each user also carries:
 
 - `roles` and `access`: the policy roles that apply and what they allow, per cluster:
   `{"cluster","namespaces","level"}`, where `cluster` `*` means every cluster, `["*"]` means
-  all namespaces, and `level` is `read-only` or `read-write`. Both are omitted when RBAC is off.
+  all namespaces, and `level` is `read-only` or `read-write`. A rule is `read-only` only when
+  every verb is one of `get`, `list`, `watch`, `describe`, `logs`, `top`, `explain`, `version`,
+  `api-resources` (`auth` counts as `read-write`: `kubectl auth reconcile` writes RBAC). Rules
+  that allow nothing (an empty `namespaces`, `resources` or `verbs`) are left out. Both are
+  omitted when RBAC is off.
 - `default_role`: true when `roles` came from the policy `default`, not a binding.
 - `last_command`, `last_cluster`, `last_command_at`: the latest audit entry; omitted when the user has none.
 - `denied_7d`: denied commands in the last 7 days.

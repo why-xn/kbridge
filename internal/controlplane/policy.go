@@ -303,7 +303,7 @@ type AccessSummary struct {
 }
 
 var readOnlyVerbs = map[string]bool{"get": true, "list": true, "watch": true, "describe": true,
-	"logs": true, "auth": true, "top": true, "explain": true, "version": true, "api-resources": true}
+	"logs": true, "top": true, "explain": true, "version": true, "api-resources": true}
 
 func ruleLevel(r PolicyRule) string {
 	for _, v := range r.Verbs {
@@ -321,37 +321,50 @@ func (e *PolicyEngine) AccessFor(subject string, clusters []string) []AccessSumm
 		return nil
 	}
 	p := e.current.Load()
-	active := map[string]bool{}
+	ns := accessSet{}
 	for _, name := range p.rolesFor(subject) {
-		active[name] = true
-	}
-	ns := map[accessKey]map[string]bool{}
-	add := func(cluster string, r PolicyRule) {
-		k := accessKey{cluster, ruleLevel(r)}
-		if ns[k] == nil {
-			ns[k] = map[string]bool{}
-		}
-		for _, n := range r.Namespaces {
-			ns[k][n] = true
-		}
-	}
-	for _, role := range p.Roles {
-		for _, r := range role.Rules {
-			if !active[role.Name] {
+		for _, role := range p.Roles {
+			if role.Name != name {
 				continue
 			}
-			if anyEqual(r.Clusters, "*") {
-				add("*", r)
-				continue
-			}
-			for _, c := range clusters {
-				if anyMatch(r.Clusters, c) {
-					add(c, r)
+			for _, r := range role.Rules {
+				for _, c := range ruleClusters(r, clusters) {
+					ns.add(c, r)
 				}
 			}
 		}
 	}
 	return sortedAccess(ns)
+}
+
+// ruleClusters returns "*" for a rule on every cluster, else the known
+// clusters it matches. A rule that can allow nothing yields none.
+func ruleClusters(r PolicyRule, clusters []string) []string {
+	if len(r.Namespaces) == 0 || len(r.Verbs) == 0 || len(r.Resources) == 0 {
+		return nil
+	}
+	if anyEqual(r.Clusters, "*") {
+		return []string{"*"}
+	}
+	var out []string
+	for _, c := range clusters {
+		if anyMatch(r.Clusters, c) {
+			out = append(out, c)
+		}
+	}
+	return out
+}
+
+type accessSet map[accessKey]map[string]bool
+
+func (s accessSet) add(cluster string, r PolicyRule) {
+	k := accessKey{cluster, ruleLevel(r)}
+	if s[k] == nil {
+		s[k] = map[string]bool{}
+	}
+	for _, n := range r.Namespaces {
+		s[k][n] = true
+	}
 }
 
 type accessKey struct{ cluster, level string }
@@ -367,7 +380,7 @@ func anyEqual(list []string, want string) bool {
 
 // sortedAccess merges namespaces per (cluster, level) and orders the result:
 // read-write first, then "*" before names, then by name.
-func sortedAccess(ns map[accessKey]map[string]bool) []AccessSummary {
+func sortedAccess(ns accessSet) []AccessSummary {
 	out := []AccessSummary{}
 	for k, set := range ns {
 		names := []string{}

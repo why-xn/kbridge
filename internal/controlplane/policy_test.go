@@ -318,6 +318,12 @@ bindings:
 		{"no match", engineFor(t, policy(rule(`["eu-*"]`, `["*"]`, `[get]`))), "u@x.com", []AccessSummary{}},
 		{"unbound", engineFor(t, policy(rule(`["*"]`, `["*"]`, `[get]`))), "z@x.com", []AccessSummary{}},
 		{"nil engine", nil, "u@x.com", nil},
+		{"auth writes rbac", engineFor(t, policy(rule(`["*"]`, `["*"]`, `[get, auth]`))), "u@x.com",
+			[]AccessSummary{{"*", []string{"*"}, "read-write"}}},
+		{"read-only verbs", engineFor(t, policy(rule(`["*"]`, `["*"]`, `[get, list, logs, top]`))), "u@x.com",
+			[]AccessSummary{{"*", []string{"*"}, "read-only"}}},
+		{"empty namespaces allow nothing", engineFor(t, policy(rule(`["*"]`, `[]`, `[get]`))), "u@x.com", []AccessSummary{}},
+		{"empty verbs allow nothing", engineFor(t, policy(rule(`["*"]`, `["*"]`, `[]`))), "u@x.com", []AccessSummary{}},
 		{"star namespace collapses", engineFor(t, policy(rule(`[staging]`, `[team-a]`, `[apply]`)+rule(`[staging]`, `["*"]`, `[apply]`))), "u@x.com",
 			[]AccessSummary{{"staging", []string{"*"}, "read-write"}}},
 	}
