@@ -23,7 +23,8 @@ func (s *HTTPServer) registerConsole() {
 	}
 	files := http.StripPrefix("/ui/", http.FileServer(http.FS(sub)))
 	s.router.GET("/", func(c *gin.Context) { c.Redirect(http.StatusFound, "/ui/") })
-	s.router.GET("/ui/*file", func(c *gin.Context) {
+	// HEAD too: uptime checks and curl -I probe the console with it.
+	s.router.Match([]string{http.MethodGet, http.MethodHead}, "/ui/*file", func(c *gin.Context) {
 		name := strings.TrimPrefix(c.Param("file"), "/")
 		// Directories other than the root would produce a listing.
 		if name != "" && strings.HasSuffix(name, "/") {
