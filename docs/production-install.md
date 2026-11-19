@@ -100,9 +100,8 @@ helm install kbridge-control-plane oci://ghcr.io/why-xn/charts/kbridge-control-p
 
 Never upgrade this release with `--set` flags alone. Without `-f` (or
 `--reuse-values`) Helm resets every other value to the chart defaults: the
-Ingress disappears, `auth.existingSecret` is dropped, and the control plane
-starts with the placeholder `jwt_secret` the chart ships, which is long enough
-to pass validation.
+Ingress disappears and `auth.existingSecret` is dropped, so the upgrade fails:
+the chart requires `auth.jwtSecret` or `auth.existingSecret`.
 
 Verify control plane is up:
 
