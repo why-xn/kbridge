@@ -264,7 +264,7 @@ agents' `controlPlane.url` at the new Service name.
   kbridge grants `edit`. Backup and restore no longer need `sqlite3` in the
   image, token rotation covers both an inline token and `existingSecret`, and
   every command names the right namespace, Deployment and Secret. See
-  [docs/installation.md](docs/installation.md#helm-kubernetes) and
+  [docs/installation.md](docs/installation.md#quick-start-helm-one-cluster) and
   [docs/operations.md](docs/operations.md).
 - **`kb login` prompts for the control plane URL** when none is set and
   reads a piped password (`echo "$PW" | kb login`).
