@@ -108,7 +108,7 @@ Verify control plane is up:
 
 ```bash
 curl https://control-plane.example.com/health
-# {"status":"healthy"}
+# {"status":"healthy","version":"v0.3.1-alpha.1"}
 ```
 
 ## 4. Expose gRPC :9090 to External-Cluster Agents
@@ -174,7 +174,7 @@ Agents point `controlPlane.url` at the nginx LB host on port 9090.
 ### 5a. cert-manager Certificate for control plane's gRPC listener
 
 If you want the control plane pod itself to terminate TLS on :9090 (needed when using
-option B above, or for mTLS), create a cert-manager Certificate and enable the
+option B above), create a cert-manager Certificate and enable the
 chart's `tls` stanza.
 
 This is a second certificate. cert-manager already issues `kbridge-ingress-tls`
@@ -199,16 +199,32 @@ spec:
     - kbridge-grpc.example.com
 ```
 
-Then add to `values-control-plane.yaml` and upgrade with the whole file:
+An HTTP-01 issuer cannot prove `kbridge-grpc.example.com`: Let's Encrypt asks
+for the challenge on port 80 of that name, which points at the gRPC
+LoadBalancer, not the Ingress, so the Certificate never becomes ready. Issue
+this Certificate from a DNS-01 issuer. Pointing the name at the ingress
+controller while it is issued also works, but every renewal needs the same.
+
+Then merge the TLS settings into `values-control-plane.yaml` and upgrade with
+the whole file. Add the top-level `tls:` block and add the annotation to the
+existing `ingress:` block; do not append a second `ingress:` key, since YAML
+keeps only the last one, which drops `enabled: true` and removes the Ingress. The two
+blocks then read:
 
 ```yaml
 tls:
   enabled: true
   secretName: kbridge-control-plane-tls
 ingress:
+  enabled: true
+  className: nginx
+  host: control-plane.example.com
   annotations:
     cert-manager.io/cluster-issuer: letsencrypt-prod
     nginx.ingress.kubernetes.io/backend-protocol: HTTPS
+  tls:
+    - secretName: kbridge-ingress-tls
+      hosts: [control-plane.example.com]
 ```
 
 ```bash
@@ -299,7 +315,7 @@ helm install kbridge-agent oci://ghcr.io/why-xn/charts/kbridge-agent \
   --set cluster.name=prod-us-east \
   --set networkPolicy.enabled=true \
   --set 'networkPolicy.controlPlaneTo[0].ipBlock.cidr=<EXTERNAL-IP>/32' \
-  --set "networkPolicy.apiServerCIDRs={$(kubectl get endpoints kubernetes -o jsonpath='{range .subsets[*].addresses[*]}{.ip}/32,{end}' | sed 's/,$//')}"
+  --set "networkPolicy.apiServerCIDRs={$(kubectl -n default get endpointslice kubernetes -o jsonpath='{range .endpoints[*].addresses[*]}{@}/32,{end}' | sed 's/,$//')}"
 ```
 
 The agent's ServiceAccount token is not mounted at the default path; the chart
