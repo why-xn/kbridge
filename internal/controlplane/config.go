@@ -28,7 +28,7 @@ type Config struct {
 	UI        UIConfig        `yaml:"ui"`
 }
 
-// UIConfig toggles the embedded admin console served at /ui/.
+// UIConfig toggles the embedded admin console served at the root of the HTTP port.
 type UIConfig struct {
 	Enabled bool `yaml:"enabled"`
 

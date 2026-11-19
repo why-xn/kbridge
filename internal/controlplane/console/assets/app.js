@@ -112,7 +112,7 @@ function setTheme(t) {
 }
 
 const isDark = () => document.documentElement.dataset.theme !== 'light';
-const logoSrc = () => (isDark() ? 'logo-dark.svg' : 'logo.svg');
+const logoSrc = () => (isDark() ? '/assets/logo-dark.svg' : '/assets/logo.svg');
 const logo = () => h('img', { class: 'logo', src: logoSrc(), alt: 'kbridge' });
 
 /* ---------- Session and API ---------- */

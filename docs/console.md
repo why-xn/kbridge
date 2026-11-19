@@ -3,7 +3,7 @@
 The console is a read-only web view of your kbridge installation. It shows
 cluster health, the audit log, agent tokens, and users. It changes nothing.
 
-Open `https://<control-plane>/ui/`. The root path `/` redirects there.
+Open `https://<control-plane>/`.
 
 ## Who can use it
 
@@ -45,7 +45,7 @@ It calls the same admin API as `kb admin`, with your own token.
 ## Turn it off
 
 Set `ui.enabled: false` in `control-plane.yaml`, `KBRIDGE_UI_ENABLED=false`,
-or `ui.enabled=false` in the control plane chart. `/ui/` then returns 404. See
+or `ui.enabled=false` in the control plane chart. `/` then returns 404. See
 [configuration](configuration.md).
 
 The API behind it is in the [API reference](api.md). The same tasks are

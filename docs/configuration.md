@@ -53,7 +53,7 @@ streams:
 | `rbac.policy_file` | no | When empty, all authenticated users are allowed |
 | `tls.*` | no | When `enabled`, `cert_file` + `key_file` are required |
 | `streams.max_concurrent` | no | Cap on concurrent streaming sessions; `0`/unset → default 50 |
-| `ui.enabled` | no | Serve the admin console at `/ui/` (default `true`); `KBRIDGE_UI_ENABLED=false` turns it off |
+| `ui.enabled` | no | Serve the admin console at `/` (default `true`); `KBRIDGE_UI_ENABLED=false` turns it off |
 
 ## Agent (`agent.yaml`)
 

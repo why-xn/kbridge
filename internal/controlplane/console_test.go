@@ -14,18 +14,25 @@ const wantCSP = "default-src 'none'; script-src 'self'; style-src 'self'; img-sr
 
 func TestConsole(t *testing.T) {
 	tests := []struct {
-		name, method, path, ctype, location string
-		status                              int
-		cache                               string
+		name, method, path, ctype string
+		status                    int
+		cache                     string
 	}{
-		{"index", "GET", "/ui/", "text/html", "", 200, "no-store"},
-		{"index head", "HEAD", "/ui/", "text/html", "", 200, "no-store"},
-		{"logo", "GET", "/ui/logo.svg", "image/svg+xml", "", 200, "max-age=300"},
-		{"logo head", "HEAD", "/ui/logo.svg", "image/svg+xml", "", 200, "max-age=300"},
-		{"missing", "GET", "/ui/missing.js", "", "", 404, ""},
-		{"traversal", "GET", "/ui/../go.mod", "", "", 404, ""},
-		{"directory", "GET", "/ui/console/", "", "", 404, ""},
-		{"root redirect", "GET", "/", "", "/ui/", 302, ""},
+		{"index", "GET", "/", "text/html", 200, "no-store"},
+		{"index head", "HEAD", "/", "text/html", 200, "no-store"},
+		{"js", "GET", "/assets/app.js", "text/javascript", 200, "max-age=300"},
+		{"css", "GET", "/assets/app.css", "text/css", 200, "max-age=300"},
+		{"logo", "GET", "/assets/logo.svg", "image/svg+xml", 200, "max-age=300"},
+		{"logo head", "HEAD", "/assets/logo.svg", "image/svg+xml", 200, "max-age=300"},
+		{"logo dark", "GET", "/assets/logo-dark.svg", "image/svg+xml", 200, "max-age=300"},
+		{"missing", "GET", "/assets/missing.js", "", 404, ""},
+		{"traversal", "GET", "/assets/../go.mod", "", 404, ""},
+		{"assets listing", "GET", "/assets/", "", 404, ""},
+		{"index.html is not an asset", "GET", "/assets/index.html", "", 404, ""},
+		{"old ui root", "GET", "/ui/", "", 404, ""},
+		{"old ui", "GET", "/ui", "", 404, ""},
+		{"old ui asset", "GET", "/ui/app.js", "", 404, ""},
+		{"unknown path", "GET", "/foo", "", 404, ""},
 	}
 	srv, _, _ := newTestHTTPServer()
 	srv.registerConsole()
@@ -35,9 +42,6 @@ func TestConsole(t *testing.T) {
 			srv.Handler().ServeHTTP(w, httptest.NewRequest(tt.method, tt.path, nil))
 			if w.Code != tt.status {
 				t.Fatalf("status = %d, want %d", w.Code, tt.status)
-			}
-			if tt.location != "" && w.Header().Get("Location") != tt.location {
-				t.Errorf("Location = %q", w.Header().Get("Location"))
 			}
 			if tt.status != 200 {
 				return
@@ -73,8 +77,7 @@ func TestServerUIEnabled(t *testing.T) {
 			token, _ := auth.NewJWTManager(cfg.Auth.JWTSecret, time.Hour).
 				GenerateAccessToken(&auth.UserClaims{UserID: "u1", Email: "admin@x.com", IsAdmin: true})
 			ui := map[bool]int{true: 200, false: 404}[enabled]
-			root := map[bool]int{true: 302, false: 404}[enabled]
-			for path, want := range map[string]int{"/ui/": ui, "/": root, "/api/v1/admin/clusters": 200} {
+			for path, want := range map[string]int{"/": ui, "/assets/app.js": ui, "/ui/": 404, "/api/v1/admin/clusters": 200} {
 				r := httptest.NewRequest(http.MethodGet, path, nil)
 				r.Header.Set("Authorization", "Bearer "+token)
 				w := httptest.NewRecorder()
