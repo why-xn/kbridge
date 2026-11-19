@@ -61,6 +61,12 @@ before the resource as taking a value, so `kb get --sort-by pods secrets` is
 checked as `secrets`, and `kb get --no-headers pods` has no resource and is
 refused by a role that lists resources.
 
+Only the flags before `--` count, as for kubectl: in
+`kb exec web -n team-a -- grep -n x /f` the namespace is `team-a`, and in
+`kb get pods -- -n team-a` it is `default`. A `--` that the flag just before
+it could take as its value is refused (`flag --sort-by must be written as
+--sort-by=<value> before --`); write that flag with `=` or move it.
+
 ## Example
 
 ```yaml

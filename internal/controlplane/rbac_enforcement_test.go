@@ -85,3 +85,27 @@ roles:
 		t.Fatalf("want 401 without token, got %d: %s", w.Code, w.Body.String())
 	}
 }
+
+func TestExecHandler_RBACChecksNamespaceBeforeTerminator(t *testing.T) {
+	srv, jm := newRBACTestServer(t, `
+roles:
+  - name: team-a
+    rules:
+      - clusters: ["*"]
+        namespaces: ["team-a"]
+        resources: ["*"]
+        verbs: ["*"]
+bindings:
+  - subject: dev@x.com
+    roles: ["team-a"]
+`)
+	token, err := jm.GenerateAccessToken(&auth.UserClaims{UserID: "u1", Email: "dev@x.com"})
+	if err != nil {
+		t.Fatalf("token: %v", err)
+	}
+	// kubectl execs in kube-system; the -n after "--" belongs to grep.
+	w := execRequest(t, srv, token, []string{"exec", "pod", "-n", "kube-system", "--", "grep", "-n", "team-a", "/x"})
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("want 403 for exec in kube-system, got %d: %s", w.Code, w.Body.String())
+	}
+}

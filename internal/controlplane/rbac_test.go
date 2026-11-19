@@ -74,6 +74,17 @@ func TestParseAccessRequest(t *testing.T) {
 		{"empty command", []string{}, "", "", "", "default"},
 		{"-A wins over a later -n", []string{"get", "secrets", "-A", "-n", "team-a"}, "", "get", "secrets", "*"},
 		{"-n value is not the resource", []string{"get", "-n", "team-a", "secrets"}, "", "get", "secrets", "team-a"},
+		// kubectl reads the tokens after a real "--" as arguments, never as its own flags
+		{"-n before -- wins over the command's -n", []string{"exec", "pod", "-n", "kube-system", "--", "grep", "-n", "team-a", "/x"}, "", "exec", "pods", "kube-system"},
+		{"command's -n is not the namespace", []string{"exec", "pod", "--", "grep", "-n", "team-a", "/x"}, "", "exec", "pods", "default"},
+		{"-n after -- is an argument", []string{"get", "pods", "--", "-n", "kube-system"}, "", "get", "pods", "default"},
+		{"-n before -- wins over -n after", []string{"get", "pods", "-n", "team-a", "--", "-n", "kube-system"}, "", "get", "pods", "team-a"},
+		{"quoted -A after -- is an argument", []string{"exec", "pod", "--", "sh", "-c", "kubectl -A"}, "", "exec", "pods", "default"},
+		{"-A after -- is an argument", []string{"exec", "pod", "--", "ls", "-A"}, "", "exec", "pods", "default"},
+		{"resource after -- is not read", []string{"get", "--", "secrets"}, "", "get", "", "default"},
+		// a "--" taken as a flag's value ends nothing; kubeargs.Check refuses these before the policy runs
+		{"-- as -c value", []string{"exec", "pod", "-c", "--", "-n", "kube-system", "--", "sh"}, "", "exec", "pods", "kube-system"},
+		{"-- as --sort-by value", []string{"get", "pods", "--sort-by", "--", "-n", "kube-system"}, "", "get", "pods", "kube-system"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

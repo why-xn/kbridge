@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+- **The namespace check reads only the flags kubectl reads.** The control
+  plane took the last `-n`/`--namespace`/`-A` anywhere in the command, even
+  after the `--` that ends kubectl's own flags, so a user allowed only in
+  `team-a` could run `kb exec pod -n kube-system -- grep -n team-a /x` (checked
+  against `team-a`, run in `kube-system`), or `kb get secrets -- -n team-a db`
+  (checked against `team-a`, run in `default`). This bypassed kbridge's
+  namespace rule; Kubernetes RBAC still applied, since commands run
+  impersonated as the user. The check now stops at a real `--`, and a `--` that
+  the flag before it could take as its value is refused for every verb (write
+  that flag as `--flag=value`). Affects v0.3.0-alpha.1.
+
 ## [0.3.0-alpha.1] - 2026-11-06
 
 ### Added
