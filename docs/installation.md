@@ -12,7 +12,8 @@ on user machines.
 curl -fsSL https://raw.githubusercontent.com/why-xn/kbridge/master/install.sh | sh
 ```
 
-Or with `wget`:
+Or fetch the script with `wget`. The installer itself downloads the release
+with `curl`, so `curl` must be installed either way:
 
 ```bash
 wget -qO- https://raw.githubusercontent.com/why-xn/kbridge/master/install.sh | sh
@@ -37,8 +38,11 @@ curl -fsSL https://raw.githubusercontent.com/why-xn/kbridge/master/install.sh \
 ```
 
 The installer downloads `kb_<version>_<os>_<arch>.tar.gz` and a `checksums.txt`
-file from the GitHub release, verifies the SHA-256 checksum before extracting,
-and places the `kb` binary in the install directory.
+file from the GitHub release, verifies the SHA-256 checksum with `sha256sum`
+before extracting, and places the `kb` binary in the install directory.
+macOS has no `sha256sum` by default, so the installer stops with `checksum
+verification failed`; install GNU coreutils first (`brew install coreutils`),
+or use the [manual download](#manual-download) with `shasum`.
 
 ### Manual download
 
@@ -101,11 +105,15 @@ Images are tagged with `git describe` (`dev` outside a git checkout), never
 
 Run the published control plane image. The example config's paths do not
 exist in the image, so point the database at the `kbridge` user's home on a
-volume and mount the policy file next to the config:
+volume and mount the policy file next to the config. The example config also
+seeds an agent token, `dev-token`, which anyone who reads the file could use;
+the sed below clears it so you create real tokens with
+`kb admin agent-tokens create`:
 
 ```bash
 sed -e 's#path: kbridge.db#path: /home/kbridge/kbridge.db#' \
     -e 's#policy_file: "configs/rbac.yaml"#policy_file: "/etc/kbridge/rbac.yaml"#' \
+    -e 's#agent_token: "dev-token"#agent_token: ""#' \
     configs/control-plane.yaml > control-plane.docker.yaml
 docker volume create kbridge-data
 docker run -p 8080:8080 -p 9090:9090 \
@@ -114,8 +122,14 @@ docker run -p 8080:8080 -p 9090:9090 \
   -v "$PWD/control-plane.docker.yaml:/etc/kbridge/control-plane.yaml:ro" \
   -v "$PWD/configs/rbac.yaml:/etc/kbridge/rbac.yaml:ro" \
   ghcr.io/why-xn/kbridge-control-plane:v0.3.1-alpha.1
-curl http://localhost:8080/health   # {"status":"healthy"}
+curl http://localhost:8080/health   # {"status":"healthy","version":"v0.3.1-alpha.1"}
 ```
+
+The example config seeds the admin `admin@kbridge.local` with the password
+`admin123`. Change `admin_password` in `control-plane.docker.yaml` (or set
+`KBRIDGE_ADMIN_PASSWORD`) before the first start of anything others can reach;
+the admin is seeded only while no user with that email exists, so a later
+change to the file does not reset the password.
 
 Use the tag from `make docker` in place of the published image to run a local
 build.
@@ -237,7 +251,7 @@ the pod's `fsGroup: 10001`, the agent user). Agent chart values for this:
 | `sync.interval` | `60s` | How often the agent re-checks its bindings when nothing else triggers a sync, e.g. after a namespace is labelled for Pod Security. |
 | `serviceAccountToken.expirationSeconds` | `600` | Lifetime of the projected token; the kubelet rotates it. |
 | `networkPolicy.enabled` | `false` | Render an egress NetworkPolicy (recommended). Requires `apiServerCIDRs` and `controlPlaneTo`; rendering fails without them. |
-| `networkPolicy.apiServerCIDRs` | `[]` | API server endpoint IPs, e.g. `kubectl get endpoints kubernetes -o jsonpath='{.subsets[*].addresses[*].ip}'` as `/32`s. |
+| `networkPolicy.apiServerCIDRs` | `[]` | API server endpoint IPs, e.g. `kubectl -n default get endpointslice kubernetes -o jsonpath='{.endpoints[*].addresses[*]}'` as `/32`s. |
 | `networkPolicy.apiServerPorts` | `[443, 6443]` | API server ports. |
 | `networkPolicy.controlPlaneTo` | `[]` | NetworkPolicyPeer list for the control plane, e.g. `[{ipBlock: {cidr: 203.0.113.10/32}}]`. |
 | `networkPolicy.controlPlanePort` | `9090` | Control plane gRPC port. |
@@ -250,7 +264,7 @@ and `kube-dns` in `kube-system` (53/UDP and TCP).
 With the port-forward from step 2 still running:
 
 ```bash
-curl http://localhost:8080/health   # {"status":"healthy"}
+curl http://localhost:8080/health   # {"status":"healthy","version":"v0.3.1-alpha.1"}
 kb clusters list                    # prod-us-east  connected
 kb clusters use prod-us-east
 kb get pods                         # runs as kbridge:admin@kbridge.local
