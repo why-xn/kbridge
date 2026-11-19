@@ -171,6 +171,12 @@ kb admin agent-tokens list --cluster <cluster-name>  # the old token's ID
 kb admin agent-tokens revoke <old-token-id>
 ```
 
+To tell the tokens apart, match the `PREFIX` column against the first 13
+characters of the old `kbat_...` value (still in the agent's previous Secret
+or values), or pick the token whose last use stopped: `last_used_at` in
+`GET /api/v1/admin/agent-tokens` and Last Used on the console's Agent Tokens
+screen. The new token's last use is the agent's registration just now.
+
 Revoke only after the agent is back on the new token: revocation disconnects
 any agent still using the old one at once, and that agent stops
 (CrashLoopBackOff) until it gets a new token.
@@ -263,7 +269,7 @@ IP. Health endpoint:
 
 ```bash
 curl http://<control-plane-host>:8080/health
-# {"status":"healthy"}
+# {"status":"healthy","version":"v0.3.1-alpha.1"}
 ```
 
 ### Agent
