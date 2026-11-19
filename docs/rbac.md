@@ -254,7 +254,7 @@ restart:
     -n kbridge --version 0.3.1-alpha.1 --reuse-values --set-file rbac.policy=policy.yaml
   ```
 
-  or pass the full values file used at install with `-f`, as in
+  or pass `--reuse-values -f` with your values file, as in
   [Onboard a user](admin.md#onboard-a-user).
 - **SIGHUP** — sending `SIGHUP` to the control plane process reloads the policy
   at once from the file as it is on disk (it does not hurry a ConfigMap edit).

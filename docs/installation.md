@@ -151,7 +151,7 @@ kb admin audit --status denied
 
 Open the admin console at [http://localhost:8080/](http://localhost:8080/),
 through the port-forward from step 2, and sign in as the admin. Its Audit Log
-screen shows the same entry; click the row to see the message the user got.
+screen shows the same entry; click its time to see the message the user got.
 See [console.md](console.md).
 
 ## Verifying

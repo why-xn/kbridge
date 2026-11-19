@@ -21,6 +21,21 @@ and refresh tokens.
 kb login
 ```
 
+### Change your password
+There is no `kb` command for it yet; call the API with the access token
+`kb login` saved in `~/.kbridge/config.yaml`. Do it after your first login if
+an admin chose your password:
+
+```bash
+TOKEN=$(awk '/^token:/{print $2}' ~/.kbridge/config.yaml)
+curl -X POST https://<control-plane>/api/v1/auth/change-password \
+  -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+  -d '{"current_password":"<pw>","new_password":"<new password>"}'
+# {"message":"password changed"}
+```
+
+A `401` means the access token expired: run `kb login` and try again.
+
 ### `kb logout`
 Invalidates the refresh token on the server and clears the local token.
 
@@ -134,8 +149,8 @@ reports the control plane as reachable; a command that answers
 
 ## When a command is refused
 
-A refusal comes from one of two places. The first words of the error tell you
-which.
+A refusal comes from kbridge's policy, from the cluster's RBAC, or from a
+rule kbridge applies to everyone. The error text tells you which.
 
 **kbridge's policy** refused it before it reached the cluster:
 
@@ -156,15 +171,26 @@ Your role allows it, but the cluster has no binding that lets
 `kbridge:<your email>` do it there. Ask the admin to add `clusterAccess` for
 that namespace to your role.
 
+**A rule kbridge applies to everyone** also starts with
+`Error from server (Forbidden)`, but says the namespace `is reserved for the
+kbridge agent` or that the request `is not allowed through kbridge`:
+
+```text
+Error from server (Forbidden): reading secrets across all namespaces is not allowed through kbridge (get secrets)
+```
+
+No role change unblocks these; see the list below.
+
 Before you ask, check three things:
 
 - **Type the resource the way your role lists it.** `resources: ["pods"]`
   admits `kb get pods`, not `kb get pod` or `kb get po`. The error repeats the
   word you typed.
-- **Write a value flag as `--flag=value` before the resource**, or put it
-  after the resource. Before the resource, kbridge takes the word after a flag
-  it does not know as that flag's value: `kb get --no-headers pods` has no
-  resource, and a role that lists resources refuses it. See
+- **Put flags after the resource**, or write a value flag as `--flag=value`.
+  Before the resource, kbridge takes the word after a flag it does not know,
+  even a true/false flag such as `--no-headers`, as that flag's value:
+  `kb get --no-headers pods` has no resource, and a role that lists resources
+  refuses it. See
   [rbac.md](rbac.md#how-a-kubectl-command-maps-to-a-request).
 - **See who the cluster thinks you are** (the default `viewer` role allows
   it):

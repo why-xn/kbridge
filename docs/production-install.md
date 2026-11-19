@@ -386,3 +386,10 @@ current. If the status is `disconnected`, check:
    contain the address the agent dials and `controlPlanePort` the port. The
    failure looks the same as 5; upgrade once with
    `--set networkPolicy.enabled=false` to rule it out.
+
+## Next
+
+1. [Security hardening](security.md): the checklist before users arrive.
+2. [Onboard a user](admin.md#onboard-a-user): the first users, their roles and
+   their first password.
+3. [Operations](operations.md): backup, upgrades, troubleshooting.

@@ -30,7 +30,9 @@ Five steps take a new person from nothing to running commands.
 
 2. **Give them a role.** Add a binding to the [policy](rbac.md) for a role
    it defines (the default policy has only `admin` and `viewer`; the
-   [RBAC example](rbac.md#example) adds a `developer` role). A bound user
+   [RBAC example](rbac.md#example) adds a `developer` role; set its
+   `clusters` to yours, since the example's `dev-*` and `staging` match no
+   other cluster). A bound user
    holds only the roles listed, so list `viewer` too if they should keep it:
 
    ```yaml
@@ -53,7 +55,9 @@ Five steps take a new person from nothing to running commands.
 
    `--reuse-values` keeps what you set with `--set` at install, such as
    `auth.jwtSecret`; without it those go back to the chart defaults. The
-   upgrade restarts the control plane, so `kb` fails for about a minute.
+   upgrade restarts the control plane, so `kb` fails for about a minute. If
+   you reach it through `kubectl port-forward`, as in the quick start, the
+   forward ends with the old pod: start it again once the new pod is ready.
 
    Without Helm, edit the policy file (or the ConfigMap it is mounted from).
    The control plane reloads it within 10 s; see
@@ -80,18 +84,8 @@ Five steps take a new person from nothing to running commands.
 
 5. **Send them the control plane URL**, their email and first password, and
    point them at [You have a kbridge account](../README.md#you-have-a-kbridge-account)
-   in the README. To change their password they call the API with the access
-   token `kb login` saved in `~/.kbridge/config.yaml`:
-
-   ```bash
-   TOKEN=$(awk '/^token:/{print $2}' ~/.kbridge/config.yaml)
-   curl -X POST https://<control-plane>/api/v1/auth/change-password \
-     -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
-     -d '{"current_password":"<pw>","new_password":"<new password>"}'
-   # {"message":"password changed"}
-   ```
-
-   A `401` means the access token expired: run `kb login` and try again.
+   in the README, which tells them to
+   [change their password](cli.md#change-your-password) after the first login.
 
 ## Users
 
