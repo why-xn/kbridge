@@ -1,147 +1,30 @@
 # Installation
 
 kbridge has three components: the **control plane** service, the cluster **agent**,
-and the **CLI**. The control plane and agent are long-running; the CLI runs
-on user machines.
+and the **CLI** (`kb`). The control plane and agent are long-running; the CLI runs
+on user machines. The quick start below puts the control plane and one agent on
+one cluster; [Other ways to install](#other-ways-to-install) covers the rest.
 
-## CLI installation
+<a id="helm-kubernetes"></a>
 
-### One-liner installer (Linux / macOS)
+## Quick start (Helm, one cluster)
 
-```bash
-curl -fsSL https://raw.githubusercontent.com/why-xn/kbridge/master/install.sh | sh
-```
-
-Or fetch the script with `wget`. The installer itself downloads the release
-with `curl`, so `curl` must be installed either way:
-
-```bash
-wget -qO- https://raw.githubusercontent.com/why-xn/kbridge/master/install.sh | sh
-```
-
-The installer auto-detects the newest stable release, and falls back to the
-newest pre-release (with a warning) when no stable release exists — which is the
-case while kbridge is in alpha. To pin a version:
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/why-xn/kbridge/master/install.sh \
-  | KBRIDGE_VERSION=v0.3.1-alpha.1 sh
-```
-
-The default directory is `/usr/local/bin`, which usually needs `sudo`; the
-installer asks for it when the directory is not writable. To install somewhere
-on your own `PATH` instead:
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/why-xn/kbridge/master/install.sh \
-  | KBRIDGE_INSTALL_DIR="$HOME/.local/bin" sh
-```
-
-The installer downloads `kb_<version>_<os>_<arch>.tar.gz` and a `checksums.txt`
-file from the GitHub release, verifies the SHA-256 checksum with `sha256sum`
-before extracting, and places the `kb` binary in the install directory.
-macOS has no `sha256sum` by default, so the installer stops with `checksum
-verification failed`; install GNU coreutils first (`brew install coreutils`),
-or use the [manual download](#manual-download) with `shasum`.
-
-### Manual download
-
-The release assets are archives, `kb_<version>_<os>_<arch>.tar.gz` for Linux
-and macOS and `.zip` for Windows, plus `checksums.txt`. Download the one for
-your platform and the checksums file from the
-[GitHub Releases page](https://github.com/why-xn/kbridge/releases), then:
-
-```bash
-sha256sum -c --ignore-missing checksums.txt   # macOS: shasum -a 256 -c --ignore-missing checksums.txt
-tar -xzf kb_<version>_<os>_<arch>.tar.gz kb
-install -m 0755 kb ~/.local/bin/kb            # or anywhere on your PATH
-```
-
-### Go install (fallback)
-
-```bash
-go install github.com/why-xn/kbridge/cmd/kb@latest
-```
-
-This requires Go 1.25+ and places `kb` in `$GOPATH/bin`. It builds the newest
-tagged release, but without version stamping: `kb --version` prints `dev`.
-Prefer the installer when you need to report a version.
-
-## From source (binaries)
-
-Requires Go 1.25+.
-
-```bash
-make build      # builds bin/kb (+ kbridge symlink), bin/kbridge-control-plane, bin/kbridge-agent
-```
-
-Run the control plane and an agent with the example configs. The control
-plane needs a JWT secret of at least 32 characters, and the agent needs a
-kubeconfig when it runs outside a pod:
-
-```bash
-export KBRIDGE_JWT_SECRET="$(openssl rand -hex 32)"
-./bin/kbridge-control-plane --config configs/control-plane.yaml
-
-# In configs/agent.yaml, uncomment the kubernetes: block and set kubeconfig:
-# to the absolute path of your kubeconfig, then:
-./bin/kbridge-agent --config configs/agent.yaml
-
-./bin/kb login   # http://localhost:8080, admin@kbridge.local / admin123
-```
-
-## Docker
-
-Multi-stage, CGO-free images (the agent image bundles `kubectl`):
-
-```bash
-make docker                                  # builds all three images
-make docker IMAGE_PREFIX=ghcr.io/acme VERSION=v0.3.1-alpha.1
-```
-
-Images are tagged with `git describe` (`dev` outside a git checkout), never
-`latest`; set `VERSION` to choose. `make docker VERSION=local` produces
-`kbridge-control-plane:local`, `kbridge-agent:local` and `kbridge:local`.
-
-Run the published control plane image. The example config's paths do not
-exist in the image, so point the database at the `kbridge` user's home on a
-volume and mount the policy file next to the config. The example config also
-seeds an agent token, `dev-token`, which anyone who reads the file could use;
-the sed below clears it so you create real tokens with
-`kb admin agent-tokens create`. The example config also seeds the admin
-`admin@kbridge.local` with the password `admin123`, and only while no user
-with that email exists, so the `docker run` below sets a random one on first
-start:
-
-```bash
-sed -e 's#path: kbridge.db#path: /home/kbridge/kbridge.db#' \
-    -e 's#policy_file: "configs/rbac.yaml"#policy_file: "/etc/kbridge/rbac.yaml"#' \
-    -e 's#agent_token: "dev-token"#agent_token: ""#' \
-    configs/control-plane.yaml > control-plane.docker.yaml
-docker volume create kbridge-data
-docker run -p 8080:8080 -p 9090:9090 \
-  -e KBRIDGE_JWT_SECRET="$(openssl rand -hex 32)" \
-  -e KBRIDGE_ADMIN_PASSWORD="$(openssl rand -hex 16 | tee admin-password.txt)" \
-  -v kbridge-data:/home/kbridge \
-  -v "$PWD/control-plane.docker.yaml:/etc/kbridge/control-plane.yaml:ro" \
-  -v "$PWD/configs/rbac.yaml:/etc/kbridge/rbac.yaml:ro" \
-  ghcr.io/why-xn/kbridge-control-plane:v0.3.1-alpha.1
-curl http://localhost:8080/health   # {"status":"healthy","version":"v0.3.1-alpha.1"}
-```
-
-Sign in as `admin@kbridge.local` with the password saved in
-`admin-password.txt`. Setting the variable on a later start does not reset the
-password, because the admin already exists.
-
-Use the tag from `make docker` in place of the published image to run a local
-build.
-
-## Helm (Kubernetes)
+> **You need:**
+> - a Kubernetes cluster (kind works);
+> - `kubectl` configured for it;
+> - Helm 3.8+;
+> - the `kb` CLI:
+>   `curl -fsSL https://raw.githubusercontent.com/why-xn/kbridge/master/install.sh | sh`
+>   (see [CLI installation](#cli-installation) for other ways).
 
 Charts are published as OCI artifacts to `oci://ghcr.io/why-xn/charts` on every
 release, so no `helm repo add` is needed; Helm 3.8+ installs them straight from
 the URL. Pin `--version` to the release you want (the chart version is the
 release tag without the `v`).
+
+From a clone of this repository, the same commands work with the local charts:
+replace the `oci://…` reference with `./charts/control-plane` or `./charts/agent`
+and drop `--version`.
 
 This quick start installs the control plane and an agent into one cluster, in
 the namespace `kbridge`. The agent authenticates to the control plane with an
@@ -205,6 +88,11 @@ helm install kbridge-agent oci://ghcr.io/why-xn/charts/kbridge-agent \
   --set cluster.name=prod-us-east
 ```
 
+`cluster.name` must match the `--cluster` the token was created for. For a
+production install, keep the token in a Kubernetes Secret and point the chart at
+it with `controlPlane.existingSecret` instead of `--set controlPlane.token`; the
+[production guide](production-install.md) shows that flow.
+
 The agent always protects its own namespace, so users cannot reach the control
 plane's pods or Secrets in `kbridge` through kbridge. For an agent in another
 cluster, create and label the `kbridge` namespace there first and set
@@ -224,14 +112,215 @@ kubectl label ns <ns> pod-security.kubernetes.io/enforce=baseline
 Without the label the agent refuses that binding and `kb admin rbac status`
 shows the command to fix it.
 
-`cluster.name` must match the `--cluster` the token was created for. For a
-production install, keep the token in a Kubernetes Secret and point the chart at
-it with `controlPlane.existingSecret` instead of `--set controlPlane.token`; the
-[production guide](production-install.md) shows that flow.
+### Step 5: See a refusal and the audit trail
 
-From a clone of this repository, the same commands work with the local charts:
-replace the `oci://…` reference with `./charts/control-plane` or `./charts/agent`
-and drop `--version`.
+Create a developer. Nothing in the policy binds them, so they get the
+default role, `viewer`, which may read but not change anything:
+
+```bash
+kb admin users create --email dev@example.com --name Dev --password <pw>
+```
+
+Log in as them and try to delete a pod:
+
+```bash
+kb logout
+kb login
+# Email: dev@example.com
+# Password: <pw>
+kb clusters use prod-us-east
+kb delete pod x -n kube-system
+# Error: permission denied: delete pod in namespace "kube-system" on cluster "prod-us-east" is not allowed for dev@example.com; ask a kbridge admin to extend your role
+```
+
+kbridge refused it at the control plane, so it never reached the cluster.
+Log back in as the admin and find the attempt in the audit log:
+
+```bash
+kb logout
+kb login
+# Email: admin@kbridge.local
+# Password: <admin password from step 1>
+kb admin audit --status denied
+# TIME                  USER             CLUSTER       STATUS  EXIT  COMMAND
+# 2026-11-19T04:17:38Z  dev@example.com  prod-us-east  denied  -     delete pod x -n kube-system
+#
+# Showing 1 of 1 entries.
+```
+
+Open the admin console at [http://localhost:8080/](http://localhost:8080/),
+through the port-forward from step 2, and sign in as the admin. Its Audit Log
+screen shows the same entry; click the row to see the message the user got.
+See [console.md](console.md).
+
+## Verifying
+
+With the port-forward from step 2 still running:
+
+```bash
+curl http://localhost:8080/health   # {"status":"healthy","version":"v0.3.1-alpha.1"}
+kb clusters list                    # prod-us-east  connected
+kb clusters use prod-us-east
+kb get pods                         # runs as kbridge:admin@kbridge.local
+```
+
+## Next
+
+- [Production install](production-install.md): Secrets, TLS, and agents in other clusters.
+- [RBAC](rbac.md): give users real roles instead of the default `viewer`.
+- [Admin guide](admin.md#onboard-a-user): onboard a user from start to finish.
+- [Admin console](console.md): what each screen shows.
+
+Before exposing the control plane to users, work through the
+[Security Hardening Guide](security.md). For backup, upgrade, and troubleshooting
+procedures, see the [Operations Guide](operations.md).
+
+## Other ways to install
+
+### CLI installation
+
+#### One-liner installer (Linux / macOS)
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/why-xn/kbridge/master/install.sh | sh
+```
+
+Or fetch the script with `wget`. The installer itself downloads the release
+with `curl`, so `curl` must be installed either way:
+
+```bash
+wget -qO- https://raw.githubusercontent.com/why-xn/kbridge/master/install.sh | sh
+```
+
+The installer auto-detects the newest stable release, and falls back to the
+newest pre-release (with a warning) when no stable release exists — which is the
+case while kbridge is in alpha. To pin a version:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/why-xn/kbridge/master/install.sh \
+  | KBRIDGE_VERSION=v0.3.1-alpha.1 sh
+```
+
+The default directory is `/usr/local/bin`, which usually needs `sudo`; the
+installer asks for it when the directory is not writable. To install somewhere
+on your own `PATH` instead:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/why-xn/kbridge/master/install.sh \
+  | KBRIDGE_INSTALL_DIR="$HOME/.local/bin" sh
+```
+
+The installer downloads `kb_<version>_<os>_<arch>.tar.gz` and a `checksums.txt`
+file from the GitHub release, verifies the SHA-256 checksum with `sha256sum`
+before extracting, and places the `kb` binary in the install directory.
+macOS has no `sha256sum` by default, so the installer stops with `checksum
+verification failed`; install GNU coreutils first (`brew install coreutils`),
+or use the [manual download](#manual-download) with `shasum`.
+
+#### Manual download
+
+The release assets are archives, `kb_<version>_<os>_<arch>.tar.gz` for Linux
+and macOS and `.zip` for Windows, plus `checksums.txt`. Download the one for
+your platform and the checksums file from the
+[GitHub Releases page](https://github.com/why-xn/kbridge/releases), then:
+
+```bash
+sha256sum -c --ignore-missing checksums.txt   # macOS: shasum -a 256 -c --ignore-missing checksums.txt
+tar -xzf kb_<version>_<os>_<arch>.tar.gz kb
+install -m 0755 kb ~/.local/bin/kb            # or anywhere on your PATH
+```
+
+#### Go install (fallback)
+
+```bash
+go install github.com/why-xn/kbridge/cmd/kb@latest
+```
+
+This requires Go 1.25+ and places `kb` in `$GOPATH/bin`. It builds the newest
+tagged release, but without version stamping: `kb --version` prints `dev`.
+Prefer the installer when you need to report a version.
+
+### Docker
+
+Multi-stage, CGO-free images (the agent image bundles `kubectl`):
+
+```bash
+make docker                                  # builds all three images
+make docker IMAGE_PREFIX=ghcr.io/acme VERSION=v0.3.1-alpha.1
+```
+
+Images are tagged with `git describe` (`dev` outside a git checkout), never
+`latest`; set `VERSION` to choose. `make docker VERSION=local` produces
+`kbridge-control-plane:local`, `kbridge-agent:local` and `kbridge:local`.
+
+Run the published control plane image. The example config's paths do not
+exist in the image, so point the database at the `kbridge` user's home on a
+volume and mount the policy file next to the config. The example config also
+seeds an agent token, `dev-token`, which anyone who reads the file could use;
+the sed below clears it so you create real tokens with
+`kb admin agent-tokens create`. The example config also seeds the admin
+`admin@kbridge.local` with the password `admin123`, and only while no user
+with that email exists, so the `docker run` below sets a random one on first
+start:
+
+```bash
+sed -e 's#path: kbridge.db#path: /home/kbridge/kbridge.db#' \
+    -e 's#policy_file: "configs/rbac.yaml"#policy_file: "/etc/kbridge/rbac.yaml"#' \
+    -e 's#agent_token: "dev-token"#agent_token: ""#' \
+    configs/control-plane.yaml > control-plane.docker.yaml
+docker volume create kbridge-data
+docker run -p 8080:8080 -p 9090:9090 \
+  -e KBRIDGE_JWT_SECRET="$(openssl rand -hex 32)" \
+  -e KBRIDGE_ADMIN_PASSWORD="$(openssl rand -hex 16 | tee admin-password.txt)" \
+  -v kbridge-data:/home/kbridge \
+  -v "$PWD/control-plane.docker.yaml:/etc/kbridge/control-plane.yaml:ro" \
+  -v "$PWD/configs/rbac.yaml:/etc/kbridge/rbac.yaml:ro" \
+  ghcr.io/why-xn/kbridge-control-plane:v0.3.1-alpha.1
+curl http://localhost:8080/health   # {"status":"healthy","version":"v0.3.1-alpha.1"}
+```
+
+Sign in as `admin@kbridge.local` with the password saved in
+`admin-password.txt`. Setting the variable on a later start does not reset the
+password, because the admin already exists.
+
+Use the tag from `make docker` in place of the published image to run a local
+build.
+
+### Run from source (contributors)
+
+Requires Go 1.25+, `kubectl`, and access to a Kubernetes cluster.
+
+```bash
+make build      # builds bin/kb (+ kbridge symlink), bin/kbridge-control-plane, bin/kbridge-agent
+```
+
+Run the control plane and an agent with the example configs. The control
+plane needs a JWT secret of at least 32 characters, and the agent needs a
+kubeconfig when it runs outside a pod:
+
+```bash
+export KBRIDGE_JWT_SECRET="$(openssl rand -hex 32)"
+./bin/kbridge-control-plane --config configs/control-plane.yaml
+
+# In configs/agent.yaml, uncomment the kubernetes: block and set kubeconfig:
+# to the absolute path of your kubeconfig, then:
+./bin/kbridge-agent --config configs/agent.yaml
+```
+
+Log in as the admin seeded from `control-plane.yaml` (`admin@kbridge.local` /
+`admin123` in the example config; change `admin_password` for any real
+deployment) and use the cluster the example config names:
+
+```bash
+./bin/kb login   # http://localhost:8080, admin@kbridge.local / admin123
+./bin/kb clusters list
+./bin/kb clusters use dev-cluster
+./bin/kb get pods -A
+```
+
+The admin can also open the read-only console at `http://localhost:8080/`.
+
+## Agent chart values
 
 Key chart values are documented in each chart's `values.yaml`. The agent chart
 creates a ServiceAccount + ClusterRole that grants impersonation and binding
@@ -261,18 +350,3 @@ the pod's `fsGroup: 10001`, the agent user). Agent chart values for this:
 With the policy on, the agent can reach only the API server, the control plane
 and `kube-dns` in `kube-system` (53/UDP and TCP).
 
-## Verifying
-
-With the port-forward from step 2 still running:
-
-```bash
-curl http://localhost:8080/health   # {"status":"healthy","version":"v0.3.1-alpha.1"}
-kb clusters list                    # prod-us-east  connected
-kb clusters use prod-us-east
-kb get pods                         # runs as kbridge:admin@kbridge.local
-```
-
-For production deployments, see [Production Install](production-install.md). Before
-exposing the control plane to users, work through the
-[Security Hardening Guide](security.md). For backup, upgrade, and troubleshooting
-procedures, see the [Operations Guide](operations.md).
