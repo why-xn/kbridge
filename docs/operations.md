@@ -20,6 +20,10 @@ through a helper pod that mounts its PVC. The commands assume the release
 
 ```bash
 kubectl -n kbridge scale deploy/kbridge-control-plane --replicas=0
+# The old pod keeps the database open until it is gone; wait for it.
+kubectl -n kbridge wait --for=delete pod \
+  -l app.kubernetes.io/name=kbridge-control-plane,app.kubernetes.io/instance=kbridge-control-plane \
+  --timeout=120s
 kubectl -n kbridge apply -f - <<'EOF'
 apiVersion: v1
 kind: Pod
@@ -316,4 +320,10 @@ kubectl -n kbridge logs deploy/kbridge-agent -f
 | **Throughput** | `SetMaxOpenConns(1)` serializes all database access. Under heavy concurrent load, commands queue behind DB writes. This is a deliberate trade-off for SQLite correctness; a future PostgreSQL driver would remove it. |
 | **Observability** | No Prometheus metrics endpoint. Operational visibility is limited to structured stdout logs and the audit log. |
 | **Mutual TLS** | Only server-authenticated TLS is supported (control plane presents a certificate; clients verify it). Client certificates (mTLS) are not yet implemented. |
-| **Port-forward idle timeout** | `kb port-forward` sessions have no idle timeout. A session with no traffic will hold the tunnel open indefinitely until Ctrl-C or pod restart. |
+| **Port-forward idle timeout** | `kb port-forward` sessions have no idle timeout. A session with no traffic will hold the tunnel open indefinitely until Ctrl-C or pod restart. A proxy in front of the control plane may still close it; see [production install](production-install.md#why-not-an-http-ingress). |
+
+## Next
+
+- [Onboard a user](admin.md#onboard-a-user): accounts, roles and first passwords.
+- [CLI reference](cli.md): what users run.
+- [README](../README.md): back to the start.
