@@ -87,6 +87,9 @@ Five steps take a new person from nothing to running commands.
    in the README, which tells them to
    [change their password](cli.md#change-your-password) after the first login.
 
+Next, for you: [Operations](operations.md) for backup, upgrades and
+troubleshooting.
+
 ## Users
 
 Permissions come from the policy file, matched by email, so there is no

@@ -20,13 +20,15 @@ The admin account is seeded from `auth.admin_email` / `auth.admin_password` in
 Change it immediately via the API:
 
 ```bash
-curl -s -X POST https://control-plane:8080/api/v1/auth/change-password \
+TOKEN=$(awk '/^token:/{print $2}' ~/.kbridge/config.yaml)   # saved by kb login
+curl -s -X POST https://<control-plane>/api/v1/auth/change-password \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"current_password":"<seed-password>","new_password":"<strong-password>"}'
 ```
 
-`$TOKEN` is the access token returned by `POST /auth/login`. See the
+The `admin_password` in the Helm values or Secret only seeds the first start:
+after this change it no longer matches, and restarting does not reset it. See the
 [API reference](api.md#post-apiv1authchange-password) for the full request/response.
 
 > The server logs a warning at startup when `admin_password` is `admin123` or
@@ -437,8 +439,10 @@ attempts are rejected.
 ### Login rate limiting
 
 The `/auth/login` endpoint is rate-limited. Clients that exceed the limit receive
-`429 Too Many Requests`. This applies per-IP and protects against credential
-stuffing and brute-force attacks.
+`429 Too Many Requests`. The limit is keyed by client IP and email, and protects
+against credential stuffing and brute-force attacks. Behind an Ingress or
+other proxy the control plane sees the proxy's address, not the user's (it does
+not trust `X-Forwarded-For`), so the limit is effectively per email.
 
 ### Agent tokens hashed with HMAC + pepper
 
@@ -452,10 +456,15 @@ cannot be used to verify or forge tokens without the pepper. See the
 
 Every command attempt — allowed, denied, failed, or timed out — is recorded in
 the audit log with: user, cluster, namespace, command, exit code, duration, and
-client IP. The log is queryable via `kb admin audit` or
+client IP (behind an Ingress, the proxy's address). The log is queryable via `kb admin audit` or
 `GET /api/v1/admin/audit`. Denied requests are included (status `denied`), so
 the audit log is also useful for detecting over-broad expectations in the RBAC
 policy.
 
 Logs are retained for `audit.retention_days` (default 90 days) and pruned
 automatically.
+
+## Next
+
+[Onboard a user](admin.md#onboard-a-user), then [Operations](operations.md) for
+backup and upgrades.

@@ -12,6 +12,7 @@ on operator workstations.
 | Two or more Kubernetes clusters | one for control plane, one per managed cluster |
 | A public DNS name for control plane | e.g. `control-plane.example.com` |
 | cert-manager (recommended) | or a pre-existing `kubernetes.io/tls` Secret |
+| An ingress controller | the example uses ingress-nginx (`className: nginx`); with another controller change `className` and the `nginx.ingress.kubernetes.io/backend-protocol: HTTPS` annotation (§5a) to its equivalent |
 | `kubectl` configured for each cluster | context switching between clusters |
 | `kb` CLI | `make build` or download from releases |
 
@@ -274,6 +275,13 @@ kb login
 # Email: admin@example.com
 # Password: <value of admin_password key from kbridge-control-plane-secrets>
 ```
+
+Read the seeded password with
+`kubectl -n kbridge get secret kbridge-control-plane-secrets -o jsonpath='{.data.admin_password}' | base64 -d`.
+With a private CA (not Let's Encrypt), the CLI needs it too: run
+`export SSL_CERT_FILE=/path/to/ca.crt` before `kb login`, and give the same
+file to your users (see
+[security.md](security.md#4-trust-the-control-planes-ca-on-the-cli-keep-insecure_skip_verify-off)).
 
 Create a token for the first target cluster:
 
