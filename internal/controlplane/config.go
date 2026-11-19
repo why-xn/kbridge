@@ -14,6 +14,13 @@ import (
 
 const devDefaultJWTSecret = "dev-secret-change-in-production!!"
 
+// publicJWTSecrets are signing keys published in this repository: the dev
+// default and the placeholder older Helm charts shipped in values.yaml.
+var publicJWTSecrets = map[string]bool{
+	devDefaultJWTSecret:                         true,
+	"change-me-in-production-at-least-32-chars": true,
+}
+
 // Config holds the complete configuration for the control plane.
 type Config struct {
 	Server    ServerConfig    `yaml:"server"`
@@ -235,8 +242,8 @@ func (c *Config) validateSecrets() error {
 		return fmt.Errorf("jwt_secret must be set")
 	case len(c.Auth.JWTSecret) < 32:
 		return fmt.Errorf("jwt_secret must be at least 32 characters")
-	case c.Auth.JWTSecret == devDefaultJWTSecret:
-		return fmt.Errorf("jwt_secret is the shipped development default; generate one with: openssl rand -hex 32")
+	case publicJWTSecrets[c.Auth.JWTSecret]:
+		return fmt.Errorf("jwt_secret is a published placeholder; set a random value of 32+ characters (openssl rand -hex 32)")
 	}
 	if c.Auth.AdminPassword == "admin123" || (c.Auth.AdminPassword != "" && len(c.Auth.AdminPassword) < 8) {
 		slog.Warn("admin_password is weak or a known default; change it after first login")

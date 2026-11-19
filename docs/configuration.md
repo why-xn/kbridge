@@ -46,7 +46,7 @@ streams:
 
 | Key | Required | Notes |
 |-----|----------|-------|
-| `auth.jwt_secret` | yes | Signing key for access tokens |
+| `auth.jwt_secret` | yes | Signing key for access tokens; at least 32 characters, and published placeholders are refused |
 | `auth.token_pepper` | no | HMAC key for agent tokens at rest; when empty, falls back to `jwt_secret`. Set a dedicated value for key separation. Changing it invalidates existing agent tokens (re-issue them) |
 | `database.path` | yes | SQLite file path |
 | `bootstrap.*` | no | Seeds one agent token at startup; prefer the admin API |
