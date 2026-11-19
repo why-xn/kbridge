@@ -108,7 +108,10 @@ exist in the image, so point the database at the `kbridge` user's home on a
 volume and mount the policy file next to the config. The example config also
 seeds an agent token, `dev-token`, which anyone who reads the file could use;
 the sed below clears it so you create real tokens with
-`kb admin agent-tokens create`:
+`kb admin agent-tokens create`. The example config also seeds the admin
+`admin@kbridge.local` with the password `admin123`, and only while no user
+with that email exists, so the `docker run` below sets a random one on first
+start:
 
 ```bash
 sed -e 's#path: kbridge.db#path: /home/kbridge/kbridge.db#' \
@@ -118,6 +121,7 @@ sed -e 's#path: kbridge.db#path: /home/kbridge/kbridge.db#' \
 docker volume create kbridge-data
 docker run -p 8080:8080 -p 9090:9090 \
   -e KBRIDGE_JWT_SECRET="$(openssl rand -hex 32)" \
+  -e KBRIDGE_ADMIN_PASSWORD="$(openssl rand -hex 16 | tee admin-password.txt)" \
   -v kbridge-data:/home/kbridge \
   -v "$PWD/control-plane.docker.yaml:/etc/kbridge/control-plane.yaml:ro" \
   -v "$PWD/configs/rbac.yaml:/etc/kbridge/rbac.yaml:ro" \
@@ -125,11 +129,9 @@ docker run -p 8080:8080 -p 9090:9090 \
 curl http://localhost:8080/health   # {"status":"healthy","version":"v0.3.1-alpha.1"}
 ```
 
-The example config seeds the admin `admin@kbridge.local` with the password
-`admin123`. Change `admin_password` in `control-plane.docker.yaml` (or set
-`KBRIDGE_ADMIN_PASSWORD`) before the first start of anything others can reach;
-the admin is seeded only while no user with that email exists, so a later
-change to the file does not reset the password.
+Sign in as `admin@kbridge.local` with the password saved in
+`admin-password.txt`. Setting the variable on a later start does not reset the
+password, because the admin already exists.
 
 Use the tag from `make docker` in place of the published image to run a local
 build.

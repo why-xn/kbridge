@@ -173,9 +173,9 @@ Agents point `controlPlane.url` at the nginx LB host on port 9090.
 
 ### 5a. cert-manager Certificate for control plane's gRPC listener
 
-If you want the control plane pod itself to terminate TLS on :9090 (needed when using
-option B above), create a cert-manager Certificate and enable the
-chart's `tls` stanza.
+If agents should reach :9090 over TLS, with either option above (neither
+terminates TLS), create a cert-manager Certificate and enable the chart's `tls`
+stanza.
 
 This is a second certificate. cert-manager already issues `kbridge-ingress-tls`
 for the Ingress from step 3 and owns that Certificate object; a Certificate with
@@ -199,9 +199,9 @@ spec:
     - kbridge-grpc.example.com
 ```
 
-An HTTP-01 issuer cannot prove `kbridge-grpc.example.com`: Let's Encrypt asks
-for the challenge on port 80 of that name, which points at the gRPC
-LoadBalancer, not the Ingress, so the Certificate never becomes ready. Issue
+With option A, an HTTP-01 issuer cannot prove `kbridge-grpc.example.com`:
+Let's Encrypt asks for the challenge on port 80 of that name, which points at
+the gRPC LoadBalancer, not the Ingress, so the Certificate never becomes ready. Issue
 this Certificate from a DNS-01 issuer. Pointing the name at the ingress
 controller while it is issued also works, but every renewal needs the same.
 

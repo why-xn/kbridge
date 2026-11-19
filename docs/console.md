@@ -20,8 +20,11 @@ default). The console then asks you to sign in again.
 
 - **Clusters** (the landing page): each cluster's connection state, the last
   heartbeat of its connected agent, and whether its RBAC bindings match the
-  policy. A disconnected cluster shows `heartbeat never`. A cluster with no
-  agent yet shows the commands to create a token and install the agent. The
+  policy. A disconnected cluster shows when its agent was last heard from
+  (`Disconnected · heartbeat 3 min ago`), or `heartbeat never` if the control
+  plane has restarted since. A cluster whose agent has never connected shows
+  `Waiting for agent · no heartbeat yet` and the commands to create a token and
+  install the agent. The
   page refreshes on its own.
 - **Audit Log**: every command attempt, newest first. It opens on the Last 24
   Hours; pick Any Time, Last Hour, Last 7 Days or a custom range for more.
