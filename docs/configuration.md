@@ -43,6 +43,9 @@ tls:
 
 streams:
   max_concurrent: 50       # max simultaneous streaming sessions (logs -f / get -w)
+
+ui:
+  enabled: true            # serve the admin console at /
 ```
 
 | Key | Required | Notes |
@@ -61,7 +64,7 @@ streams:
 
 | Variable | Overrides | Default |
 |----------|-----------|---------|
-| `KBRIDGE_CONFIG` | config file path | `configs/control-plane.yaml` |
+| `KBRIDGE_CONFIG` | config file path (`--config` wins) | none: with neither, the control plane runs on built-in defaults, with RBAC off and no seeded admin, so `KBRIDGE_JWT_SECRET` is required |
 | `KBRIDGE_JWT_SECRET` / `KBRIDGE_JWT_SECRET_FILE` | `auth.jwt_secret` / `auth.jwt_secret_file` | — |
 | `KBRIDGE_TOKEN_PEPPER` / `KBRIDGE_TOKEN_PEPPER_FILE` | `auth.token_pepper` / `auth.token_pepper_file` | — |
 | `KBRIDGE_ADMIN_PASSWORD` / `KBRIDGE_ADMIN_PASSWORD_FILE` | `auth.admin_password` / `auth.admin_password_file` | — |
@@ -91,6 +94,8 @@ protected_namespaces: []   # namespaces kubectl through kbridge may not touch
 
 sync:
   interval: 60s            # how often role bindings are re-checked against policy
+
+health_file: /tmp/kbridge-agent-healthy   # set in the file only; no env var
 ```
 
 | Key | Env var | Default | Meaning |
