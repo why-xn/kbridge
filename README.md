@@ -87,7 +87,7 @@ and [Quick Start](#quick-start) to build and run everything from source.
 ## Problem
 
 Giving an engineer access to a Kubernetes cluster usually means handing out a
-kubeconfig or exposing the API server. That creates four problems that compound
+kubeconfig or exposing the API server. That creates three problems that compound
 with every new cluster, team, and environment.
 
 - **Credential sprawl.** Every developer needs a kubeconfig for every cluster.
@@ -96,19 +96,13 @@ with every new cluster, team, and environment.
 - **Network exposure.** Cluster API servers sit behind firewalls, so granting
   access means a VPN, a bastion, or a public endpoint. Each one is more attack
   surface to maintain.
-- **Standing access, and no way to stop a mistake.** Permissions are granted
-  once and kept forever, and Kubernetes RBAC decides only whether a *verb* on a
-  *resource* is allowed. It cannot tell `delete pod api-0` from
-  `delete pod --all`, so a single mistaken command reaches the cluster and the
-  first anyone knows of it is the outage.
 - **Records that do not answer the question.** Reconstructing who did what means
-  stitching together logs from several clusters. And when the actor is an AI
-  agent using a shared credential, the cluster's own audit log cannot say which
-  human was behind it.
+  stitching together logs from several clusters, and a shared credential makes
+  the cluster's own audit log name the credential rather than the person.
 
-That last point is getting sharper. Teams are already letting AI agents inspect
-and change infrastructure, often by handing them long-lived credentials, which
-recreates every problem above at machine speed.
+The same applies to automation and AI agents: give one its own kbridge account
+and it holds no cluster credential, and every command it runs is checked
+against its role and recorded under its name.
 
 ## Solution
 
@@ -135,7 +129,7 @@ What that changes:
 |---|---|
 | Credential sprawl | Users authenticate to the control plane; cluster credentials never leave the agent, and access is revoked centrally |
 | Network exposure | The agent dials out, so no inbound port, bastion, or VPN is required |
-| Records that do not answer the question | One audit log across every cluster: who ran which command where, and whether it ran |
+| Records that do not answer the question | One audit log across every cluster: who ran which command where, and whether it ran. Commands run as the user, so the cluster's own audit log names them too |
 
 See the [roadmap](https://github.com/why-xn/kbridge/blob/master/ROADMAP.md)
 on `master` for what is shipped, in progress, and planned.
