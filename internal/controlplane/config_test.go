@@ -488,3 +488,36 @@ func TestConfig_Validate_Database(t *testing.T) {
 		})
 	}
 }
+
+func TestUIEnabled(t *testing.T) {
+	tests := []struct {
+		name, yaml, env string
+		want, wantErr   bool
+	}{
+		{"default", "", "", true, false},
+		{"yaml false", "ui:\n  enabled: false\n", "", false, false},
+		{"env false over yaml true", "ui:\n  enabled: true\n", "false", false, false},
+		{"env invalid", "", "yes-please", true, true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Setenv("KBRIDGE_UI_ENABLED", tt.env)
+			t.Setenv("KBRIDGE_JWT_SECRET", "0123456789abcdef0123456789abcdef-x")
+			p := filepath.Join(t.TempDir(), "cp.yaml")
+			if err := os.WriteFile(p, []byte(tt.yaml), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			cfg, err := LoadConfig(p)
+			if err != nil {
+				t.Fatal(err)
+			}
+			err = cfg.Validate()
+			if (err != nil) != tt.wantErr || (err != nil && err.Error() != "ui.enabled: KBRIDGE_UI_ENABLED must be true or false") {
+				t.Fatalf("Validate() = %v, wantErr %v", err, tt.wantErr)
+			}
+			if cfg.UI.Enabled != tt.want {
+				t.Errorf("Enabled = %v, want %v", cfg.UI.Enabled, tt.want)
+			}
+		})
+	}
+}

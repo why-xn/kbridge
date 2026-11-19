@@ -88,6 +88,9 @@ ingress:
 streams:
   maxConcurrent: 50
 
+ui:
+  enabled: true
+
 podSecurityContext:
   runAsNonRoot: true
   # Group of the control plane user (uid 10001) so it can write the data PVC.

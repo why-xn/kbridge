@@ -100,8 +100,12 @@ func NewServer(cfg *Config) (*Server, error) {
 	agentStore.OnDisconnect = onAgentDisconnect(commandQueue, sessionManager)
 
 	httpHandler := NewHTTPServer(agentStore, commandQueue, authHandlers, adminHandlers, policy, auditRecorder, sessionManager, jwtManager)
+	if cfg.UI.Enabled {
+		httpHandler.registerConsole()
+	}
 	grpcHandler := NewGRPCServer(agentStore, commandQueue, authenticator, sessionManager)
 	grpcHandler.policy = policy
+	adminHandlers.SetPolicy(policy)
 
 	grpcOpts, err := grpcServerOptions(cfg.TLS)
 	if err != nil {

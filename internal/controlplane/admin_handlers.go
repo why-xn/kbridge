@@ -28,7 +28,11 @@ type AdminHandlers struct {
 	store  Store
 	pepper string
 	agents *AgentStore
+	policy *PolicyEngine
 }
+
+// SetPolicy gives the users list the RBAC policy; nil leaves roles out.
+func (h *AdminHandlers) SetPolicy(p *PolicyEngine) { h.policy = p }
 
 // NewAdminHandlers creates a new AdminHandlers instance. pepper is the
 // server-side secret used to HMAC agent tokens at rest; agents is the live
@@ -161,14 +165,66 @@ type updateUserRequest struct {
 	Password *string `json:"password"`
 }
 
-// HandleListUsers lists all users.
+type userView struct {
+	*User
+	Roles         *[]string        `json:"roles,omitempty"`  // nil (omitted) when RBAC is off
+	Access        *[]AccessSummary `json:"access,omitempty"` // empty list when RBAC is on but nothing matches
+	DefaultRole   bool             `json:"default_role"`
+	LastCommand   string           `json:"last_command,omitempty"`
+	LastCluster   string           `json:"last_cluster,omitempty"`
+	LastCommandAt *time.Time       `json:"last_command_at,omitempty"`
+	Denied7d      int              `json:"denied_7d"`
+}
+
+// HandleListUsers lists all users with their policy roles and recent activity.
 func (h *AdminHandlers) HandleListUsers(c *gin.Context) {
-	users, err := h.store.ListUsers(c.Request.Context())
+	ctx := c.Request.Context()
+	users, err := h.store.ListUsers(ctx)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"users": users})
+	activity, err := h.store.UserActivity(ctx, time.Now().Add(-7*24*time.Hour))
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
+		return
+	}
+	names, err := h.clusterNames(ctx)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
+		return
+	}
+	out := make([]userView, 0, len(users))
+	for _, u := range users {
+		out = append(out, h.userView(u, activity[u.Email], names))
+	}
+	c.JSON(http.StatusOK, gin.H{"users": out})
+}
+
+func (h *AdminHandlers) clusterNames(ctx context.Context) ([]string, error) {
+	clusters, err := h.store.ListClusters(ctx)
+	names := make([]string, 0, len(clusters))
+	for _, cl := range clusters {
+		names = append(names, cl.Name)
+	}
+	return names, err
+}
+
+func (h *AdminHandlers) userView(u *User, a UserActivity, clusters []string) userView {
+	v := userView{User: u, LastCommand: a.LastCommand, LastCluster: a.LastCluster, Denied7d: a.DeniedSince}
+	if !a.LastCommandAt.IsZero() {
+		v.LastCommandAt = &a.LastCommandAt
+	}
+	if h.policy == nil {
+		return v
+	}
+	roles, isDefault := h.policy.RolesFor(u.Email)
+	if roles == nil {
+		roles = []string{}
+	}
+	access := h.policy.AccessFor(u.Email, clusters)
+	v.Roles, v.Access, v.DefaultRole = &roles, &access, isDefault
+	return v
 }
 
 // HandleCreateUser creates a new user with a hashed password.
@@ -267,6 +323,8 @@ func (h *AdminHandlers) HandleListAuditLogs(c *gin.Context) {
 		UserEmail:   c.Query("user"),
 		ClusterName: c.Query("cluster"),
 		Status:      c.Query("status"),
+		Namespace:   c.Query("namespace"),
+		Command:     c.Query("command"),
 		Page:        atoiDefault(c.Query("page"), 1),
 		PerPage:     clampPerPage(atoiDefault(c.Query("per_page"), defaultAuditPerPage)),
 	}

@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/gin-gonic/gin"
 	"github.com/why-xn/kbridge/internal/auth"
 )
 
@@ -334,6 +335,34 @@ roles:
 			}
 			if tt.wantDeny != "" && (w.Code != http.StatusForbidden || got["error"] != tt.wantDeny) {
 				t.Errorf("got %d %q, want 403 %q", w.Code, got["error"], tt.wantDeny)
+			}
+		})
+	}
+}
+
+func TestRecordExecAudit_EnforcedNamespace(t *testing.T) {
+	tests := []struct {
+		name      string
+		command   []string
+		namespace string
+		want      string
+	}{
+		{"short flag", []string{"get", "pods", "-n", "team-a"}, "", "team-a"},
+		{"long flag with equals", []string{"get", "pods", "--namespace=team-a"}, "", "team-a"},
+		{"no flag", []string{"get", "pods"}, "", "default"},
+		{"all namespaces", []string{"get", "pods", "-A"}, "", "*"},
+		{"body field cannot override the command", []string{"get", "pods", "-n", "team-a"}, "other", "team-a"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			store := newTestStore(t)
+			srv := &HTTPServer{audit: NewAuditRecorder(store)}
+			c, _ := gin.CreateTestContext(httptest.NewRecorder())
+			c.Request = httptest.NewRequest("POST", "/", nil)
+			srv.recordExecAudit(c, "prod", ExecRequest{Command: tt.command, Namespace: tt.namespace}, AuditStatusDenied, nil, nil, "")
+			logs, _, _ := store.ListAuditLogs(context.Background(), AuditLogFilter{})
+			if len(logs) != 1 || logs[0].Namespace != tt.want {
+				t.Errorf("audit namespace = %+v, want %q", logs, tt.want)
 			}
 		})
 	}

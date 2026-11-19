@@ -534,3 +534,124 @@ func assertClusterListed(t *testing.T, srv *HTTPServer, name, want string) {
 		t.Fatalf("clusters = %+v, want %s %s", out.Clusters, name, want)
 	}
 }
+
+func TestAdminHandler_ListAuditLogs_NamespaceCommandParams(t *testing.T) {
+	ah, store := newTestAdminHandlers(t)
+	for _, l := range []AuditLog{
+		{Command: "get pods -n team-a", Namespace: "team-a"},
+		{Command: "get secrets -n kube-system", Namespace: "kube-system"},
+	} {
+		l.UserEmail, l.ClusterName, l.Status = "u@test.com", "prod", "success"
+		if err := store.CreateAuditLog(context.Background(), &l); err != nil {
+			t.Fatalf("create audit log: %v", err)
+		}
+	}
+	w := doRequest(t, "GET", "/audit", ah.HandleListAuditLogs,
+		"GET", "/audit?namespace=team-a&command=pods", nil)
+	if w.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d: %s", w.Code, w.Body.String())
+	}
+	var resp struct{ Total int }
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if resp.Total != 1 {
+		t.Errorf("want total 1, got %d", resp.Total)
+	}
+}
+
+func TestAdminClusters_ReportsHeartbeatAndFirstConnection(t *testing.T) {
+	db := newTestStore(t)
+	ctx := context.Background()
+	seen := time.Date(2026, 11, 18, 10, 0, 0, 0, time.UTC)
+	for _, cl := range []*Cluster{{Name: "fresh"}, {Name: "live", LastSeenAt: &seen}} {
+		if err := db.CreateCluster(ctx, cl); err != nil {
+			t.Fatalf("seed cluster: %v", err)
+		}
+	}
+	agents := NewAgentStore()
+	live := &AgentInfo{ID: "a1", ClusterName: "live"}
+	agents.Register(live)
+	live.LastSeen = seen // Register stamps now; pin it to assert the exact value
+	jm := auth.NewJWTManager("test-secret-at-least-32-chars!!", time.Hour)
+	srv := NewHTTPServer(agents, NewCommandQueue(), nil, NewAdminHandlers(db, testPepper, agents), nil, nil, nil, jm)
+	get := func(isAdmin bool) *httptest.ResponseRecorder {
+		tok, _ := jm.GenerateAccessToken(&auth.UserClaims{UserID: "u1", Email: "u@example.com", IsAdmin: isAdmin})
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/admin/clusters", nil)
+		req.Header.Set("Authorization", "Bearer "+tok)
+		w := httptest.NewRecorder()
+		srv.Handler().ServeHTTP(w, req)
+		return w
+	}
+
+	if w := get(false); w.Code != http.StatusForbidden {
+		t.Fatalf("non-admin: want 403, got %d", w.Code)
+	}
+	w := get(true)
+	var out struct {
+		Clusters []AdminCluster `json:"clusters"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &out); err != nil || len(out.Clusters) != 2 {
+		t.Fatalf("admin: %d %s (%v)", w.Code, w.Body.String(), err)
+	}
+	fresh, got := out.Clusters[0], out.Clusters[1]
+	if fresh.Name != "fresh" || fresh.Status != AgentStatusDisconnected || fresh.EverConnected || fresh.LastHeartbeat != nil {
+		t.Errorf("fresh = %+v", fresh)
+	}
+	if got.Name != "live" || got.Status != AgentStatusConnected || !got.EverConnected ||
+		got.LastHeartbeat == nil || !got.LastHeartbeat.Equal(seen) {
+		t.Errorf("live = %+v", got)
+	}
+}
+
+func TestAdminHandler_ListUsers_RolesAndActivity(t *testing.T) {
+	ah, store := newTestAdminHandlers(t)
+	ctx := context.Background()
+	store.CreateUser(ctx, &User{Email: "alice@corp.com", Name: "A", PasswordHash: "h", IsActive: true})
+	store.CreateUser(ctx, &User{Email: "stranger@x.com", Name: "S", PasswordHash: "h", IsActive: true})
+	store.CreateCluster(ctx, &Cluster{Name: "staging", Status: "offline"})
+	store.CreateAuditLog(ctx, &AuditLog{UserEmail: "alice@corp.com", ClusterName: "staging", Command: "get pods", Status: "success"})
+	store.CreateAuditLog(ctx, &AuditLog{UserEmail: "alice@corp.com", ClusterName: "staging", Command: "delete pod", Status: "denied"})
+	ah.SetPolicy(engineFor(t, samplePolicy))
+
+	w := doRequest(t, "GET", "/api/v1/admin/users", ah.HandleListUsers, "GET", "/api/v1/admin/users", nil)
+	var resp struct {
+		Users []map[string]any `json:"users"`
+	}
+	json.Unmarshal(w.Body.Bytes(), &resp)
+	by := map[string]map[string]any{}
+	for _, u := range resp.Users {
+		by[u["email"].(string)] = u
+	}
+	a, s := by["alice@corp.com"], by["stranger@x.com"]
+	if a["roles"].([]any)[0] != "admin" || a["default_role"] != false || a["denied_7d"] != float64(1) || a["last_cluster"] != "staging" {
+		t.Errorf("alice = %v", a)
+	}
+	if a["last_command_at"] == nil || a["access"] == nil {
+		t.Errorf("alice missing fields: %v", a)
+	}
+	if s["default_role"] != true || s["denied_7d"] != float64(0) {
+		t.Errorf("stranger = %v", s)
+	}
+	if _, ok := s["last_command"]; ok {
+		t.Error("user without activity must omit last_command")
+	}
+}
+
+func TestAdminHandler_ListUsers_NoPolicy(t *testing.T) {
+	ah, store := newTestAdminHandlers(t)
+	store.CreateUser(context.Background(), &User{Email: "a@x.com", Name: "A", PasswordHash: "h", IsActive: true})
+	w := doRequest(t, "GET", "/api/v1/admin/users", ah.HandleListUsers, "GET", "/api/v1/admin/users", nil)
+	if w.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d", w.Code)
+	}
+	var resp struct {
+		Users []map[string]any `json:"users"`
+	}
+	json.Unmarshal(w.Body.Bytes(), &resp)
+	for _, k := range []string{"roles", "access"} {
+		if _, ok := resp.Users[0][k]; ok {
+			t.Errorf("%s must be omitted without a policy", k)
+		}
+	}
+}

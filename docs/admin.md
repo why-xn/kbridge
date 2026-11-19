@@ -1,12 +1,18 @@
 # Admin Guide
 
-Administrative operations require a user with the `admin` role (granted via the
-[RBAC policy](rbac.md) bindings). The first admin is seeded from `auth.admin_*`
-in `control-plane.yaml` on first startup.
+Administrative operations (`kb admin …` and `/api/v1/admin/*`) require the
+admin account the control plane seeds from `auth.admin_*` in
+`control-plane.yaml` on first start. The admin flag lives on that user record,
+and there is no command or API call that grants it to another user yet. The
+`admin` role in the [RBAC policy](rbac.md) is a different thing: it decides
+which kubectl commands a user may run, not who may administer kbridge.
 
 These tasks are driven primarily through the `kb admin …` CLI (run
 `kb login` as an admin first); the equivalent HTTP API is shown as a
 secondary option. See the [CLI reference](cli.md) and [API reference](api.md).
+
+Admins can also see clusters, the audit log, agent tokens, and users in the
+read-only [admin console](console.md) at `https://<control-plane>/ui/`.
 
 ## Users
 
@@ -80,15 +86,16 @@ config (see [configuration](configuration.md)).
 
 Every command attempt is recorded (status `success`, `failed`, `denied`,
 `timeout`, or `canceled`) with user, cluster, command, namespace, exit code,
-duration, and client IP. A command refused because the cluster's agent is disconnected is
+duration, and client IP. The namespace is the one kbridge enforced: the
+command's `-n`/`--namespace`, else `default`, and `*` for `-A`. A command refused because the cluster's agent is disconnected is
 recorded as `failed` with the error `agent is disconnected` and no exit code.
 
 ```bash
 kb admin audit --cluster prod --status denied --limit 100
 ```
 
-Or `GET /api/v1/admin/audit` with `user`, `cluster`, `status`, `from`/`to`
-(RFC3339), `page`, `per_page` filters.
+Or `GET /api/v1/admin/audit` with `user`, `cluster`, `status`, `namespace`,
+`command` (substring), `from`/`to` (RFC3339), `page`, `per_page` filters.
 
 Logs older than `audit.retention_days` are pruned automatically every
 `audit.cleanup_interval` (configured in `control-plane.yaml`).

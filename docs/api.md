@@ -7,7 +7,8 @@ requires the `admin` role. Tokens come from `POST /auth/login`.
 ## Health
 
 ### `GET /health`
-Unauthenticated. Returns `{"status":"healthy"}`.
+Unauthenticated. Returns `{"status":"healthy","version":"v0.3.0-alpha.1"}`;
+`version` is the release tag, or `dev` for an unstamped build.
 
 ## Auth
 
@@ -171,7 +172,18 @@ Revokes a token (idempotent).
 ## Admin — users
 
 ### `GET /api/v1/admin/users`
-Lists users (password hashes are never serialized).
+Lists users (password hashes are never serialized). Each user also carries:
+
+- `roles` and `access`: the policy roles that apply and what they allow, per cluster:
+  `{"cluster","namespaces","level"}`, where `cluster` `*` means every cluster, `["*"]` means
+  all namespaces, and `level` is `read-only` or `read-write`. A rule is `read-only` only when
+  every verb is one of `get`, `list`, `watch`, `describe`, `logs`, `top`, `explain`, `version`,
+  `api-resources` (`auth` counts as `read-write`: `kubectl auth reconcile` writes RBAC). Rules
+  that allow nothing (an empty `namespaces`, `resources` or `verbs`) are left out. Both are
+  omitted when RBAC is off.
+- `default_role`: true when `roles` came from the policy `default`, not a binding.
+- `last_command`, `last_cluster`, `last_command_at`: the latest audit entry; omitted when the user has none.
+- `denied_7d`: denied commands in the last 7 days.
 
 ### `POST /api/v1/admin/users`
 Body: `{"email","name","password","is_active?"}`. `409` on duplicate email.
@@ -181,6 +193,25 @@ Body: any of `{"name","is_active","password"}`. `404` if not found.
 
 ### `DELETE /api/v1/admin/users/{id}`
 Deletes the user.
+
+## Admin — clusters
+
+### `GET /api/v1/admin/clusters`
+Every known cluster, sorted by name. Returns:
+
+```json
+{ "clusters": [ {
+  "name": "prod",
+  "status": "connected",
+  "last_heartbeat": "<RFC3339 of the agent's last heartbeat; null when no agent is registered>",
+  "ever_connected": true,
+  "created_at": "<RFC3339>"
+} ] }
+```
+
+`status` follows the same rule as `GET /api/v1/clusters`. `ever_connected` is
+false until an agent first registers, so `disconnected` with
+`ever_connected: false` means the cluster is waiting for its agent.
 
 ## Admin — RBAC sync
 
@@ -204,5 +235,8 @@ Binding sync state of each connected cluster, sorted by cluster name. Returns:
 ## Admin — audit
 
 ### `GET /api/v1/admin/audit`
-Query params: `user`, `cluster`, `status`, `from`/`to` (RFC3339), `page`,
-`per_page` (max 200). Returns `{logs, total, page, per_page}`, newest first.
+Query params: `user`, `cluster`, `status`, `namespace` (exact), `command`
+(case-insensitive substring, first 200 characters), `from`/`to` (RFC3339),
+`page`, `per_page` (max 200). Returns `{logs, total, page, per_page}`, newest first.
+An entry's `namespace` is the one kbridge enforced: the command's `-n`/`--namespace`, else the
+request's `namespace` field, else `default`; `*` for `-A`.

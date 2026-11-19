@@ -64,6 +64,8 @@ type AuditLogFilter struct {
 	UserEmail   string
 	ClusterName string
 	Status      string
+	Namespace   string // exact match
+	Command     string // case-insensitive substring
 	From        *time.Time
 	To          *time.Time
 	Page        int
