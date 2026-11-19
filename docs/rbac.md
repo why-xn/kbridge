@@ -169,7 +169,7 @@ roles:
 |-------|---------|
 | `clusters` | Patterns (with `*`) for the clusters this entry applies to |
 | `clusterRole` | An existing ClusterRole to bind, such as `view` or `edit`. Required |
-| `namespaces` | Literal namespace names (no patterns). One RoleBinding per namespace |
+| `namespaces` | Literal namespace names (no patterns). One RoleBinding per namespace. Each must already exist in the target cluster; the agent does not create it |
 | `clusterWide` | `true` for one ClusterRoleBinding instead. Exactly one of `namespaces` or `clusterWide` must be set; the policy fails to load otherwise |
 
 What the agent creates:
@@ -192,6 +192,12 @@ What the agent creates:
 
 What the agent refuses, reported per binding in `kb admin rbac status`:
 
+- a namespace that does not exist in the cluster, reported as
+  `binding kbridge-developer-edit: reading namespace "team-a": ... 404 namespaces "team-a" not found`
+  for a ClusterRole other than `view`, and as
+  `... /namespaces/team-b/rolebindings: 404 namespaces "team-b" not found` for
+  `view`. Create it (`kubectl create namespace <ns>`, labelled as below for
+  anything but `view`) and the agent binds on its next sync;
 - any namespace it protects: its own (release) namespace and the chart's
   `protectedNamespaces` (`namespace "<ns>" is reserved for the kbridge agent`);
 - a name without the `kbridge-` prefix, or a subject that is not a `kbridge:`
@@ -217,8 +223,9 @@ What the agent refuses, reported per binding in `kb admin rbac status`:
   ```
 
   If a namespace stops enforcing, the agent deletes the binding it made there
-  on its next sync and reports the same refusal; so does a namespace the agent
-  may not read (403) or that is gone (404). Any other read failure, such as an
+  on its next sync and reports the same refusal. A namespace the agent may not
+  read (403) or that is gone (404) also loses the binding, reported as the read
+  error (`reading namespace "<ns>": ...`). Any other read failure, such as an
   API server outage, leaves the binding as it is and reports the error.
 
   `view` is exempt: it cannot create pods. Cluster-wide bindings are not

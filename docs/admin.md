@@ -63,9 +63,13 @@ Five steps take a new person from nothing to running commands.
    The control plane reloads it within 10 s; see
    [Reloading](rbac.md#reloading).
 
-3. **Label the namespace, if the role binds `edit` there.** A role whose
-   `clusterAccess` binds `edit` in a namespace needs that namespace labelled
-   for Pod Security first; see
+3. **Create and label the namespace, if the role binds one.** Every
+   namespace in a role's `clusterAccess` must exist in the target cluster; the
+   agent does not create it. A missing one shows in `kb admin rbac status` as
+   `reading namespace "<ns>": ... not found` (or, for `view`,
+   `... namespaces "<ns>" not found`): create it with
+   `kubectl create namespace <ns>`. A namespace where the role binds `edit`
+   also needs a Pod Security label; see
    [installation step 4](installation.md#step-4-label-namespaces-where-kbridge-grants-edit).
 
 4. **Wait for `in sync`.** A new user's bindings, and a new role's, appear
