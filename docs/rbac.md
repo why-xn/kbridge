@@ -305,6 +305,9 @@ The flag works on every command path: one-shot, streaming, `exec -it`,
 `args` and `args_not` match raw command tokens with the same `*` wildcards used
 elsewhere. A token written as `--flag=value` matches both the whole token and
 the bare `--flag`, so `args_not: ["--dry-run"]` catches `--dry-run=server`.
+`args_not` reads only the tokens before a real `--`, the ones kubectl takes as
+its own flags: `kb apply -f app.yaml -- --dry-run=server` is not a dry run, so
+it is not exempt.
 
 Use `args` to catch a dangerous *form* of an otherwise ordinary verb, and
 `args_not` to carve out a safe one:

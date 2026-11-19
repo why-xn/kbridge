@@ -98,6 +98,16 @@ func TestPolicy_Evaluate(t *testing.T) {
 			want: OutcomeAllowed,
 		},
 		{
+			name: "args_not ignores a dry run after --", subject: "dev@corp.com",
+			cluster: "prod-eu", command: []string{"apply", "-f", "app.yaml", "--", "--dry-run=server"},
+			want: OutcomeReasonRequired, guardrail: "prod-apply-needs-reason",
+		},
+		{
+			name: "args_not exempts a dry run before --", subject: "dev@corp.com",
+			cluster: "prod-eu", command: []string{"apply", "-f", "app.yaml", "--dry-run=server", "--", "x"},
+			want: OutcomeAllowed,
+		},
+		{
 			name: "first matching guardrail wins", subject: "dev@corp.com",
 			cluster: "prod-eu", command: []string{"delete", "ns", "--all"},
 			want: OutcomeBlocked, guardrail: "no-prod-namespace-delete",

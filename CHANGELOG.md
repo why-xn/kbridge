@@ -86,7 +86,9 @@ plane wires the service, which it does by default.
   after the role rules and can only take access away. A guardrail matches on
   cluster, namespace, resource, verb, and — new — the raw command arguments, so
   it can tell `delete pod api-0` from `delete pod --all`, and `apply` from
-  `apply --dry-run=server`. Two actions are supported:
+  `apply --dry-run=server`. `args_not` reads only the arguments before a real
+  `--`, so `-- --dry-run=server` does not exempt a command. Two actions are
+  supported:
 
   | Action | Effect |
   |---|---|

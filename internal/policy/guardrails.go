@@ -3,6 +3,8 @@ package policy
 import (
 	"fmt"
 	"strings"
+
+	"github.com/why-xn/kbridge/internal/kubeargs"
 )
 
 // Action is what a guardrail does to a command it matches.
@@ -48,7 +50,8 @@ type Match struct {
 	// one token, so ["--all"] fires only on a command carrying that flag.
 	Args []string `yaml:"args"`
 	// ArgsNot is the negation: the guardrail is skipped when any pattern here
-	// matches a token, which expresses "unless --dry-run was passed".
+	// matches a token before a real "--", which expresses "unless --dry-run was
+	// passed".
 	ArgsNot []string `yaml:"args_not"`
 }
 
@@ -70,7 +73,18 @@ func (m Match) matches(req AccessRequest) bool {
 		resourceMatchesAny(m.Resources, req.Resource) &&
 		verbMatchesAny(m.Verbs, req.Verb) &&
 		allArgsPresent(m.Args, req.Args) &&
-		noArgPresent(m.ArgsNot, req.Args)
+		noArgPresent(m.ArgsNot, flagArgs(req.Args))
+}
+
+// flagArgs returns the tokens before a real "--". kubectl reads the rest as
+// names or a container's arguments, so they must not exempt a command.
+func flagArgs(args []string) []string {
+	for i := 1; i < len(args); i++ {
+		if args[i] == "--" && kubeargs.EndsFlags(args[1:i], args[0]) {
+			return args[:i]
+		}
+	}
+	return args
 }
 
 // exempts reports whether subject is excused from this guardrail.
