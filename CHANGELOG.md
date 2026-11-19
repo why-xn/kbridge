@@ -141,6 +141,73 @@ Existing databases gain the `audit_logs.reason` column automatically on startup.
 Policy files without a `guardrails:` section keep working unchanged — guardrails
 are opt-in, and a policy with none behaves exactly as before.
 
+## [0.3.1-alpha.1] - 2026-11-19
+
+### Added
+
+- **Admin console at the control plane root.** A read-only web view for admins: cluster
+  connection and policy sync, the audit log with filters and CSV export, agent
+  tokens, and users with their roles and access. It loads nothing from outside
+  the control plane and is served with a strict Content-Security-Policy.
+  `ui.enabled` (default `true`, env `KBRIDGE_UI_ENABLED`, chart `ui.enabled`)
+  turns it off. See [docs/console.md](docs/console.md).
+- **Audit API filters `namespace` and `command`.** `namespace` matches exactly;
+  `command` is a case-insensitive substring. See [docs/api.md](docs/api.md#admin--audit).
+- **`GET /api/v1/admin/clusters`** lists every known cluster with its status,
+  last heartbeat, and whether an agent ever connected.
+- **`GET /api/v1/admin/users` adds** `roles`, `default_role`, `access`,
+  `last_command`, `last_cluster`, `last_command_at`, and `denied_7d`.
+- **`GET /health` also returns `version`.**
+
+### Changed
+
+- **Audit entries record the namespace kbridge enforced.** It comes from the
+  command's `-n`/`--namespace` (any form), else `default`, and is `*` for
+  `-A`. It used to be the namespace the client sent, which was empty for a
+  plain `kb get pods` and could differ from where the command ran.
+- **The docs are reorganised for new users.** The README is a front door
+  with a "Start here" for each kind of reader; the installation guide leads
+  with the Helm quick start and ends on a refused command and its audit
+  entry; the admin guide has an "Onboard a user" task; the CLI guide explains
+  what to do when a command is refused. The security guide's agent Helm
+  snippets now use the chart's `controlPlane` key.
+- **The production guide reaches the control plane through a TCP load
+  balancer, not an HTTP Ingress.** An HTTP (L7) Ingress breaks `kb exec -i/-it`
+  and `kb port-forward` and cuts `kb logs -f` at its idle timeout. The guide
+  now serves TLS from the control plane behind a LoadBalancer Service, with
+  TLS passthrough as the option for clusters that keep ingress-nginx. If you
+  installed from the earlier guide, see
+  [Moving from an HTTP Ingress](docs/production-install.md#moving-from-an-http-ingress).
+
+### Security
+
+- **The namespace check reads only the flags kubectl reads.** The control
+  plane took the last `-n`/`--namespace`/`-A` anywhere in the command, even
+  after the `--` that ends kubectl's own flags, so a user allowed only in
+  `team-a` could run `kb exec pod -n kube-system -- grep -n team-a /x` (checked
+  against `team-a`, run in `kube-system`). This bypassed kbridge's namespace
+  rule; Kubernetes RBAC still applied, since commands run impersonated as the
+  user. The check now stops at a real `--`, and a `--` that the flag before it
+  could take as its value is refused for every verb (write that flag as
+  `--flag=value`). `kb` also read `-n` after `--` and sent it as the
+  namespace to run in, so `kb exec web -- grep -n web /f` ran in `web` and
+  `kb get pods -- -n x` in `x`; it now reads only kubectl's own
+  `-n`/`--namespace` (`-n x`, `-nx`, `--namespace=x`) before `--`. Affects
+  v0.3.0-alpha.1.
+- **The control plane no longer runs with the chart's placeholder JWT
+  secret.** The control-plane chart shipped `auth.jwtSecret:
+  "change-me-in-production-at-least-32-chars"` and the control plane accepted
+  it, so an install that never set `auth.jwtSecret`, or a `helm upgrade -f
+  values.yaml` without `--reuse-values`, signed user tokens and keyed agent
+  tokens (when `tokenPepper` is empty) with a public value. The chart now
+  defaults `auth.jwtSecret` to empty and refuses to render without
+  `auth.jwtSecret` or `auth.existingSecret`, or with the old placeholder; the
+  control plane refuses the placeholder at startup, like the development
+  default. With `auth.existingSecret` the chart no longer writes a
+  `jwt_secret` into its config Secret. If affected: set `auth.jwtSecret` to
+  `openssl rand -hex 32` or use `auth.existingSecret`, upgrade, then re-issue
+  agent tokens if `tokenPepper` was empty.
+
 ## [0.3.0-alpha.1] - 2026-11-06
 
 ### Added
@@ -331,7 +398,7 @@ agents' `controlPlane.url` at the new Service name.
   kbridge grants `edit`. Backup and restore no longer need `sqlite3` in the
   image, token rotation covers both an inline token and `existingSecret`, and
   every command names the right namespace, Deployment and Secret. See
-  [docs/installation.md](docs/installation.md#helm-kubernetes) and
+  [docs/installation.md](docs/installation.md#quick-start-helm-one-cluster) and
   [docs/operations.md](docs/operations.md).
 - **`kb login` prompts for the control plane URL** when none is set and
   reads a piped password (`echo "$PW" | kb login`).
@@ -424,7 +491,7 @@ agents' `controlPlane.url` at the new Service name.
 
 First public pre-release. The feature set below is complete and end-to-end
 tested, but interfaces — config keys, the RBAC policy schema, and REST API
-paths — may still change between alpha releases.
+paths — may still change before 1.0.0.
 
 ### Added
 
@@ -458,7 +525,8 @@ paths — may still change between alpha releases.
 - **Agent token storage** — tokens are stored only as HMAC-SHA256 digests keyed by a server-side pepper; a stolen database alone cannot be used to verify guessed tokens.
 - mTLS between agents and control plane is planned but deferred; the channel is currently protected by server-authenticated TLS only.
 
-[Unreleased]: https://github.com/why-xn/kbridge/compare/v0.3.0-alpha.1...HEAD
+[Unreleased]: https://github.com/why-xn/kbridge/compare/v0.3.1-alpha.1...HEAD
+[0.3.1-alpha.1]: https://github.com/why-xn/kbridge/compare/v0.3.0-alpha.1...v0.3.1-alpha.1
 [0.3.0-alpha.1]: https://github.com/why-xn/kbridge/compare/v0.2.2-alpha.1...v0.3.0-alpha.1
 [0.2.2-alpha.1]: https://github.com/why-xn/kbridge/compare/v0.2.1-alpha.1...v0.2.2-alpha.1
 [0.2.1-alpha.1]: https://github.com/why-xn/kbridge/compare/v0.2.0-alpha.1...v0.2.1-alpha.1

@@ -108,8 +108,12 @@ func NewServer(cfg *Config) (*Server, error) {
 
 	httpHandler := NewHTTPServer(agentStore, commandQueue, authHandlers, adminHandlers, policy,
 		auditRecorder, sessionManager, jwtManager, WithGrants(grantService, cfg.Grants))
+	if cfg.UI.Enabled {
+		httpHandler.registerConsole()
+	}
 	grpcHandler := NewGRPCServer(agentStore, commandQueue, authenticator, sessionManager)
 	grpcHandler.policy = policy
+	adminHandlers.SetPolicy(policy)
 
 	grpcOpts, err := grpcServerOptions(cfg.TLS)
 	if err != nil {

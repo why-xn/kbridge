@@ -167,7 +167,7 @@ over in-memory pipes rather than needing a live cluster.
 ## Authorization pipeline
 
 > **Not yet released.** The guardrail, reason and approval branches below ship
-> in the next release; v0.3.0-alpha.1 stops after the role rules.
+> in the next release; v0.3.1-alpha.1 stops after the role rules.
 
 Every path funnels through one function, `authorizeExec`. There is no second
 authorization route to keep in sync, which is deliberate: a new command path
@@ -211,7 +211,7 @@ enforcement.
 
 ## Just-in-time access
 
-> **Not yet released.** Not in v0.3.0-alpha.1, which ignores these keys and
+> **Not yet released.** Not in v0.3.1-alpha.1, which ignores these keys and
 > commands. It ships in the next release.
 
 A `require-approval` guardrail is satisfied only by a grant someone else

@@ -4,7 +4,8 @@ travels through kbridge.
 
     python3 docs/assets/architecture.py            # needs Pillow and DejaVu fonts
 
-Two commands are shown as they behave in v0.3.0-alpha.1: one allowed and run as
+Two commands are shown as they behave on master, whose Guardrails check is not
+yet released (v0.3.1-alpha.1 stops after the role rules): one allowed and run as
 the user through impersonation, one refused at the control plane and recorded.
 Edit the timeline in scene() when the flow changes, then re-run.
 """

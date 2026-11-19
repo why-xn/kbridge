@@ -3,6 +3,7 @@ package controlplane
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -347,25 +348,60 @@ func TestValidateSecrets(t *testing.T) {
 		c.Server.GRPCPort = 9090
 		return c
 	}
-	t.Run("compliant passes", func(t *testing.T) {
-		if err := base().Validate(); err != nil {
-			t.Fatalf("unexpected: %v", err)
+	tests := []struct {
+		name    string
+		secret  string
+		wantErr string
+	}{
+		{"random 64 hex accepted", "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08", ""},
+		{"short refused", "too-short", "at least 32 characters"},
+		{"dev default refused", devDefaultJWTSecret, "published placeholder"},
+		{"chart placeholder refused", "change-me-in-production-at-least-32-chars", "published placeholder"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := base()
+			c.Auth.JWTSecret = tt.secret
+			err := c.Validate()
+			if tt.wantErr == "" {
+				if err != nil {
+					t.Fatalf("unexpected: %v", err)
+				}
+				return
+			}
+			if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
+				t.Fatalf("err = %v, want containing %q", err, tt.wantErr)
+			}
+		})
+	}
+}
+
+// The chart's existingSecret install leaves the YAML jwt_secret empty or a
+// placeholder and mounts the real value via KBRIDGE_JWT_SECRET_FILE, which wins.
+func TestValidateSecrets_FileOverridesPlaceholder(t *testing.T) {
+	dir := t.TempDir()
+	secretFile := filepath.Join(dir, "jwt_secret")
+	real := "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08"
+	if err := os.WriteFile(secretFile, []byte(real+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	for _, yamlSecret := range []string{`""`, `"change-me-in-production-at-least-32-chars"`} {
+		cfgPath := filepath.Join(dir, "cp.yaml")
+		if err := os.WriteFile(cfgPath, []byte("auth:\n  jwt_secret: "+yamlSecret+"\n"), 0o600); err != nil {
+			t.Fatal(err)
 		}
-	})
-	t.Run("short jwt secret fatal", func(t *testing.T) {
-		c := base()
-		c.Auth.JWTSecret = "too-short"
-		if err := c.Validate(); err == nil {
-			t.Fatal("expected error for short jwt secret")
+		t.Setenv("KBRIDGE_JWT_SECRET_FILE", secretFile)
+		cfg, err := LoadConfig(cfgPath)
+		if err != nil {
+			t.Fatalf("load: %v", err)
 		}
-	})
-	t.Run("dev default jwt secret fatal", func(t *testing.T) {
-		c := base()
-		c.Auth.JWTSecret = devDefaultJWTSecret
-		if err := c.Validate(); err == nil {
-			t.Fatal("expected error for dev-default jwt secret")
+		if err := cfg.Validate(); err != nil {
+			t.Fatalf("yaml %s: unexpected: %v", yamlSecret, err)
 		}
-	})
+		if cfg.Auth.JWTSecret != real {
+			t.Fatalf("jwt secret not taken from file")
+		}
+	}
 }
 
 func TestConfig_Validate(t *testing.T) {
@@ -484,6 +520,39 @@ func TestConfig_Validate_Database(t *testing.T) {
 			}
 			if !tt.wantErr && err != nil {
 				t.Errorf("unexpected error: %v", err)
+			}
+		})
+	}
+}
+
+func TestUIEnabled(t *testing.T) {
+	tests := []struct {
+		name, yaml, env string
+		want, wantErr   bool
+	}{
+		{"default", "", "", true, false},
+		{"yaml false", "ui:\n  enabled: false\n", "", false, false},
+		{"env false over yaml true", "ui:\n  enabled: true\n", "false", false, false},
+		{"env invalid", "", "yes-please", true, true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Setenv("KBRIDGE_UI_ENABLED", tt.env)
+			t.Setenv("KBRIDGE_JWT_SECRET", "0123456789abcdef0123456789abcdef-x")
+			p := filepath.Join(t.TempDir(), "cp.yaml")
+			if err := os.WriteFile(p, []byte(tt.yaml), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			cfg, err := LoadConfig(p)
+			if err != nil {
+				t.Fatal(err)
+			}
+			err = cfg.Validate()
+			if (err != nil) != tt.wantErr || (err != nil && err.Error() != "ui.enabled: KBRIDGE_UI_ENABLED must be true or false") {
+				t.Fatalf("Validate() = %v, wantErr %v", err, tt.wantErr)
+			}
+			if cfg.UI.Enabled != tt.want {
+				t.Errorf("Enabled = %v, want %v", cfg.UI.Enabled, tt.want)
 			}
 		})
 	}

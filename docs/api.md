@@ -1,13 +1,17 @@
 # HTTP API Reference
 
-Base URL: the control plane (`http(s)://host:8080`). All `/api/v1/*` routes
+Base URL: the URL you give `kb login` (`https://control-plane.example.com` in
+the production install, `http://localhost:8080` in the quick start). All `/api/v1/*` routes
 require a `Authorization: Bearer <access_token>` header; `/api/v1/admin/*` also
-requires the `admin` role. Tokens come from `POST /auth/login`.
+requires the kbridge admin account (`is_admin`, the account seeded from
+`auth.admin_*`); the policy's `admin` role does not open it, and anyone else
+gets `403` `{"error":"admin role required"}`. Tokens come from `POST /auth/login`.
 
 ## Health
 
 ### `GET /health`
-Unauthenticated. Returns `{"status":"healthy"}`.
+Unauthenticated. Returns `{"status":"healthy","version":"v0.3.1-alpha.1"}`;
+`version` is the release tag, or `dev` for an unstamped build.
 
 ## Auth
 
@@ -48,11 +52,11 @@ delayed. Status codes:
 
 | Code | Meaning |
 |------|---------|
-| 200 | Command executed (check `exit_code`) |
+| 200 | Command executed (check `exit_code`). A command that hits `timeout` is killed and returns `exit_code` `-1`, audited as `failed` |
 | 403 | Denied by RBAC policy, or an argument kbridge refuses (see below) |
 | 404 | Cluster not found (a known cluster whose agent is not connected is 503) |
 | 503 | Cluster agent disconnected, or the agent does not support impersonation |
-| 504 | Command timed out |
+| 504 | The agent did not answer within `timeout` plus 5 s; audited as `timeout` |
 
 Every call is recorded in the audit log.
 
@@ -165,6 +169,8 @@ Every session is recorded in the audit log.
 Body: `{"cluster_name","description?","expires_in_days?"}`. Creates (and, if
 needed, registers) the cluster and returns the token **once**:
 `{id, token, cluster_name, token_prefix, expires_at, created_at}`.
+`expires_in_days` of `0`, omitted, or negative means the token never expires
+(`expires_at` is left out).
 
 ### `GET /api/v1/admin/agent-tokens[?cluster=<name>]`
 Lists token metadata (never the secret).
@@ -175,7 +181,18 @@ Revokes a token (idempotent).
 ## Admin — users
 
 ### `GET /api/v1/admin/users`
-Lists users (password hashes are never serialized).
+Lists users (password hashes are never serialized). Each user also carries:
+
+- `roles` and `access`: the policy roles that apply and what they allow, per cluster:
+  `{"cluster","namespaces","level"}`, where `cluster` `*` means every cluster, `["*"]` means
+  all namespaces, and `level` is `read-only` or `read-write`. A rule is `read-only` only when
+  every verb is one of `get`, `list`, `watch`, `describe`, `logs`, `top`, `explain`, `version`,
+  `api-resources` (`auth` counts as `read-write`: `kubectl auth reconcile` writes RBAC). Rules
+  that allow nothing (an empty `namespaces`, `resources` or `verbs`) are left out. Both are
+  omitted when RBAC is off.
+- `default_role`: true when `roles` came from the policy `default`, not a binding.
+- `last_command`, `last_cluster`, `last_command_at`: the latest audit entry; omitted when the user has none.
+- `denied_7d`: denied commands in the last 7 days.
 
 ### `POST /api/v1/admin/users`
 Body: `{"email","name","password","is_active?"}`. `409` on duplicate email.
@@ -186,6 +203,25 @@ is not settable; only the seeded admin account has it.
 
 ### `DELETE /api/v1/admin/users/{id}`
 Deletes the user. Idempotent: `200` for an id that is already gone.
+
+## Admin — clusters
+
+### `GET /api/v1/admin/clusters`
+Every known cluster, sorted by name. Returns:
+
+```json
+{ "clusters": [ {
+  "name": "prod",
+  "status": "connected",
+  "last_heartbeat": "<RFC3339 of the agent's last heartbeat; null when no agent is registered>",
+  "ever_connected": true,
+  "created_at": "<RFC3339>"
+} ] }
+```
+
+`status` follows the same rule as `GET /api/v1/clusters`. `ever_connected` is
+false until an agent first registers, so `disconnected` with
+`ever_connected: false` means the cluster is waiting for its agent.
 
 ## Admin — RBAC sync
 
@@ -209,5 +245,9 @@ Binding sync state of each connected cluster, sorted by cluster name. Returns:
 ## Admin — audit
 
 ### `GET /api/v1/admin/audit`
-Query params: `user`, `cluster`, `status`, `from`/`to` (RFC3339), `page`,
-`per_page` (max 200). Returns `{logs, total, page, per_page}`, newest first.
+Query params: `user`, `cluster`, `status`, `namespace` (exact), `command`
+(case-insensitive substring, first 200 characters), `from`/`to` (RFC3339),
+`page`, `per_page` (max 200). Returns `{logs, total, page, per_page}`, newest first;
+`logs` is `null`, not `[]`, when nothing matches.
+An entry's `namespace` is the one kbridge enforced: the command's `-n`/`--namespace`, else the
+request's `namespace` field, else `default`; `*` for `-A`.

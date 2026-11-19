@@ -11,6 +11,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/why-xn/kbridge/internal/auth"
+	"github.com/why-xn/kbridge/internal/version"
 )
 
 func newTestHTTPServer() (*HTTPServer, *AgentStore, *CommandQueue) {
@@ -35,8 +36,14 @@ func TestHTTPServer_Health(t *testing.T) {
 		t.Fatalf("failed to unmarshal response: %v", err)
 	}
 
-	if resp["status"] != "healthy" {
-		t.Errorf("expected status='healthy', got %q", resp["status"])
+	tests := []struct{ key, want string }{
+		{"status", "healthy"},
+		{"version", version.Version},
+	}
+	for _, tt := range tests {
+		if resp[tt.key] == "" || resp[tt.key] != tt.want {
+			t.Errorf("%s = %q, want %q", tt.key, resp[tt.key], tt.want)
+		}
 	}
 }
 

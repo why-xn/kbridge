@@ -46,6 +46,10 @@ contains `*`).
 `*` (anything), `dev-*` (matches `dev-cluster`), `*-prod`, `app-*-svc`.
 Subjects support the same wildcards, e.g. `*@dev.corp.com`.
 
+Resources match the word typed in the command, with no short names or
+singulars: `resources: ["pods"]` admits `kb get pods` but not `kb get pod` or
+`kb get po`. List each form your users type, or use `*`.
+
 ### How a kubectl command maps to a request
 
 | Part | Derived from |
@@ -55,11 +59,22 @@ Subjects support the same wildcards, e.g. `*@dev.corp.com`.
 | resource | the resource type; `pods` for `logs`/`exec`/`cp`/etc.; `foo/name` → `foo`; empty for commands that take a manifest (`apply -f`, `create -f`, `delete -f`, `replace -f`), which only a rule with `resources: ["*"]` admits |
 | namespace | `-n`/`--namespace`; `*` for `-A`/`--all-namespaces`; else `default` |
 
+The refusal for a manifest command names only the verb and namespace, for
+example `permission denied: apply in namespace "default" on cluster "dev" is
+not allowed for dev@corp.com; ask a kbridge admin to extend your role`. It
+does not say that only `resources: ["*"]` admits it.
+
 A flag that takes a value must be written `--flag=value` when it comes before
 the resource, or be placed after it: kbridge reads an unknown `--flag value`
 before the resource as taking a value, so `kb get --sort-by pods secrets` is
 checked as `secrets`, and `kb get --no-headers pods` has no resource and is
 refused by a role that lists resources.
+
+Only the flags before `--` count, as for kubectl: in
+`kb exec web -n team-a -- grep -n x /f` the namespace is `team-a`, and in
+`kb get pods -- -n team-a` it is `default`. A `--` that the flag just before
+it could take as its value is refused (`flag --sort-by must be written as
+--sort-by=<value> before --`); write that flag with `=` or move it.
 
 ## Example
 
@@ -84,6 +99,10 @@ roles:
         namespaces: ["*"]
         resources: ["pods", "deployments", "services", "configmaps"]
         verbs: ["get", "list", "watch", "describe", "logs", "exec"]
+    clusterAccess:
+      - clusters: ["dev-*", "staging"]
+        clusterRole: view
+        clusterWide: true
 
   - name: viewer
     rules:
@@ -108,12 +127,15 @@ gets developer access on dev/staging; everyone else falls back to read-only
 `viewer`. Every user with no binding holds `default`; a bound user holds only
 their roles, so the `dev.corp.com` users above cannot read prod. List the
 default role in a binding (`roles: ["viewer", "developer"]`) if its users
-should keep it. The chart's default policy and `configs/rbac.yaml` give `admin` a
+should keep it. Without `clusterAccess` the cluster refuses the user even
+where `rules` allow, so every role needs one: `view` above lets developers
+read; for `exec` they also need a role such as `edit` bound in the namespaces
+they work in (see [Cluster bindings](#cluster-bindings-clusteraccess)). The chart's default policy and `configs/rbac.yaml` give `admin` a
 cluster-wide `cluster-admin` binding and `viewer` a cluster-wide `view` binding,
 so a fresh install works without edits. Keep a binding for your seeded admin
 (`auth.admin_email`, `admin@kbridge.local` by default) when you replace that
-policy: an admin with no binding falls back to `default` like anyone else, and
-keeps `kb admin` but loses cluster access.
+policy: an admin with no binding falls back to `default` like anyone else, so
+here it holds read-only `viewer`, keeps `kb admin`, and loses write access.
 
 ## Cluster bindings (`clusterAccess`)
 
@@ -147,9 +169,9 @@ roles:
 |-------|---------|
 | `clusters` | Patterns (with `*`) for the clusters this entry applies to |
 | `clusterRole` | An existing ClusterRole to bind, such as `view` or `edit`. Required |
-| `namespaces` | Literal namespace names (no patterns). One RoleBinding per namespace |
-| `clusterWide` | `true` for one ClusterRoleBinding instead. Exactly one of `namespaces` or `clusterWide` must be set; the policy fails to load otherwise |
+| `namespaces` | Literal namespace names (no patterns). One RoleBinding per namespace. Each must already exist in the target cluster; the agent does not create it |
 | `requiresGrant` | **Next release.** `true` binds only the role's users who hold an approved, unexpired [grant](#just-in-time-access) for the cluster and namespace. See [Grant-gated bindings](#grant-gated-bindings) |
+| `clusterWide` | `true` for one ClusterRoleBinding instead. Exactly one of `namespaces` or `clusterWide` must be set; the policy fails to load otherwise |
 
 What the agent creates:
 
@@ -171,6 +193,12 @@ What the agent creates:
 
 What the agent refuses, reported per binding in `kb admin rbac status`:
 
+- a namespace that does not exist in the cluster, reported as
+  `binding kbridge-developer-edit: reading namespace "team-a": ... 404 namespaces "team-a" not found`
+  for a ClusterRole other than `view`, and as
+  `... /namespaces/team-b/rolebindings: 404 namespaces "team-b" not found` for
+  `view`. Create it (`kubectl create namespace <ns>`, labelled as below for
+  anything but `view`) and the agent binds on its next sync;
 - any namespace it protects: its own (release) namespace and the chart's
   `protectedNamespaces` (`namespace "<ns>" is reserved for the kbridge agent`);
 - a name without the `kbridge-` prefix, or a subject that is not a `kbridge:`
@@ -196,19 +224,23 @@ What the agent refuses, reported per binding in `kb admin rbac status`:
   ```
 
   If a namespace stops enforcing, the agent deletes the binding it made there
-  on its next sync and reports the same refusal; so does a namespace the agent
-  may not read (403) or that is gone (404). Any other read failure, such as an
+  on its next sync and reports the same refusal. A namespace the agent may not
+  read (403) or that is gone (404) also loses the binding, reported as the read
+  error (`reading namespace "<ns>": ...`). Any other read failure, such as an
   API server outage, leaves the binding as it is and reports the error.
 
   `view` is exempt: it cannot create pods. Cluster-wide bindings are not
   checked; see [security.md](security.md#known-limits).
 
-A ClusterRoleBinding covers every namespace, including the protected ones; the
-agent's proxy still refuses every request into those.
+A ClusterRoleBinding covers every namespace, including the protected ones. The
+agent's proxy refuses every request whose path names a protected namespace,
+and the cluster-wide Secret list, but a cluster-wide list of other kinds still
+includes their objects: `kb get pods -A` lists the pods in protected
+namespaces too.
 
 ## Guardrails
 
-> **Not yet released.** Not in v0.3.0-alpha.1, which ignores these keys and
+> **Not yet released.** Not in v0.3.1-alpha.1, which ignores these keys and
 > commands. It ships in the next release.
 
 Role rules answer "may this person touch this resource at all?". Guardrails
@@ -338,7 +370,7 @@ by verb and cluster rather than by `resources`.
 
 ## Just-in-time access
 
-> **Not yet released.** Not in v0.3.0-alpha.1, which ignores these keys and
+> **Not yet released.** Not in v0.3.1-alpha.1, which ignores these keys and
 > commands. It ships in the next release.
 
 A `require-approval` guardrail is satisfied only by an **approved, unexpired
@@ -534,12 +566,24 @@ restart:
   and a `helm upgrade` that changes `rbac.policy` restarts the control plane
   (`Recreate`), so the new policy applies once the new pod is ready; `kb`
   fails for about a minute in between (the old pod's shutdown grace, then the
-  agent reconnecting).
-- **SIGHUP** — sending `SIGHUP` to the control plane process reloads the policy
-  at once from the file as it is on disk (it does not hurry a ConfigMap edit):
+  agent reconnecting). Keep the other values when you upgrade, because a plain
+  `helm upgrade` resets everything passed with `--set` at install, secrets
+  included:
 
   ```bash
-  kill -HUP "$(pidof kbridge-control-plane)"                               # host process
+  helm upgrade kbridge-control-plane oci://ghcr.io/why-xn/charts/kbridge-control-plane \
+    -n kbridge --version 0.3.1-alpha.1 --reuse-values --set-file rbac.policy=policy.yaml
+  ```
+
+  or pass `--reuse-values -f` with your values file, as in
+  [Onboard a user](admin.md#onboard-a-user).
+- **SIGHUP** — sending `SIGHUP` to the control plane process reloads the policy
+  at once from the file as it is on disk (it does not hurry a ConfigMap edit).
+Use the PID of the control plane you mean; `pidof kbridge-control-plane`
+lists every control plane on the host:
+
+  ```bash
+  kill -HUP <pid>                                                          # host process
   kubectl -n kbridge exec deploy/kbridge-control-plane -- kill -HUP 1      # in a pod
   ```
 
@@ -559,7 +603,8 @@ reloads the same way as a file, and the next `helm upgrade` overwrites it.
   had this access" from "you have it, but not for this command".
 - Validation runs at load time: a binding or `default` that names an undefined
   role is rejected, as is a guardrail with no name, a duplicate name, or an
-  action other than `deny`, `require-reason` or `require-approval`.
+  action other than `deny`, `require-reason` or `require-approval` (next
+  release).
 - `default` applies only to users no binding matches; a bound user does not
   inherit it. Keep it least-privilege (or omit it to deny unbound users
   entirely).

@@ -15,7 +15,7 @@ export KUBECONFIG="$W/kubeconfig"
 CLUSTER=staging
 
 echo "== CLI"
-[ -x "$W/bin/kb" ] || KBRIDGE_VERSION=v0.3.0-alpha.1 KBRIDGE_INSTALL_DIR="$W/bin" sh -c \
+[ -x "$W/bin/kb" ] || KBRIDGE_VERSION=v0.3.1-alpha.1 KBRIDGE_INSTALL_DIR="$W/bin" sh -c \
   "$(curl -fsSL https://raw.githubusercontent.com/why-xn/kbridge/master/install.sh)"
 kb() { HOME="$W/admin" "$W/bin/kb" "$@"; }
 
@@ -39,7 +39,7 @@ kubectl create namespace kbridge --dry-run=client -o yaml | kubectl apply -f -
 kubectl label namespace kbridge pod-security.kubernetes.io/enforce=restricted --overwrite
 ADMIN_PASSWORD="$(openssl rand -hex 12)"; echo "$ADMIN_PASSWORD" > "$W/admin-password"
 helm upgrade --install kbridge-control-plane oci://ghcr.io/why-xn/charts/kbridge-control-plane \
-  -n kbridge --version 0.3.0-alpha.1 \
+  -n kbridge --version 0.3.1-alpha.1 \
   --set auth.jwtSecret="$(openssl rand -hex 32)" --set auth.adminPassword="$ADMIN_PASSWORD"
 kubectl -n kbridge rollout status deploy/kbridge-control-plane --timeout=180s
 cat <<'EOF' | kubectl apply -f -
@@ -65,7 +65,7 @@ kb status
 echo "== agent"
 TOKEN=$(kb admin agent-tokens create --cluster "$CLUSTER" --description "demo" | grep -o 'kbat_[A-Za-z0-9_-]*')
 helm upgrade --install kbridge-agent oci://ghcr.io/why-xn/charts/kbridge-agent \
-  -n kbridge --version 0.3.0-alpha.1 \
+  -n kbridge --version 0.3.1-alpha.1 \
   --set controlPlane.url=kbridge-control-plane.kbridge.svc:9090 \
   --set controlPlane.token="$TOKEN" --set cluster.name="$CLUSTER"
 kubectl -n kbridge rollout status deploy/kbridge-agent --timeout=180s
@@ -80,7 +80,7 @@ kubectl "${PROD[@]}" create namespace kbridge --dry-run=client -o yaml | kubectl
 kubectl "${PROD[@]}" label namespace kbridge pod-security.kubernetes.io/enforce=restricted --overwrite
 TOKEN=$(kb admin agent-tokens create --cluster production --description "demo" | grep -o 'kbat_[A-Za-z0-9_-]*')
 helm upgrade --install kbridge-agent oci://ghcr.io/why-xn/charts/kbridge-agent \
-  --kube-context kind-kb-demo-prod -n kbridge --version 0.3.0-alpha.1 \
+  --kube-context kind-kb-demo-prod -n kbridge --version 0.3.1-alpha.1 \
   --set controlPlane.url="$NODE_IP:30090" \
   --set controlPlane.token="$TOKEN" --set cluster.name=production
 kubectl "${PROD[@]}" -n kbridge rollout status deploy/kbridge-agent --timeout=180s
@@ -121,7 +121,7 @@ bindings:
     roles: ["developer"]
 EOF
 helm upgrade kbridge-control-plane oci://ghcr.io/why-xn/charts/kbridge-control-plane \
-  -n kbridge --version 0.3.0-alpha.1 --reuse-values --set-file rbac.policy="$W/rbac.yaml"
+  -n kbridge --version 0.3.1-alpha.1 --reuse-values --set-file rbac.policy="$W/rbac.yaml"
 kubectl -n kbridge rollout status deploy/kbridge-control-plane --timeout=180s
 for _ in $(seq 1 30); do curl -fs localhost:8080/health >/dev/null && break; sleep 2; done
 

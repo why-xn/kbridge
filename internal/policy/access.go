@@ -95,7 +95,8 @@ var podScopedVerbs = map[string]bool{
 // positional token after it, skipping flag values (with any "/name" suffix
 // stripped), or "pods" for pod-scoped verbs. The namespace comes from the last
 // -n/--namespace, "*" for --all-namespaces/-A, else fallbackNamespace, else
-// "default".
+// "default". Only tokens before a real "--" count: kubectl reads the rest as
+// arguments, so the namespace checked is the one kubectl runs in.
 func ParseAccessRequest(cluster string, command []string, fallbackNamespace string) AccessRequest {
 	req := AccessRequest{Cluster: cluster, Namespace: fallbackNamespace, Args: command}
 	if req.Namespace == "" {
@@ -129,6 +130,8 @@ func scanArgs(req *AccessRequest, args []string) (positional string, all bool) {
 			next = args[i+1]
 		}
 		switch {
+		case a == "--" && kubeargs.EndsFlags(args[:i], req.Verb):
+			return positional, all
 		case !strings.HasPrefix(a, "-"):
 			if positional == "" {
 				positional = a

@@ -10,23 +10,25 @@ disclosure policy.
 
 ## Post-install security checklist
 
-Work through these items after every new deployment before exposing the control plane
-service to users.
+Work through these items after every new deployment before you give users the
+control plane URL.
 
 ### 1. Change the admin password
 
 The admin account is seeded from `auth.admin_email` / `auth.admin_password` in
-`control-plane.yaml` (or the Helm chart's `auth.adminPassword`) on first startup.
+`control-plane.yaml` (or the Helm chart's `auth.adminPassword`, or the `admin_password` key of `auth.existingSecret`) on first startup.
 Change it immediately via the API:
 
 ```bash
-curl -s -X POST https://control-plane:8080/api/v1/auth/change-password \
+TOKEN=$(awk '/^token:/{print $2}' ~/.kbridge/config.yaml)   # saved by kb login
+curl -s -X POST https://<control-plane>/api/v1/auth/change-password \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"current_password":"<seed-password>","new_password":"<strong-password>"}'
 ```
 
-`$TOKEN` is the access token returned by `POST /auth/login`. See the
+The `admin_password` in the Helm values or Secret only seeds the first start:
+after this change it no longer matches, and restarting does not reset it. See the
 [API reference](api.md#post-apiv1authchange-password) for the full request/response.
 
 > The server logs a warning at startup when `admin_password` is `admin123` or
@@ -90,7 +92,7 @@ control_plane:
 **Agent** (Helm):
 
 ```yaml
-control_plane:
+controlPlane:
   tls:
     enabled: true
     caCert: |
@@ -99,11 +101,35 @@ control_plane:
       -----END CERTIFICATE-----
 ```
 
-### 4. Disable `insecure_skip_verify` on the CLI
+The certificate must name every host a client dials: the in-cluster Service
+`kbridge-control-plane.<namespace>.svc` (what an agent in the same cluster
+puts in `controlPlane.url`), any external host agents in other clusters use,
+and every hostname users put in `control_plane_url`. A name that is missing
+fails the TLS handshake. `scripts/gen-certs.sh` (`make certs`) covers only
+`localhost` and `127.0.0.1`, so it is for local development only; issue
+production certificates with those names, for example with cert-manager (see
+[production-install.md](production-install.md#3a-issue-the-control-planes-certificate)).
 
-The CLI (`~/.kbridge/config.yaml`) defaults to `insecure_skip_verify: false`.
-Confirm this is not accidentally set to `true` in any user config, especially on
-machines that were used during development with self-signed certificates:
+### 4. Trust the control plane's CA on the CLI; keep `insecure_skip_verify` off
+
+The CLI verifies the control plane's certificate against the system trust
+store. When the certificate comes from a private CA, add that CA to the
+system trust store of each user's machine, or on Linux point the CLI at it for
+one shell:
+
+```bash
+export SSL_CERT_FILE=/path/to/ca.crt
+kb login
+```
+
+The export lasts only for that shell; every later `kb` command needs it too.
+Tell users to add the export to their shell profile (`~/.bashrc`,
+`~/.zshrc`).
+
+`insecure_skip_verify` in `~/.kbridge/config.yaml` defaults to `false`. Set it
+to `true` only against a development control plane; it turns off certificate
+checks, so anyone on the network path can read the password and tokens.
+Confirm it is not left `true` on machines that were used for development:
 
 ```yaml
 # ~/.kbridge/config.yaml
@@ -153,7 +179,7 @@ and `admin_password`. The control plane reads them from the mounted files via
 **Agent chart:**
 
 ```yaml
-control_plane:
+controlPlane:
   existingSecret: kbridge-agent-token   # pre-created Secret with key `token`
   token: ""                             # leave empty when existingSecret is set
 ```
@@ -214,10 +240,16 @@ valid until that command ends. The window:
   agent's own token, re-read from disk on every request so kubelet rotation
   takes effect, adding `Impersonate-User: kbridge:<email>` and
   `Impersonate-Extra-Kbridge-Request-Id: <request id>`;
-- refuses any request under a protected namespace: the agent's own namespace
-  (the Helm release namespace) and any listed in `protected_namespaces`
-  (`protectedNamespaces` in the chart). This covers `exec`, `logs`,
-  `port-forward`, `create token` and every object in those namespaces;
+- refuses any request whose path names a protected namespace: the agent's own
+  namespace (the Helm release namespace) and any listed in
+  `protected_namespaces` (`protectedNamespaces` in the chart). This covers
+  `exec`, `logs`, `port-forward`, `create token` and every object read or
+  written in those namespaces. A cluster-wide list or watch names no
+  namespace, so `kb get pods -A`, `kb get events -A` and the like still return
+  objects in protected namespaces; only Secrets are refused cluster-wide (next
+  item). A port-forward into a protected namespace fails with
+  `Error: port-forward failed: kubectl port-forward did not establish all ports`,
+  without naming the reason;
 - refuses `GET /api/v1/secrets` and `/api/v1/watch/secrets`, the cluster-wide
   secrets list and watch.
 - refuses the kubelet node proxy, `/api/v1/nodes/<node>/proxy/...`, which
@@ -293,6 +325,8 @@ These are the defaults, so a fresh install works with the default policy
 (`admin` is bound to `cluster-admin`, `viewer` to `view`, cluster-wide). A
 cluster owner can lower the ceiling, for example to `[view, edit]` with
 `clusterWide: false`, to limit what any kbridge policy can grant there.
+Lowering it stops only new bindings: those the agent already made stay until
+you delete them by hand; see [Known limits](#known-limits).
 
 The agent's ServiceAccount gets `bind` on those ClusterRoles only, write
 access to RoleBindings (cluster-wide, or in the listed namespaces), write
@@ -306,8 +340,10 @@ namespace and `protectedNamespaces`, bindings not named `kbridge-`, and
 subjects that are not `kbridge:` users. The chart refuses to render with an
 empty `clusterRoles` or with the release namespace in `namespaces`.
 
-A user with no binding can still reach kbridge but every request is refused
-by the API server. `kb auth whoami` prints the name Kubernetes sees. Bindings
+A new user's bindings appear on the agent's next sync, within the chart's
+`sync.interval` (60 s by default); until then the API server refuses their
+requests. A user with no binding can still reach kbridge but every request is
+refused by the API server. `kb auth whoami` prints the name Kubernetes sees. Bindings
 you make by hand for `kbridge:` users still work, and the agent leaves any
 binding without its label alone.
 
@@ -354,6 +390,21 @@ match it to the Kubernetes audit event by email, cluster and time.
   Enforce Pod Security cluster-wide (an `AdmissionConfiguration` with
   `defaults.enforce: baseline`), or do not use `clusterWide` for roles that
   can create pods.
+- **Lowering `accessCeiling` does not remove existing bindings.** Lowering
+  the ceiling, or adding a namespace to `protectedNamespaces`, stops new
+  bindings, but those the agent already made stay in place: the agent does
+  not delete them, and loses the right to once its write access is narrowed.
+  `kb admin rbac status` may even show `in sync` while a binding above the new
+  ceiling is still there. After lowering it, delete kbridge's bindings by hand
+  as the cluster owner:
+
+  ```bash
+  kubectl delete clusterrolebindings -l app.kubernetes.io/managed-by=kbridge
+  kubectl delete rolebindings -A -l app.kubernetes.io/managed-by=kbridge
+  ```
+
+  The agent recreates what the new ceiling still allows on its next sync, and
+  `kb admin rbac status` reports the rest. A fix is planned.
 - **kubectl runs as the agent's uid.** The connection and file flag checks are
   what keep a command from reading the agent's token file. Running kubectl
   under a second uid is the planned fix.
@@ -371,8 +422,9 @@ provide a hardened baseline regardless of how the deployment is configured.
 ### Strong-secret enforcement (fail-closed)
 
 The control plane refuses to start if `jwt_secret` is not set, is shorter than 32
-characters, or matches the shipped development default
-(`"change-me"` variants). The startup check is fail-closed: a misconfigured
+characters, or matches a published placeholder (the development default or the
+old chart value). The Helm chart refuses to render without `auth.jwtSecret` or
+`auth.existingSecret`. The startup check is fail-closed: a misconfigured
 secret is a fatal error, not a warning. Generate a secret with:
 
 ```bash
@@ -391,8 +443,11 @@ attempts are rejected.
 ### Login rate limiting
 
 The `/auth/login` endpoint is rate-limited. Clients that exceed the limit receive
-`429 Too Many Requests`. This applies per-IP and protects against credential
-stuffing and brute-force attacks.
+`429 Too Many Requests`. The limit is keyed by client IP and email, and protects
+against credential stuffing and brute-force attacks. Behind a load
+balancer Service, an ingress controller or another proxy the control plane
+usually sees the node's or the proxy's address, not the user's (it does not
+trust `X-Forwarded-For`), so the limit is effectively per email.
 
 ### Agent tokens hashed with HMAC + pepper
 
@@ -406,10 +461,16 @@ cannot be used to verify or forge tokens without the pepper. See the
 
 Every command attempt — allowed, denied, failed, or timed out — is recorded in
 the audit log with: user, cluster, namespace, command, exit code, duration, and
-client IP. The log is queryable via `kb admin audit` or
+client IP (behind a load balancer or proxy, usually the node's or the proxy's
+address). The log is queryable via `kb admin audit` or
 `GET /api/v1/admin/audit`. Denied requests are included (status `denied`), so
 the audit log is also useful for detecting over-broad expectations in the RBAC
 policy.
 
 Logs are retained for `audit.retention_days` (default 90 days) and pruned
 automatically.
+
+## Next
+
+[Onboard a user](admin.md#onboard-a-user), then [Operations](operations.md) for
+backup and upgrades.

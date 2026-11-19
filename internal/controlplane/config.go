@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -13,6 +14,13 @@ import (
 )
 
 const devDefaultJWTSecret = "dev-secret-change-in-production!!"
+
+// publicJWTSecrets are signing keys published in this repository: the dev
+// default and the placeholder older Helm charts shipped in values.yaml.
+var publicJWTSecrets = map[string]bool{
+	devDefaultJWTSecret:                         true,
+	"change-me-in-production-at-least-32-chars": true,
+}
 
 // Config holds the complete configuration for the control plane.
 type Config struct {
@@ -25,6 +33,14 @@ type Config struct {
 	Grants    GrantsConfig    `yaml:"grants"`
 	TLS       TLSConfig       `yaml:"tls"`
 	Streams   StreamsConfig   `yaml:"streams"`
+	UI        UIConfig        `yaml:"ui"`
+}
+
+// UIConfig toggles the embedded admin console served at the root of the HTTP port.
+type UIConfig struct {
+	Enabled bool `yaml:"enabled"`
+
+	envErr error // KBRIDGE_UI_ENABLED was set but unparsable; reported by Validate
 }
 
 // TLSConfig configures TLS for the control plane HTTP and gRPC servers. When enabled,
@@ -178,6 +194,7 @@ func DefaultConfig() *Config {
 			DefaultDurationStr: "1h",
 			DefaultDuration:    time.Hour,
 		},
+		UI: UIConfig{Enabled: true},
 	}
 }
 
@@ -189,6 +206,7 @@ func DefaultConfigWithEnv() *Config {
 	cfg := DefaultConfig()
 	// Ignore error: no YAML file paths set, only env/inline sources in scope.
 	_ = cfg.resolveSecrets()
+	cfg.applyUIEnv()
 	return cfg
 }
 
@@ -211,6 +229,7 @@ func LoadConfig(path string) (*Config, error) {
 	if err := cfg.resolveSecrets(); err != nil {
 		return nil, fmt.Errorf("resolving secrets: %w", err)
 	}
+	cfg.applyUIEnv()
 
 	return cfg, nil
 }
@@ -264,6 +283,9 @@ func (c *Config) Validate() error {
 	}
 	if err := c.validateGrants(); err != nil {
 		return err
+	}
+	if c.UI.envErr != nil {
+		return c.UI.envErr
 	}
 	return c.validateTLS()
 }
@@ -338,6 +360,21 @@ func (n NotifyConfig) validate() error {
 		}
 	}
 	return nil
+
+}
+
+// applyUIEnv lets KBRIDGE_UI_ENABLED override the file; a bad value fails Validate.
+func (c *Config) applyUIEnv() {
+	v := os.Getenv("KBRIDGE_UI_ENABLED")
+	if v == "" {
+		return
+	}
+	b, err := strconv.ParseBool(v)
+	if err != nil {
+		c.UI.envErr = fmt.Errorf("ui.enabled: KBRIDGE_UI_ENABLED must be true or false")
+		return
+	}
+	c.UI.Enabled = b
 }
 
 func (c *Config) validateTLS() error {
@@ -389,8 +426,8 @@ func (c *Config) validateSecrets() error {
 		return fmt.Errorf("jwt_secret must be set")
 	case len(c.Auth.JWTSecret) < 32:
 		return fmt.Errorf("jwt_secret must be at least 32 characters")
-	case c.Auth.JWTSecret == devDefaultJWTSecret:
-		return fmt.Errorf("jwt_secret is the shipped development default; generate one with: openssl rand -hex 32")
+	case publicJWTSecrets[c.Auth.JWTSecret]:
+		return fmt.Errorf("jwt_secret is a published placeholder; set a random value of 32+ characters (openssl rand -hex 32)")
 	}
 	if c.Auth.AdminPassword == "admin123" || (c.Auth.AdminPassword != "" && len(c.Auth.AdminPassword) < 8) {
 		slog.Warn("admin_password is weak or a known default; change it after first login")

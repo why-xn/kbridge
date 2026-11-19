@@ -46,6 +46,7 @@ type Store interface {
 	// Audit Logs
 	CreateAuditLog(ctx context.Context, log *AuditLog) error
 	ListAuditLogs(ctx context.Context, filter AuditLogFilter) ([]*AuditLog, int, error)
+	UserActivity(ctx context.Context, since time.Time) (map[string]UserActivity, error)
 	CleanupOldAuditLogs(ctx context.Context, before time.Time) (int, error)
 
 	// Lifecycle

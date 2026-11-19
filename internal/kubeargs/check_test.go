@@ -57,15 +57,18 @@ func TestCheck(t *testing.T) {
 		{"kustomize ./d", sprintf(verbMsg, "kustomize")},
 		// a value flag swallows "--", so the flags after it are live to kubectl
 		{"create configmap x --dry-run=client -o yaml --field-manager -- --from-file=/var/run/kbridge/sa/token",
-			sprintf(fileMsg, "--from-file")},
-		{"apply --field-manager -- -f /var/run/kbridge/sa/token", fMsg},
-		{"patch cm x --subresource -- --patch-file=/var/run/kbridge/sa/token", sprintf(fileMsg, "--patch-file")},
+			term("--field-manager")},
+		{"apply --field-manager -- -f /var/run/kbridge/sa/token", term("--field-manager")},
+		{"patch cm x --subresource -- --patch-file=/var/run/kbridge/sa/token", term("--subresource")},
 		{"debug node/x --profile -- --custom=/var/run/kbridge/sa/token", sprintf(fileMsg, "--profile")},
 		{"debug node/x --image -- --custom=/var/run/kbridge/sa/token", term("--image")},
 		{"run x --image=busybox --overrides -- sh", term("--overrides")},
 		{"exec web -c -- --kubeconfig=/k sh", term("-c")},
 		{"exec web -itn -- --server=x sh", term("-n")},
 		{"exec web -v -- --token=x sh", term("-v")},
+		// kbridge cannot tell a non-container verb's boolean flags, so a flag before "--" may take it
+		{"get secrets --no-headers -- -n team-a db", term("--no-headers")},
+		{"get pods --sort-by -- -n kube-system", term("--sort-by")},
 		{"-- cp /var/run/kbridge/sa/token default/x:/tmp/t", sprintf(verbMsg, "cp")},
 		// cobra lets an unknown flag before the verb take the next token, so the verb would hide behind it
 		{"--retries 5 cp /var/run/kbridge/sa/token default/x:/tmp/t", lead("--retries")},
@@ -92,6 +95,7 @@ func TestCheck(t *testing.T) {
 		"run x --image=busybox --rm -it -- sh", "run x --image busybox -- sh",
 		"debug node/x --image=busybox -it -- sh",
 		"get pods -- name",
+		"get pods -n team-a -- -n kube-system", "create job j --image=busybox -- date",
 		"--namespace dev get pods", "--warnings-as-errors get pods", "get pods --retries 5",
 	}
 	for _, a := range allowed {
@@ -225,5 +229,27 @@ func TestTakesValue(t *testing.T) {
 				t.Errorf("TakesValue(%q) = %v, want %v", tt.flag, got, tt.want)
 			}
 		})
+	}
+}
+
+func TestEndsFlags(t *testing.T) {
+	tests := []struct {
+		before, verb string
+		want         bool
+	}{
+		{"", "get", true},
+		{"pods", "get", true},
+		{"pod -n kube-system", "exec", true},
+		{"pod -it", "exec", true},
+		{"pod -c", "exec", false},
+		{"pods -n", "get", false},
+		{"pods --sort-by", "get", false},
+		{"pods --no-headers", "get", false}, // boolean, but kbridge does not know get's flags
+		{"pods --sort-by=x", "get", true},
+	}
+	for _, tt := range tests {
+		if got := EndsFlags(strings.Fields(tt.before), tt.verb); got != tt.want {
+			t.Errorf("EndsFlags(%q, %q) = %v, want %v", tt.before, tt.verb, got, tt.want)
+		}
 	}
 }

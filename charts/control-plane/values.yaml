@@ -2,7 +2,7 @@ replicaCount: 1
 
 image:
   repository: ghcr.io/why-xn/kbridge-control-plane
-  tag: v0.3.0-alpha.1
+  tag: v0.3.1-alpha.1
   pullPolicy: IfNotPresent
 
 service:
@@ -12,7 +12,8 @@ service:
 
 # Authentication secrets. CHANGE THESE for any real deployment.
 auth:
-  jwtSecret: "change-me-in-production-at-least-32-chars"
+  # Required unless existingSecret is set: openssl rand -hex 32
+  jwtSecret: ""
   tokenPepper: ""        # HMAC key for agent tokens; empty falls back to jwtSecret
   accessTokenExpiry: 1h
   refreshTokenExpiry: 168h
@@ -77,16 +78,18 @@ ingress:
   enabled: false
   className: ""
   host: ""
+  # An Ingress that ends TLS breaks kb exec -i and kb port-forward. Use TLS
+  # passthrough with tls.enabled, and no tls list:
+  #   annotations:
+  #     nginx.ingress.kubernetes.io/ssl-passthrough: "true"
   annotations: {}
   tls: []
-  # tls:
-  #   - secretName: kbridge-control-plane-tls
-  #     hosts: [ control-plane.example.com ]
-  # annotations:
-  #   cert-manager.io/cluster-issuer: letsencrypt-prod
 
 streams:
   maxConcurrent: 50
+
+ui:
+  enabled: true
 
 podSecurityContext:
   runAsNonRoot: true

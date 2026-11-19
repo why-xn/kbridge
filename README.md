@@ -12,10 +12,10 @@ A lightweight access gateway that lets you manage multiple Kubernetes clusters f
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/assets/demo.gif">
-  <img src="docs/assets/demo-light.gif" alt="A developer logs in, sees two clusters, lists and scales pods in team-a, is refused secrets in kube-system with the reason; the admin sees both clusters in sync, reads the same secrets, and audits every attempt">
+  <img src="docs/assets/demo-light.gif" alt="A developer logs in, sees two clusters, lists and scales pods in team-a, is refused secrets in kube-system and told who can help; the admin sees both clusters in sync, reads the same secrets, and audits every attempt">
 </picture>
 
-> **Status: alpha** (`v0.3.0-alpha.1`). Config keys, the RBAC policy schema,
+> **Status: alpha** (`v0.3.1-alpha.1`). Config keys, the RBAC policy schema,
 > and REST API paths may change between releases, and it is not yet recommended
 > for unattended production use.
 
@@ -47,20 +47,42 @@ HTTP/2 streams between CLI and control plane. See
 [docs/architecture.md](docs/architecture.md) for the request lifecycle, the
 transports, the authorization pipeline, and the trust model.
 
-## Install
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/console.gif">
+  <img src="docs/assets/console-light.gif" alt="The read-only admin console at the control plane root: each cluster's connection and RBAC sync state, the audit log of every command attempt with its filters, agent tokens, and users with their roles">
+</picture>
 
-The CLI, on Linux or macOS:
+The kbridge admin account also gets a read-only web console at the control
+plane root (`/`); see [docs/console.md](docs/console.md).
+
+## Start here
+
+### Run your own kbridge
+
+kbridge is self-hosted: you run the control plane and an agent in each
+cluster. Follow the [Helm quick start](docs/installation.md#quick-start-helm-one-cluster).
+It puts the control plane and an agent on one cluster (kind works) in about
+20 minutes, and ends on a refused command and its audit entry.
+
+### You are taking it to production
+
+1. [Production install](docs/production-install.md): Secrets, TLS, more clusters.
+2. [Security hardening](docs/security.md): the checklist before users arrive.
+3. [Onboard a user](docs/admin.md#onboard-a-user): the first users, their roles
+   and their first password.
+4. [Operations](docs/operations.md): backup, upgrades, troubleshooting.
+
+### You have a kbridge account
+
+Your admin gave you a control plane URL, an email and a password. Install
+`kb` (Linux or macOS):
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/why-xn/kbridge/master/install.sh | sh
 ```
 
-`kb` talks to a control plane someone has already deployed, with an account
-they created for you. To run your own, follow the Helm quick start in
-[docs/installation.md](docs/installation.md) first.
-
-No configuration file to write: the first login asks for the control plane
-URL and saves it, with your session, in `~/.kbridge/config.yaml`.
+The first login asks for the control plane URL and saves it in
+`~/.kbridge/config.yaml`:
 
 ```bash
 kb login
@@ -73,10 +95,14 @@ kb clusters use <cluster>
 kb get pods -n <namespace>
 ```
 
-The control plane and the per-cluster agent ship as Helm charts. See
-[docs/installation.md](docs/installation.md) for binaries, images, and charts,
-[docs/production-install.md](docs/production-install.md) for TLS and secrets,
-and [Quick Start](#quick-start) to build and run everything from source.
+If login fails with `x509: certificate signed by unknown authority`, your
+control plane uses a private CA: get the CA file from your admin and run
+`export SSL_CERT_FILE=/path/to/ca.crt` (Linux), or add it to your system trust
+store. The export lasts only for that shell: add it to your shell profile
+(`~/.bashrc`, `~/.zshrc`) so every new terminal has it. If an admin chose your
+first password, [change it](docs/cli.md#change-your-password) now. Then read the
+[CLI reference](docs/cli.md), including
+[when a command is refused](docs/cli.md#when-a-command-is-refused).
 
 ## Problem
 
@@ -96,13 +122,12 @@ with every new cluster, team, and environment.
   `delete pod --all`, so a single mistaken command reaches the cluster and the
   first anyone knows of it is the outage.
 - **Records that do not answer the question.** Reconstructing who did what means
-  stitching together logs from several clusters. And when the actor is an AI
-  agent using a shared credential, the cluster's own audit log cannot say which
-  human was behind it.
+  stitching together logs from several clusters, and a shared credential makes
+  the cluster's own audit log name the credential rather than the person.
 
-That last point is getting sharper. Teams are already letting AI agents inspect
-and change infrastructure, often by handing them long-lived credentials, which
-recreates every problem above at machine speed.
+The same applies to automation and AI agents: give one its own kbridge account
+and it holds no cluster credential, and every command it runs is checked
+against its role and recorded under its name.
 
 ## Solution
 
@@ -123,8 +148,7 @@ ports, no kubeconfig distribution, no VPN.
    so `kb get pods` works with no local credentials and no network path to the
    cluster.
 
-Because the control plane sees the **command** and not just an API call, it can
-do things a proxy cannot:
+What that changes:
 
 | Problem | What kbridge does |
 |---|---|
@@ -132,215 +156,22 @@ do things a proxy cannot:
 | Network exposure | The agent dials out, so no inbound port, bastion, or VPN is required |
 | Standing access | Just-in-time grants: request a role for a bounded window with a reason, someone approves, and it expires on its own *(next release)* |
 | Mistakes reaching the cluster | Guardrails evaluate the command before it is forwarded, so a destructive operation is refused rather than recorded *(next release)* |
-| Records that do not answer the question | One audit log across every cluster, with the reason and the approval that admitted each command *(reason and approval: next release)* |
+| Records that do not answer the question | One audit log across every cluster: who ran which command where, and whether it ran. Commands run as the user, so the cluster's own audit log names them too. *(Next release: the reason and the approval that admitted each command.)* |
 
-Work is organized into five tracks: credential-free access, just-in-time
-authorization and guardrails, verifiable attribution and audit, governed access
-for AI agents, and extending the same door to systems beyond Kubernetes. See
-[ROADMAP.md](ROADMAP.md) for what is shipped, in progress, and planned.
+**Security in brief.** Users never hold a cluster credential; only the agent
+does. Commands run as `kbridge:<email>` through impersonation, so the
+cluster's RBAC and audit log see the person. Every attempt, allowed or
+refused, is in the kbridge audit log. See [docs/security.md](docs/security.md)
+and an [example policy](docs/rbac.md#example).
 
-## Components
+See the [roadmap](https://github.com/why-xn/kbridge/blob/master/ROADMAP.md)
+on `master` for what is shipped, in progress, and planned.
 
-### CLI (`kb`)
-
-User-facing command-line tool. **kubectl by default** — anything that isn't a
-management command (`login`, `logout`, `status`, `clusters`, `admin`) is run as
-kubectl on the selected cluster. (`make build` also creates a `kbridge` symlink
-for back-compat; the installer and the release archives ship `kb` only.)
-
-```bash
-kb login                      # Login to the control plane
-kb logout                     # Logout
-kb clusters list              # List available clusters
-kb clusters use <cluster>     # Select active cluster
-kb get pods                   # Run kubectl on the selected cluster
-kb apply -f app.yaml          # Any kubectl command works
-kb logs -f deploy/api         # Follow/watch (-f/-w) streams live until Ctrl-C
-kb exec -it deploy/api -- sh  # Interactive shell (full TTY; -i for stdin-only)
-kb port-forward deploy/db 5432:5432  # Forward pod port to localhost
-kb kubectl get pods           # 'kubectl'/'k' force kubectl explicitly
-kb status                     # Show current context
-
-# Admin (requires the admin role)
-kb admin users list                          # List users
-kb admin users create --email dev@corp.com --name Dev
-kb admin agent-tokens create --cluster prod  # Generate an agent token
-kb admin audit --user dev@corp.com           # View the command audit log
-kb admin rbac status                         # Show RoleBinding sync state per cluster
-```
-
-### Control Plane (`kbridge-control-plane`)
-
-API gateway and control plane. Handles user authentication, cluster registry, RBAC enforcement, command proxying, and audit logging.
-
-### Agent (`kbridge-agent`)
-
-Lightweight daemon running in each Kubernetes cluster. Connects outbound to the control plane, registers cluster metadata, polls for commands, executes kubectl locally as the requesting user (impersonation), keeps cluster RoleBindings in step with kbridge policy, and submits results back. It holds only impersonation and binding-sync permissions.
-
-## Quick Start
-
-### Prerequisites
-
-- Go 1.25+
-- kubectl installed
-- Access to a Kubernetes cluster
-
-### Build
-
-```bash
-make build
-```
-
-This produces three binaries in `bin/`:
-- `kb` - CLI tool (with a `kbridge` symlink for back-compat)
-- `kbridge-control-plane` - control plane
-- `kbridge-agent` - Cluster agent
-
-### Run Locally
-
-**1. Start the control plane:**
-```bash
-# Control Plane requires a real jwt_secret (>=32 chars). Generate one:
-export KBRIDGE_JWT_SECRET="$(openssl rand -hex 32)"
-./bin/kbridge-control-plane --config configs/control-plane.yaml
-```
-
-**2. Start an agent (locally, uncomment the `kubernetes:` block in `configs/agent.yaml` and set `kubeconfig:` to the absolute path of your kubeconfig; in a pod the in-cluster defaults apply):**
-```bash
-./bin/kbridge-agent --config configs/agent.yaml
-```
-
-**3. Log in and use the CLI:**
-```bash
-# Default admin is seeded from control-plane.yaml (admin@kbridge.local / admin123 in
-# the example config — change admin_password after first login for any real deployment).
-./bin/kb login
-./bin/kb clusters list
-./bin/kb clusters use dev-cluster
-./bin/kb get pods -A
-```
-
-See [docs/installation.md](docs/installation.md) for binary, Docker, and Helm
-installs, and the [Documentation](#documentation) section below for full references.
-
-## Configuration
-
-### Control Plane (`control-plane.yaml`)
-
-```yaml
-server:
-  http_port: 8080                  # REST API port
-  grpc_port: 9090                  # gRPC server port
-database:
-  driver: sqlite
-  path: kbridge.db
-auth:
-  jwt_secret: ""                   # required, 32+ chars; or set KBRIDGE_JWT_SECRET
-  admin_email: admin@kbridge.local # seeded on first start
-  admin_password: admin123         # change after first login
-rbac:
-  policy_file: configs/rbac.yaml   # empty = enforcement disabled
-tls:
-  enabled: false                   # see docs/configuration.md#tls
-```
-
-See [docs/configuration.md](docs/configuration.md) for the complete reference
-(audit, bootstrap, TLS, env vars).
-
-### Agent (`agent.yaml`)
-
-```yaml
-control_plane:
-  url: localhost:9090              # control plane gRPC address
-  token: dev-token                 # Authentication token
-
-cluster:
-  name: dev-cluster                # Unique cluster identifier
-```
-
-### CLI (`~/.kbridge/config.yaml`)
-
-```yaml
-control_plane_url: https://control-plane.example.com:8080
-current_cluster: production-us-east
-token: ""
-```
-
-### Environment Variables
-
-**Agent:**
-
-| Variable | Description | Default |
-|----------|-------------|---------|
-| `KBRIDGE_CONFIG` | Path to config file | `configs/agent.yaml` or `/etc/kbridge/agent.yaml` |
-| `KBRIDGE_CONTROL_PLANE_URL` | control plane gRPC address | `localhost:9090` |
-| `KBRIDGE_AGENT_TOKEN` | Authentication token | — |
-| `KBRIDGE_CLUSTER_NAME` | Cluster name | `default` |
-
-**control plane:**
-
-| Variable | Description | Default |
-|----------|-------------|---------|
-| `KBRIDGE_CONFIG` | Path to config file | `configs/control-plane.yaml` |
-
-## Agent Deployment
-
-Deploy the agent with the Helm chart, one release per cluster:
-
-```bash
-helm install kbridge-agent oci://ghcr.io/why-xn/charts/kbridge-agent \
-  -n kbridge --version 0.3.0-alpha.1 \
-  --set controlPlane.url=<control-plane-host>:9090 \
-  --set controlPlane.token=<token from kb admin agent-tokens create> \
-  --set cluster.name=<name the token was created for>
-```
-
-The chart creates what the agent needs and a hand-written manifest would
-miss: the ServiceAccount, the ClusterRole for impersonation and binding
-management, the projected token at `/var/run/kbridge/sa` with the default
-token mount turned off, and an optional egress NetworkPolicy. See
-[docs/installation.md](docs/installation.md#helm-kubernetes) for the full
-quick start and [docs/production-install.md](docs/production-install.md) for
-TLS, Secrets and multi-cluster.
-
-## Security Model
-
-### Authentication
-
-Users authenticate via `kb login`, which obtains a JWT token from the control plane and stores it locally. All subsequent API calls include this token.
-
-### RBAC
-
-Access control is defined in a declarative, hot-reloaded policy file
-(ArgoCD-style), enforced on every kubectl command before it reaches a cluster.
-Roles match by cluster, namespace, resource, and verb with wildcards; bindings
-map users (by JWT email) to roles:
-
-```yaml
-default: viewer
-roles:
-  - name: developer
-    rules:
-      - clusters: ["dev-*", "staging"]
-        namespaces: ["*"]
-        resources: ["pods", "services", "deployments"]
-        verbs: ["get", "list", "logs", "exec", "apply"]
-  - name: admin
-    rules:
-      - clusters: ["*"]
-        namespaces: ["*"]
-        resources: ["*"]
-        verbs: ["*"]
-bindings:
-  - subject: admin@kbridge.local
-    roles: ["admin"]
-```
-
-See [docs/rbac.md](docs/rbac.md) for the full policy reference.
+## Guardrails and just-in-time access
 
 ### Guardrails
 
-> **Not yet released.** Not in v0.3.0-alpha.1, which ignores these keys and
+> **Not yet released.** Not in v0.3.1-alpha.1, which ignores these keys and
 > commands. It ships in the next release.
 
 Roles decide what a person may touch. Guardrails decide whether a *particular
@@ -386,7 +217,7 @@ kb policy test -f configs/rbac.yaml -u alice@corp.com -c prod-eu -- delete ns pa
 
 ### Just-in-time access
 
-> **Not yet released.** Not in v0.3.0-alpha.1, which ignores these keys and
+> **Not yet released.** Not in v0.3.1-alpha.1, which ignores these keys and
 > commands. It ships in the next release.
 
 Guardrails can also require that someone *else* says yes. A `require-approval`
@@ -422,56 +253,21 @@ time — and self-approval is refused by default. Every step is audited, and a
 command an approval admitted carries the same grant ID, so one query returns the
 request, the decision, and everything run under it.
 
-### Agent Authentication
-
-Agents authenticate with database-backed tokens. Each token is a high-entropy
-random secret, shown once at creation and stored only as an
-HMAC-SHA256 digest keyed by a server-side pepper (`auth.token_pepper`, falling
-back to `jwt_secret`) — so a stolen database alone cannot be used to verify
-guessed tokens. Each token is bound to one cluster, can be revoked via the admin
-API, and records a `last_used_at` timestamp on every successful registration for
-staleness detection. Tokens are managed with
-`POST/GET/DELETE /api/v1/admin/agent-tokens`.
-
-### TLS
-
-Server-authenticated TLS secures the HTTP API, the agent↔control plane gRPC channel,
-and the CLI. Generate a dev certificate with `make certs`; see
-[docs/configuration.md](docs/configuration.md#tls).
-
-### Audit Logging
-
-Every command (allowed, denied, failed, or timed out) is recorded with user,
-cluster, command, result, and duration. Query via `kb admin audit` or
-`GET /api/v1/admin/audit`.
-
-## Tech Stack
-
-| Component | Technology |
-|-----------|------------|
-| Language | Go |
-| CLI | Cobra + Viper |
-| HTTP Server | Gin |
-| RPC | gRPC + Protocol Buffers |
-| Database | SQLite (`modernc.org/sqlite`, pure Go) |
-| Auth | JWT (HS256) + bcrypt |
-| Authorization | Declarative policy file (hot-reloaded) |
-| Transport security | Server-authenticated TLS (HTTP + gRPC) |
-| Config | YAML + environment variables |
-
 ## Documentation
 
-| Guide | Contents |
-|-------|----------|
-| [Installation](docs/installation.md) | Binary, Docker, and Helm installation |
-| [Configuration](docs/configuration.md) | All control plane / agent / CLI options, incl. TLS |
-| [CLI reference](docs/cli.md) | Every command with examples |
-| [Architecture](docs/architecture.md) | Request lifecycle, command transports, authorization pipeline, data and trust models |
-| [API reference](docs/api.md) | All HTTP endpoints |
-| [RBAC](docs/rbac.md) | Policy file format and examples |
-| [Admin guide](docs/admin.md) | Users, agent tokens, and audit logs |
-| [Security hardening](docs/security.md) | Post-install checklist, two-layer authz, least-privilege agent RBAC |
-| [Operations](docs/operations.md) | Backup/restore, upgrades, token rotation, troubleshooting |
+| | Guide | Contents |
+|---|---|---|
+| **Use** | [CLI reference](docs/cli.md) | Every command; what to do when one is refused |
+| | [Admin console](docs/console.md) | The read-only web console at the control plane root |
+| **Install** | [Installation](docs/installation.md) | Helm quick start; CLI, Docker, from source |
+| | [Production install](docs/production-install.md) | Secrets, TLS, and agents in other clusters |
+| **Operate** | [Admin guide](docs/admin.md) | Onboard a user, agent tokens, audit logs |
+| | [RBAC](docs/rbac.md) | Policy file format, cluster bindings, guardrails and just-in-time access (next release), reloading |
+| | [Security hardening](docs/security.md) | Hardening checklist, two-layer authorization, limits |
+| | [Operations](docs/operations.md) | Backup, upgrades, token rotation, troubleshooting |
+| **Reference** | [Configuration](docs/configuration.md) | Every option and environment variable, incl. TLS |
+| | [API reference](docs/api.md) | All HTTP endpoints |
+| | [Architecture](docs/architecture.md) | Request lifecycle, command transports, authorization pipeline, data and trust models |
 
 ## License
 

@@ -43,29 +43,34 @@ tls:
 
 streams:
   max_concurrent: 50       # max simultaneous streaming sessions (logs -f / get -w)
+
+ui:
+  enabled: true            # serve the admin console at /
 ```
 
 | Key | Required | Notes |
 |-----|----------|-------|
-| `auth.jwt_secret` | yes | Signing key for access tokens |
+| `auth.jwt_secret` | yes | Signing key for access tokens; at least 32 characters, and published placeholders are refused |
 | `auth.token_pepper` | no | HMAC key for agent tokens at rest; when empty, falls back to `jwt_secret`. Set a dedicated value for key separation. Changing it invalidates existing agent tokens (re-issue them) |
 | `database.path` | yes | SQLite file path |
 | `bootstrap.*` | no | Seeds one agent token at startup; prefer the admin API |
 | `rbac.policy_file` | no | When empty, all authenticated users are allowed |
 | `tls.*` | no | When `enabled`, `cert_file` + `key_file` are required |
 | `streams.max_concurrent` | no | Cap on concurrent streaming sessions; `0`/unset → default 50 |
+| `ui.enabled` | no | Serve the admin console at `/` (default `true`); `KBRIDGE_UI_ENABLED=false` turns it off |
 | `grants.max_duration` / `grants.default_duration` | no | **Next release.** Bounds on just-in-time grants; unset → 8h / 1h |
-| `auth.jwt_secret_file` / `auth.token_pepper_file` / `auth.admin_password_file` | no | Read the secret from a file instead of the key above; the Helm chart uses these for `auth.existingSecret` |
 | `grants.notify[]` | no | **Next release.** Webhooks for grant events. `url` and `secret` each accept a `_file` variant and env overrides `KBRIDGE_GRANTS_NOTIFY_<n>_URL` / `_SECRET` (+ `_FILE`), indexed by position. A chat webhook URL is a credential; keep it out of the file. See [rbac.md](rbac.md#notifications) |
+| `auth.jwt_secret_file` / `auth.token_pepper_file` / `auth.admin_password_file` | no | Read the secret from a file instead of the key above; the Helm chart uses these for `auth.existingSecret` |
 
 ### Control plane environment variables
 
 | Variable | Overrides | Default |
 |----------|-----------|---------|
-| `KBRIDGE_CONFIG` | config file path | `configs/control-plane.yaml` |
+| `KBRIDGE_CONFIG` | config file path (`--config` wins) | none: with neither, the control plane runs on built-in defaults, with RBAC off and no seeded admin, so `KBRIDGE_JWT_SECRET` is required |
 | `KBRIDGE_JWT_SECRET` / `KBRIDGE_JWT_SECRET_FILE` | `auth.jwt_secret` / `auth.jwt_secret_file` | — |
 | `KBRIDGE_TOKEN_PEPPER` / `KBRIDGE_TOKEN_PEPPER_FILE` | `auth.token_pepper` / `auth.token_pepper_file` | — |
 | `KBRIDGE_ADMIN_PASSWORD` / `KBRIDGE_ADMIN_PASSWORD_FILE` | `auth.admin_password` / `auth.admin_password_file` | — |
+| `KBRIDGE_UI_ENABLED` | `ui.enabled` | `true` |
 | `KBRIDGE_GRANTS_NOTIFY_<n>_URL` / `_SECRET` (+ `_FILE`) | `grants.notify[n].url` / `.secret` (next release) | — |
 
 ## Agent (`agent.yaml`)
@@ -92,6 +97,8 @@ protected_namespaces: []   # namespaces kubectl through kbridge may not touch
 
 sync:
   interval: 60s            # how often role bindings are re-checked against policy
+
+health_file: /tmp/kbridge-agent-healthy   # set in the file only; no env var
 ```
 
 | Key | Env var | Default | Meaning |
@@ -122,7 +129,7 @@ Validation: `kubernetes.server` and `kubernetes.token_file` are required unless
 ## CLI (`~/.kbridge/config.yaml`)
 
 ```yaml
-control_plane_url: https://control-plane.example.com:8080
+control_plane_url: https://control-plane.example.com
 current_cluster: production-us-east
 token: ""                  # set by `kb login`
 refresh_token: ""
@@ -143,7 +150,10 @@ and the CLI.
 2. Enable on the control plane (`tls.enabled: true`, point at the cert/key).
 3. On the agent, set `control_plane.tls.enabled: true` and either `ca_file: certs/tls.crt`
    (verify) or `insecure: true` (skip — dev only).
-4. For the CLI, use an `https://` `control_plane_url`; with a self-signed cert set
-   `insecure_skip_verify: true`.
+4. For the CLI, use an `https://` `control_plane_url`. With a certificate from a
+   private CA, add the CA to the system trust store or, on Linux, run the CLI
+   with `SSL_CERT_FILE=/path/to/ca.crt`. Set `insecure_skip_verify: true` only
+   against a development control plane (see
+   [security.md](security.md#4-trust-the-control-planes-ca-on-the-cli-keep-insecure_skip_verify-off)).
 
 The same certificate secures both the HTTP and gRPC servers.

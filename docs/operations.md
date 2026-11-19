@@ -20,6 +20,10 @@ through a helper pod that mounts its PVC. The commands assume the release
 
 ```bash
 kubectl -n kbridge scale deploy/kbridge-control-plane --replicas=0
+# The old pod keeps the database open until it is gone; wait for it.
+kubectl -n kbridge wait --for=delete pod \
+  -l app.kubernetes.io/name=kbridge-control-plane,app.kubernetes.io/instance=kbridge-control-plane \
+  --timeout=120s
 kubectl -n kbridge apply -f - <<'EOF'
 apiVersion: v1
 kind: Pod
@@ -95,10 +99,19 @@ EOF
 
 ### Helm upgrade
 
+Back up first (see above). `--reuse-values` keeps what was set with `--set`;
+the [production install](production-install.md) also keeps a values file,
+which every upgrade passes again:
+
 ```bash
-# Back up first (see above), then:
+# Production install:
 helm upgrade kbridge-control-plane oci://ghcr.io/why-xn/charts/kbridge-control-plane \
-  -n kbridge --version 0.3.0-alpha.1 \
+  -n kbridge --version 0.3.1-alpha.1 \
+  --reuse-values -f values-control-plane.yaml
+
+# Quick start (installed with --set only):
+helm upgrade kbridge-control-plane oci://ghcr.io/why-xn/charts/kbridge-control-plane \
+  -n kbridge --version 0.3.1-alpha.1 \
   --reuse-values
 ```
 
@@ -117,6 +130,21 @@ chart version rather than overriding the image tag. From a clone, use
   Expect a brief downtime (seconds) during pod replacement.
 
 ---
+
+## Certificate renewal
+
+The control plane reads its TLS certificate only when it starts. When
+cert-manager renews the Secret, restart the control plane before the old
+certificate expires, or users and agents get `x509: certificate has expired`:
+
+```bash
+kubectl -n kbridge get certificate kbridge-control-plane-tls -o jsonpath='{.status.renewalTime}'
+kubectl -n kbridge rollout restart deploy/kbridge-control-plane
+```
+
+`renewalTime` is when cert-manager replaces the Secret: restart after that
+time and before the old certificate's `notAfter`
+(`-o jsonpath='{.status.notAfter}'`).
 
 ## Agent-Token Rotation
 
@@ -148,7 +176,7 @@ which restarts the agent.
 
 ```bash
 helm upgrade kbridge-agent oci://ghcr.io/why-xn/charts/kbridge-agent \
-  -n kbridge --version 0.3.0-alpha.1 \
+  -n kbridge --version 0.3.1-alpha.1 \
   --reuse-values --set controlPlane.token=<new-token>
 ```
 
@@ -170,6 +198,12 @@ kb clusters list                                     # STATUS back to connected
 kb admin agent-tokens list --cluster <cluster-name>  # the old token's ID
 kb admin agent-tokens revoke <old-token-id>
 ```
+
+To tell the tokens apart, match the `PREFIX` column against the first 13
+characters of the old `kbat_...` value (still in the agent's previous Secret
+or values), or pick the token whose last use stopped: `last_used_at` in
+`GET /api/v1/admin/agent-tokens` and Last Used on the console's Agent Tokens
+screen. The new token's last use is the agent's registration just now.
 
 Revoke only after the agent is back on the new token: revocation disconnects
 any agent still using the old one at once, and that agent stops
@@ -239,8 +273,8 @@ permissions it renders.
 | | `kb clusters list` shows "disconnected"? | Check agent logs: `kubectl -n kbridge logs deploy/kbridge-agent -f` |
 | **401 from `kb`** | Access token expired? | `kb` auto-refreshes; if the refresh token is also expired, run `kb login` |
 | | `jwt_secret` rotated on the control plane? | Users are refreshed silently while their refresh token is valid. The agents are what break: with `auth.token_pepper` empty, agent tokens are keyed by `jwt_secret`, so every agent is rejected with `invalid agent token` and crash-loops. Set a dedicated `token_pepper` before rotating, or re-issue every agent token afterwards |
-| **TLS errors** | Certificate mismatch? | Verify the SAN on the cert covers the hostname the agent/CLI uses; regenerate with `make certs` for dev |
-| | Self-signed cert rejected by CLI? | Set `insecure_skip_verify: true` in `~/.kbridge/config.yaml` (development only) |
+| **TLS errors** | Certificate mismatch? | Verify the SAN on the cert covers the hostname the agent/CLI uses; regenerate with `make certs` for dev. `certificate has expired` while the Secret is fresh: restart the control plane ([Certificate renewal](#certificate-renewal)) |
+| | Self-signed or private-CA cert rejected by CLI? | Add the CA to the system trust store, or on Linux run `kb` with `SSL_CERT_FILE=/path/to/ca.crt`. `insecure_skip_verify: true` in `~/.kbridge/config.yaml` is for a development control plane only |
 | **`kb` says `cluster "<name>": agent is disconnected`** (`503` on the API) | Agent pod down? | `kubectl -n kbridge get pod -l app.kubernetes.io/name=kbridge-agent` |
 | | Agent disconnected? | `kubectl -n kbridge logs deploy/kbridge-agent --tail=50`; check for reconnect loop |
 | | Agent heartbeat stale? | Exec probe reads `/tmp/kbridge-agent-healthy`; check `kubectl -n kbridge describe pod <agent-pod>` events |
@@ -262,8 +296,9 @@ Each request line includes timestamp, method, path, status, latency, and client
 IP. Health endpoint:
 
 ```bash
-curl http://<control-plane-host>:8080/health
-# {"status":"healthy"}
+curl https://<control-plane-host>/health      # production install; add --cacert ca.crt for a private CA
+curl http://localhost:8080/health             # quick start, through the port-forward
+# {"status":"healthy","version":"v0.3.1-alpha.1"}
 ```
 
 ### Agent
@@ -310,4 +345,10 @@ kubectl -n kbridge logs deploy/kbridge-agent -f
 | **Throughput** | `SetMaxOpenConns(1)` serializes all database access. Under heavy concurrent load, commands queue behind DB writes. This is a deliberate trade-off for SQLite correctness; a future PostgreSQL driver would remove it. |
 | **Observability** | No Prometheus metrics endpoint. Operational visibility is limited to structured stdout logs and the audit log. |
 | **Mutual TLS** | Only server-authenticated TLS is supported (control plane presents a certificate; clients verify it). Client certificates (mTLS) are not yet implemented. |
-| **Port-forward idle timeout** | `kb port-forward` sessions have no idle timeout. A session with no traffic will hold the tunnel open indefinitely until Ctrl-C or pod restart. |
+| **Port-forward idle timeout** | `kb port-forward` sessions have no idle timeout. A session with no traffic will hold the tunnel open indefinitely until Ctrl-C or pod restart. A proxy in front of the control plane may still close it; see [production install](production-install.md#why-not-an-http-ingress). |
+
+## Next
+
+- [Onboard a user](admin.md#onboard-a-user): accounts, roles and first passwords.
+- [CLI reference](cli.md): what users run.
+- [README](../README.md): back to the start.

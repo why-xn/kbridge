@@ -17,6 +17,8 @@ type (
 	ClusterAccess = policy.ClusterAccess
 	// DesiredBinding is a RoleBinding a cluster should carry for the policy.
 	DesiredBinding = policy.DesiredBinding
+	// AccessSummary is one cluster-level line of what a subject may do.
+	AccessSummary = policy.AccessSummary
 )
 
 // NewPolicyEngineFromBytes parses a policy document into a new engine that has

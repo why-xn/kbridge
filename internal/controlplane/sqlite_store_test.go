@@ -632,3 +632,83 @@ func TestSQLiteStore_AuditLogs(t *testing.T) {
 		t.Run(tc.name, tc.fn)
 	}
 }
+
+func TestListAuditLogs_FiltersByNamespaceAndCommand(t *testing.T) {
+	store := newTestStore(t)
+	ctx := context.Background()
+	for _, l := range []AuditLog{
+		{Command: "get pods -n team-a", Namespace: "team-a"},
+		{Command: "get secrets -n kube-system", Namespace: "kube-system"},
+		{Command: "get 100%_done", Namespace: "default"},
+	} {
+		l.UserEmail, l.ClusterName, l.Status = "u@test.com", "prod", "success"
+		if err := store.CreateAuditLog(ctx, &l); err != nil {
+			t.Fatalf("create audit log: %v", err)
+		}
+	}
+
+	tests := []struct {
+		name   string
+		filter AuditLogFilter
+		want   string
+	}{
+		{"namespace exact", AuditLogFilter{Namespace: "team-a"}, "get pods -n team-a"},
+		{"command case-insensitive", AuditLogFilter{Command: "SECRETS"}, "get secrets -n kube-system"},
+		{"percent is literal", AuditLogFilter{Command: "%"}, "get 100%_done"},
+		{"underscore is literal", AuditLogFilter{Command: "_"}, "get 100%_done"},
+		{"filters combine", AuditLogFilter{Namespace: "kube-system", Command: "pods"}, ""},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			logs, total, err := store.ListAuditLogs(ctx, tc.filter)
+			if err != nil {
+				t.Fatalf("list: %v", err)
+			}
+			if tc.want == "" {
+				if total != 0 {
+					t.Fatalf("want 0 rows, got %d", total)
+				}
+				return
+			}
+			if total != 1 || logs[0].Command != tc.want {
+				t.Fatalf("want 1 row %q, got total %d", tc.want, total)
+			}
+		})
+	}
+}
+
+func TestUserActivity(t *testing.T) {
+	store := newTestStore(t)
+	ctx := context.Background()
+	now := time.Now().UTC()
+	rows := []struct {
+		cmd, status string
+		age         time.Duration
+	}{
+		{"get nodes", "denied", 8 * 24 * time.Hour},
+		{"delete pod x", "denied", 3 * time.Hour},
+		{"apply -f y", "denied", 2 * time.Hour},
+		{"get pods", "success", time.Hour},
+	}
+	for _, r := range rows {
+		l := &AuditLog{UserEmail: "a@x", ClusterName: "staging", Command: r.cmd, Status: r.status}
+		if err := store.CreateAuditLog(ctx, l); err != nil {
+			t.Fatal(err)
+		}
+		at := now.Add(-r.age).Format(timeFormat)
+		if _, err := store.db.ExecContext(ctx, `UPDATE audit_logs SET created_at = ? WHERE id = ?`, at, l.ID); err != nil {
+			t.Fatal(err)
+		}
+	}
+	got, err := store.UserActivity(ctx, now.Add(-7*24*time.Hour))
+	if err != nil {
+		t.Fatalf("UserActivity: %v", err)
+	}
+	a := got["a@x"]
+	if a.LastCommand != "get pods" || a.LastCluster != "staging" || a.DeniedSince != 2 || a.LastCommandAt.IsZero() {
+		t.Errorf("activity = %+v", a)
+	}
+	if _, ok := got["nobody@x"]; ok {
+		t.Error("user without audit rows must have no entry")
+	}
+}
