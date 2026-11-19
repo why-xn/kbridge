@@ -58,7 +58,8 @@ func outputFileErr(flag, val string) error {
 
 // Check refuses kubectl arguments that change the connection, read local files,
 // or run verbs that act on the agent's own environment. It never parses manifests.
-// A value flag can swallow "--", so "--" ends the check only for a container-command verb.
+// A "--" a flag could take as its value is refused for every verb, since the policy reads the
+// namespace only before a real "--". A real "--" ends the check only for a container-command verb.
 func Check(args []string) error {
 	verb, err := verbOf(args)
 	if err != nil {
@@ -68,8 +69,10 @@ func Check(args []string) error {
 		return fmt.Errorf("kubectl %s is not supported through kbridge", verb)
 	}
 	for i, tok := range args {
-		if tok == "--" && containerVerbs[verb] {
-			return checkTerminator(args[:i], verb)
+		if tok == "--" {
+			if err := checkTerminator(args[:i], verb); err != nil || containerVerbs[verb] {
+				return err
+			}
 		}
 		next := ""
 		if i+1 < len(args) {
@@ -109,6 +112,11 @@ func checkTerminator(before []string, verb string) error {
 		return fmt.Errorf("flag %s must be written as %s=<value> before --", flag, flag)
 	}
 	return nil
+}
+
+// EndsFlags reports whether a "--" after before is real: no flag just before it takes it as its value.
+func EndsFlags(before []string, verb string) bool {
+	return checkTerminator(before, verb) == nil
 }
 
 // swallower returns the flag in tok that would take the next token as its value, or "".
