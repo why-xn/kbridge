@@ -12,7 +12,8 @@ service:
 
 # Authentication secrets. CHANGE THESE for any real deployment.
 auth:
-  jwtSecret: "change-me-in-production-at-least-32-chars"
+  # Required unless existingSecret is set: openssl rand -hex 32
+  jwtSecret: ""
   tokenPepper: ""        # HMAC key for agent tokens; empty falls back to jwtSecret
   accessTokenExpiry: 1h
   refreshTokenExpiry: 168h
