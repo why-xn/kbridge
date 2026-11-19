@@ -43,7 +43,6 @@ One-shot commands are queued and polled by the agent. `logs -f`, `exec -it`, and
 port-forward run over one persistent stream between agent and control plane and
 HTTP/2 streams between CLI and control plane.
 
-<!-- Console recording: docs/assets/console.gif and console-light.gif are recorded separately. -->
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/assets/console.gif">
   <img src="docs/assets/console-light.gif" alt="The read-only admin console at the control plane root: each cluster's connection and RBAC sync state, the audit log of every command attempt with its filters, agent tokens, and users with their roles">
