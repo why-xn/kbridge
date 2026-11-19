@@ -132,6 +132,58 @@ its status. It does not show who you are, and after `kb logout` it still
 reports the control plane as reachable; a command that answers
 `authentication required` is the cue to run `kb login`.
 
+## When a command is refused
+
+A refusal comes from one of two places. The first words of the error tell you
+which.
+
+**kbridge's policy** refused it before it reached the cluster:
+
+```text
+Error: permission denied: delete pod in namespace "kube-system" on cluster "prod-us-east" is not allowed for dev@example.com; ask a kbridge admin to extend your role
+```
+
+Your role does not allow that verb, resource or namespace. Ask a kbridge
+admin to extend your role, and give them the message.
+
+**The cluster's RBAC** refused it after kbridge allowed it:
+
+```text
+Error from server (Forbidden): pods "x" is forbidden: User "kbridge:dev@example.com" cannot delete resource "pods" in API group "" in the namespace "default"
+```
+
+Your role allows it, but the cluster has no binding that lets
+`kbridge:<your email>` do it there. Ask the admin to add `clusterAccess` for
+that namespace to your role.
+
+Before you ask, check three things:
+
+- **Type the resource the way your role lists it.** `resources: ["pods"]`
+  admits `kb get pods`, not `kb get pod` or `kb get po`. The error repeats the
+  word you typed.
+- **Write a value flag as `--flag=value` before the resource**, or put it
+  after the resource. Before the resource, kbridge takes the word after a flag
+  it does not know as that flag's value: `kb get --no-headers pods` has no
+  resource, and a role that lists resources refuses it. See
+  [rbac.md](rbac.md#how-a-kubectl-command-maps-to-a-request).
+- **See who the cluster thinks you are** (the default `viewer` role allows
+  it):
+
+  ```bash
+  kb auth whoami
+  # ATTRIBUTE                   VALUE
+  # Username                    kbridge:dev@example.com
+  # Groups                      [system:authenticated]
+  # Extra: kbridge-request-id   [req-3fd7b2927b14dc01]
+  ```
+
+Some commands kbridge refuses for everyone, whatever the role: connection and
+file flags such as `--server` or `--kubeconfig`, verbs such as `cp`, `proxy`
+and `config`, and anything in the agent's own namespace. See
+[security.md](security.md#layer-2--the-agent-what-kubectl-can-actually-do)
+for the full list. Admins: [rbac.md](rbac.md) says how a command maps to a
+rule and how to add `clusterAccess`.
+
 ## Admin (requires the kbridge admin account)
 
 ### `kb admin users list` (alias `ls`)
@@ -206,4 +258,4 @@ fixes it, for example the Pod Security label a namespace is missing. See
 ## Global behaviour
 
 - A `401` response means your token expired — run `kb login` again.
-- Permission errors (`403`) come from the RBAC policy; see [rbac.md](rbac.md).
+- Permission errors (`403`) come from the RBAC policy; see [When a command is refused](#when-a-command-is-refused).
