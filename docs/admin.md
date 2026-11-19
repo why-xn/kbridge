@@ -12,7 +12,7 @@ These tasks are driven primarily through the `kb admin …` CLI (run
 secondary option. See the [CLI reference](cli.md) and [API reference](api.md).
 
 Admins can also see clusters, the audit log, agent tokens, and users in the
-read-only [admin console](console.md) at `https://<control-plane>/ui/`.
+read-only [admin console](console.md) at `https://<control-plane>/`.
 
 ## Users
 

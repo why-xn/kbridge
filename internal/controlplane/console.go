@@ -21,26 +21,33 @@ func (s *HTTPServer) registerConsole() {
 	if err != nil {
 		panic(err) // the embedded directory is fixed at build time
 	}
-	files := http.StripPrefix("/ui/", http.FileServer(http.FS(sub)))
-	s.router.GET("/", func(c *gin.Context) { c.Redirect(http.StatusFound, "/ui/") })
+	files := http.FileServer(http.FS(sub))
+	index := http.StripPrefix("/", files) // "/" would otherwise redirect from index.html
 	// HEAD too: uptime checks and curl -I probe the console with it.
-	s.router.Match([]string{http.MethodGet, http.MethodHead}, "/ui/*file", func(c *gin.Context) {
+	s.router.Match([]string{http.MethodGet, http.MethodHead}, "/", func(c *gin.Context) {
+		s.serveConsole(c, index, "index.html")
+	})
+	s.router.Match([]string{http.MethodGet, http.MethodHead}, "/assets/*file", func(c *gin.Context) {
 		name := strings.TrimPrefix(c.Param("file"), "/")
-		// Directories other than the root would produce a listing.
-		if name != "" && strings.HasSuffix(name, "/") {
+		// A bare or nested-directory path would produce a listing.
+		if name == "" || name == "index.html" || strings.HasSuffix(name, "/") {
 			c.AbortWithStatus(http.StatusNotFound)
 			return
 		}
-		h := c.Writer.Header()
-		h.Set("Content-Security-Policy", consoleCSP)
-		h.Set("X-Content-Type-Options", "nosniff")
-		h.Set("Referrer-Policy", "no-referrer")
-		h.Set("X-Frame-Options", "DENY")
-		if name == "" || name == "index.html" {
-			h.Set("Cache-Control", "no-store")
-		} else {
-			h.Set("Cache-Control", "max-age=300")
-		}
-		files.ServeHTTP(c.Writer, c.Request)
+		s.serveConsole(c, files, name)
 	})
+}
+
+func (s *HTTPServer) serveConsole(c *gin.Context, h http.Handler, name string) {
+	hd := c.Writer.Header()
+	hd.Set("Content-Security-Policy", consoleCSP)
+	hd.Set("X-Content-Type-Options", "nosniff")
+	hd.Set("Referrer-Policy", "no-referrer")
+	hd.Set("X-Frame-Options", "DENY")
+	if name == "index.html" {
+		hd.Set("Cache-Control", "no-store")
+	} else {
+		hd.Set("Cache-Control", "max-age=300")
+	}
+	h.ServeHTTP(c.Writer, c.Request)
 }

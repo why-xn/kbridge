@@ -54,7 +54,7 @@ streams:
 | `rbac.policy_file` | no | When empty, all authenticated users are allowed |
 | `tls.*` | no | When `enabled`, `cert_file` + `key_file` are required |
 | `streams.max_concurrent` | no | Cap on concurrent streaming sessions; `0`/unset → default 50 |
-| `ui.enabled` | no | Serve the admin console at `/ui/` (default `true`); `KBRIDGE_UI_ENABLED=false` turns it off |
+| `ui.enabled` | no | Serve the admin console at `/` (default `true`); `KBRIDGE_UI_ENABLED=false` turns it off |
 | `auth.jwt_secret_file` / `auth.token_pepper_file` / `auth.admin_password_file` | no | Read the secret from a file instead of the key above; the Helm chart uses these for `auth.existingSecret` |
 
 ### Control plane environment variables

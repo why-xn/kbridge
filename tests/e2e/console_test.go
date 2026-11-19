@@ -16,10 +16,10 @@ import (
 func TestConsole(t *testing.T) {
 	base := *controlPlaneURL
 
-	t.Run("serves /ui/ with a strict CSP", func(t *testing.T) {
-		resp, err := http.Get(base + "/ui/")
+	t.Run("serves / with a strict CSP", func(t *testing.T) {
+		resp, err := http.Get(base + "/")
 		if err != nil {
-			t.Fatalf("GET /ui/: %v", err)
+			t.Fatalf("GET /: %v", err)
 		}
 		defer resp.Body.Close()
 		if resp.StatusCode != http.StatusOK {
@@ -27,6 +27,17 @@ func TestConsole(t *testing.T) {
 		}
 		if csp := resp.Header.Get("Content-Security-Policy"); !strings.Contains(csp, "default-src 'none'") {
 			t.Errorf("missing CSP, got %q", csp)
+		}
+	})
+
+	t.Run("serves an asset", func(t *testing.T) {
+		resp, err := http.Get(base + "/assets/app.js")
+		if err != nil {
+			t.Fatalf("GET /assets/app.js: %v", err)
+		}
+		defer resp.Body.Close()
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("want 200, got %d", resp.StatusCode)
 		}
 	})
 

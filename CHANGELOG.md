@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- **Admin console at `/ui/`.** A read-only web view for admins: cluster
+- **Admin console at the control plane root.** A read-only web view for admins: cluster
   connection and policy sync, the audit log with filters and CSV export, agent
   tokens, and users with their roles and access. It loads nothing from outside
   the control plane and is served with a strict Content-Security-Policy.

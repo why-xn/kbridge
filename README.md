@@ -161,8 +161,8 @@ export KBRIDGE_JWT_SECRET="$(openssl rand -hex 32)"
 ./bin/kb get pods -A
 ```
 
-Admins can also open the read-only console at `http://localhost:8080/ui/`
-(or `https://<control-plane>/ui/` in a real install; see
+Admins can also open the read-only console at `http://localhost:8080/`
+(or `https://<control-plane>/` in a real install; see
 [docs/console.md](docs/console.md)).
 
 See [docs/installation.md](docs/installation.md) for binary, Docker, and Helm
@@ -330,7 +330,7 @@ cluster, command, result, and duration. Query via `kb admin audit` or
 | [API reference](docs/api.md) | All HTTP endpoints |
 | [RBAC](docs/rbac.md) | Policy file format and examples |
 | [Admin guide](docs/admin.md) | Users, agent tokens, and audit logs |
-| [Admin console](docs/console.md) | The read-only web console at `/ui/` |
+| [Admin console](docs/console.md) | The read-only web console at the control plane root |
 | [Security hardening](docs/security.md) | Post-install checklist, two-layer authz, least-privilege agent RBAC |
 | [Operations](docs/operations.md) | Backup/restore, upgrades, token rotation, troubleshooting |
 
