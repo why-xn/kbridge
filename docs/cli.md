@@ -1,8 +1,8 @@
 # CLI Reference
 
 The `kb` CLI talks to the control plane over REST. Configuration lives in
-`~/.kbridge/config.yaml` (see [configuration](configuration.md)). The binary is
-also installed as `kbridge` (a symlink) for back-compat.
+`~/.kbridge/config.yaml` (see [configuration](configuration.md)). `make build`
+also creates a `kbridge` symlink to it; the installer installs `kb` only.
 
 **kubectl by default.** The first argument decides what runs: the management
 commands `login`, `logout`, `status`, `clusters` (alias `cluster`), and `admin`
@@ -79,7 +79,9 @@ kubectl kustomize ./overlay | kb apply -f -
 ```
 
 **Default namespace.** Without `-n`, commands run in the `default` namespace, as
-with plain kubectl.
+with plain kubectl. Only kubectl's own `-n`/`--namespace` counts, in any form
+(`-n x`, `-nx`, `--namespace=x`), and only before `--`: in
+`kb exec web -- grep -n web /f` the namespace is `default`.
 
 **Streaming (`logs -f` / `get -w`).** When the command uses a follow/watch flag
 (`logs -f`/`--follow`, or `-w`/`--watch` on any command), the CLI streams output
@@ -111,7 +113,8 @@ kb exec -i <pod> -- sh -c "cat /etc/hosts"       # stdin, no TTY
 Opens local TCP listeners that tunnel to the pod's ports through the control plane. Each
 port spec can be `LOCAL:REMOTE` (fixed local port), bare `REMOTE` (local equals
 remote), or `:REMOTE` (OS-assigned random local port). Multiple ports can be
-forwarded in a single command, each remote port once. Any TCP-based protocol works (Postgres, Redis,
+forwarded in a single command. List each remote port once: a remote port
+listed twice makes the command hang. Any TCP-based protocol works (Postgres, Redis,
 HTTP, etc.). Binds localhost only (v1). Press Ctrl-C to stop all listeners. There
 is no inactivity timeout — the session stays open until you stop it.
 
@@ -183,10 +186,12 @@ kb admin audit --cluster prod --limit 100
 |------|-------------|---------|
 | `--user` | Filter by user email | — |
 | `--cluster` | Filter by cluster name | — |
-| `--status` | `success` / `failed` / `denied` / `canceled` | — |
+| `--status` | `success` / `failed` / `denied` / `timeout` / `canceled` | — |
 | `--limit` | Max entries | 50 |
 
 A command that hits its timeout is recorded as `failed` with exit code `-1`.
+`timeout` means the agent did not answer within the command's timeout plus
+5 s.
 The table shows time, user, cluster, status, exit code and command; the
 namespace, duration and client IP are in the API response only.
 
