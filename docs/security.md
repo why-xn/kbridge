@@ -234,10 +234,16 @@ valid until that command ends. The window:
   agent's own token, re-read from disk on every request so kubelet rotation
   takes effect, adding `Impersonate-User: kbridge:<email>` and
   `Impersonate-Extra-Kbridge-Request-Id: <request id>`;
-- refuses any request under a protected namespace: the agent's own namespace
-  (the Helm release namespace) and any listed in `protected_namespaces`
-  (`protectedNamespaces` in the chart). This covers `exec`, `logs`,
-  `port-forward`, `create token` and every object in those namespaces;
+- refuses any request whose path names a protected namespace: the agent's own
+  namespace (the Helm release namespace) and any listed in
+  `protected_namespaces` (`protectedNamespaces` in the chart). This covers
+  `exec`, `logs`, `port-forward`, `create token` and every object read or
+  written in those namespaces. A cluster-wide list or watch names no
+  namespace, so `kb get pods -A`, `kb get events -A` and the like still return
+  objects in protected namespaces; only Secrets are refused cluster-wide (next
+  item). A port-forward into a protected namespace fails with
+  `Error: port-forward failed: kubectl port-forward did not establish all ports`,
+  without naming the reason;
 - refuses `GET /api/v1/secrets` and `/api/v1/watch/secrets`, the cluster-wide
   secrets list and watch.
 - refuses the kubelet node proxy, `/api/v1/nodes/<node>/proxy/...`, which
@@ -313,6 +319,8 @@ These are the defaults, so a fresh install works with the default policy
 (`admin` is bound to `cluster-admin`, `viewer` to `view`, cluster-wide). A
 cluster owner can lower the ceiling, for example to `[view, edit]` with
 `clusterWide: false`, to limit what any kbridge policy can grant there.
+Lowering it stops only new bindings: those the agent already made stay until
+you delete them by hand; see [Known limits](#known-limits).
 
 The agent's ServiceAccount gets `bind` on those ClusterRoles only, write
 access to RoleBindings (cluster-wide, or in the listed namespaces), write
@@ -374,6 +382,21 @@ match it to the Kubernetes audit event by email, cluster and time.
   Enforce Pod Security cluster-wide (an `AdmissionConfiguration` with
   `defaults.enforce: baseline`), or do not use `clusterWide` for roles that
   can create pods.
+- **Lowering `accessCeiling` does not remove existing bindings.** Lowering
+  the ceiling, or adding a namespace to `protectedNamespaces`, stops new
+  bindings, but those the agent already made stay in place: the agent does
+  not delete them, and loses the right to once its write access is narrowed.
+  `kb admin rbac status` may even show `in sync` while a binding above the new
+  ceiling is still there. After lowering it, delete kbridge's bindings by hand
+  as the cluster owner:
+
+  ```bash
+  kubectl delete clusterrolebindings -l app.kubernetes.io/managed-by=kbridge
+  kubectl delete rolebindings -A -l app.kubernetes.io/managed-by=kbridge
+  ```
+
+  The agent recreates what the new ceiling still allows on its next sync, and
+  `kb admin rbac status` reports the rest. A fix is planned.
 - **kubectl runs as the agent's uid.** The connection and file flag checks are
   what keep a command from reading the agent's token file. Running kubectl
   under a second uid is the planned fix.

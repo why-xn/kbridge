@@ -93,8 +93,9 @@ production install, keep the token in a Kubernetes Secret and point the chart at
 it with `controlPlane.existingSecret` instead of `--set controlPlane.token`; the
 [production guide](production-install.md) shows that flow.
 
-The agent always protects its own namespace, so users cannot reach the control
-plane's pods or Secrets in `kbridge` through kbridge. For an agent in another
+The agent always protects its own namespace, so users cannot exec into, read
+logs of, port-forward to or read Secrets in `kbridge` through kbridge (a
+cluster-wide list such as `kb get pods -A` still shows its pods). For an agent in another
 cluster, create and label the `kbridge` namespace there first and set
 `controlPlane.url` to an address that cluster can reach (see the
 [production guide](production-install.md)).
@@ -335,8 +336,8 @@ the pod's `fsGroup: 10001`, the agent user). Agent chart values for this:
 
 | Value | Default | Purpose |
 |---|---|---|
-| `protectedNamespaces` | `[]` | Namespaces users can never touch through kbridge. The release namespace is always added; add the control plane's namespace when it runs in the same cluster. |
-| `accessCeiling.clusterRoles` | `[view, edit, cluster-admin]` | ClusterRoles the agent may bind for kbridge users. Must not be empty. |
+| `protectedNamespaces` | `[]` | Namespaces the agent refuses every request for by path (exec, logs, port-forward, reads, writes). A cluster-wide list such as `kb get pods -A` still shows their objects, except Secrets. The release namespace is always added; add the control plane's namespace when it runs in the same cluster. |
+| `accessCeiling.clusterRoles` | `[view, edit, cluster-admin]` | ClusterRoles the agent may bind for kbridge users. Must not be empty. Lowering it (or adding to `protectedNamespaces`) does not remove bindings already made; see [Known limits](security.md#known-limits). |
 | `accessCeiling.namespaces` | `[]` | Namespaces the agent may write RoleBindings in; empty means any. Must not include the release namespace. |
 | `accessCeiling.clusterWide` | `true` | Allow ClusterRoleBindings (`clusterWide: true` in policy). |
 | `sync.interval` | `60s` | How often the agent re-checks its bindings when nothing else triggers a sync, e.g. after a namespace is labelled for Pod Security. |
