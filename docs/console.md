@@ -18,16 +18,22 @@ default). The console then asks you to sign in again.
 
 ## Screens
 
-- **Clusters** (the landing page): each cluster's connection state, last
-  heartbeat, and whether its RBAC bindings match the policy. A cluster with no
+- **Clusters** (the landing page): each cluster's connection state, the last
+  heartbeat of its connected agent, and whether its RBAC bindings match the
+  policy. A disconnected cluster shows `heartbeat never`. A cluster with no
   agent yet shows the commands to create a token and install the agent. The
   page refreshes on its own.
-- **Audit Log**: every command attempt, newest first. Filter by user, cluster,
-  namespace, status, time, and command text. Click a row for details, including
-  the message shown to the user on a denial. The log follows new entries while
-  you view the first page, and you can export the filtered rows as CSV.
+- **Audit Log**: every command attempt, newest first. It opens on the Last 24
+  Hours; pick Any Time, Last Hour, Last 7 Days or a custom range for more.
+  Filter by user, cluster, namespace, time, command text, and status with the
+  tabs All, Success, Denied, Failed and Canceled; entries with status
+  `timeout` appear only under All. Click a row for details, including the
+  message shown to the user on a denial. The log follows new entries while you
+  view the first page, and you can export the filtered rows as CSV, up to the
+  first 10,000.
 - **Agent Tokens**: one row per token with cluster, prefix, state, last use,
-  and expiry. Secrets are never shown.
+  and expiry. It opens on the Active tokens; the Revoked and All tabs show the
+  rest. Secrets are never shown.
 - **Users**: each account with its policy roles, the clusters and namespaces
   those roles allow, its last command, and its denied commands in the last
   seven days.
