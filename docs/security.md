@@ -108,7 +108,7 @@ and every hostname users put in `control_plane_url`. A name that is missing
 fails the TLS handshake. `scripts/gen-certs.sh` (`make certs`) covers only
 `localhost` and `127.0.0.1`, so it is for local development only; issue
 production certificates with those names, for example with cert-manager (see
-[production-install.md](production-install.md#5-tls-end-to-end)).
+[production-install.md](production-install.md#3a-issue-the-control-planes-certificate)).
 
 ### 4. Trust the control plane's CA on the CLI; keep `insecure_skip_verify` off
 
@@ -444,9 +444,10 @@ attempts are rejected.
 
 The `/auth/login` endpoint is rate-limited. Clients that exceed the limit receive
 `429 Too Many Requests`. The limit is keyed by client IP and email, and protects
-against credential stuffing and brute-force attacks. Behind an Ingress or
-other proxy the control plane sees the proxy's address, not the user's (it does
-not trust `X-Forwarded-For`), so the limit is effectively per email.
+against credential stuffing and brute-force attacks. Behind a load
+balancer Service, an ingress controller or another proxy the control plane
+usually sees the node's or the proxy's address, not the user's (it does not
+trust `X-Forwarded-For`), so the limit is effectively per email.
 
 ### Agent tokens hashed with HMAC + pepper
 
@@ -460,7 +461,8 @@ cannot be used to verify or forge tokens without the pepper. See the
 
 Every command attempt — allowed, denied, failed, or timed out — is recorded in
 the audit log with: user, cluster, namespace, command, exit code, duration, and
-client IP (behind an Ingress, the proxy's address). The log is queryable via `kb admin audit` or
+client IP (behind a load balancer or proxy, usually the node's or the proxy's
+address). The log is queryable via `kb admin audit` or
 `GET /api/v1/admin/audit`. Denied requests are included (status `denied`), so
 the audit log is also useful for detecting over-broad expectations in the RBAC
 policy.

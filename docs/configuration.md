@@ -126,7 +126,7 @@ Validation: `kubernetes.server` and `kubernetes.token_file` are required unless
 ## CLI (`~/.kbridge/config.yaml`)
 
 ```yaml
-control_plane_url: https://control-plane.example.com:8080
+control_plane_url: https://control-plane.example.com
 current_cluster: production-us-east
 token: ""                  # set by `kb login`
 refresh_token: ""
