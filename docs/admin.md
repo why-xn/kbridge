@@ -14,18 +14,93 @@ secondary option. See the [CLI reference](cli.md) and [API reference](api.md).
 Admins can also see clusters, the audit log, agent tokens, and users in the
 read-only [admin console](console.md) at `https://<control-plane>/`.
 
+## Onboard a user
+
+Five steps take a new person from nothing to running commands.
+
+1. **Create the user.** Choose a first password and send it to them
+   privately; step 5 shows how they change it.
+
+   ```bash
+   kb admin users create --email dev@example.com --name Dev --password <pw>
+   ```
+
+   Until a binding names them, they hold the policy's `default` role
+   (`viewer` in the default policy): read-only.
+
+2. **Give them a role.** Add a binding to the [policy](rbac.md) for a role
+   it defines (the default policy has only `admin` and `viewer`; the
+   [RBAC example](rbac.md#example) adds a `developer` role). A bound user
+   holds only the roles listed, so list `viewer` too if they should keep it:
+
+   ```yaml
+   bindings:
+     - subject: admin@kbridge.local
+       roles: ["admin"]
+     - subject: dev@example.com
+       roles: ["viewer", "developer"]
+   ```
+
+   With the Helm chart, edit `rbac.policy` in your values file. It replaces
+   the whole policy, so start from the one in the chart's
+   [values.yaml](../charts/control-plane/values.yaml) and keep the admin's
+   binding. Then upgrade:
+
+   ```bash
+   helm upgrade kbridge-control-plane oci://ghcr.io/why-xn/charts/kbridge-control-plane \
+     -n kbridge --version 0.3.1-alpha.1 --reuse-values -f values-control-plane.yaml
+   ```
+
+   `--reuse-values` keeps what you set with `--set` at install, such as
+   `auth.jwtSecret`; without it those go back to the chart defaults. The
+   upgrade restarts the control plane, so `kb` fails for about a minute.
+
+   Without Helm, edit the policy file (or the ConfigMap it is mounted from).
+   The control plane reloads it within 10 s; see
+   [Reloading](rbac.md#reloading).
+
+3. **Label the namespace, if the role binds `edit` there.** A role whose
+   `clusterAccess` binds `edit` in a namespace needs that namespace labelled
+   for Pod Security first; see
+   [installation step 4](installation.md#step-4-label-namespaces-where-kbridge-grants-edit).
+
+4. **Wait for `in sync`.** The agent applies the new bindings within about a
+   minute. Until then the row shows `drift`:
+
+   ```bash
+   kb admin rbac status
+   # CLUSTER       VERSION   STATE    ERRORS  REPORTED
+   # prod-us-east  84d5df48  in sync  0       2026-11-19T04:23:33Z
+   ```
+
+   An error under the row names the command that fixes it, for example the
+   missing Pod Security label.
+
+5. **Send them the control plane URL**, their email and first password, and
+   point them at [You have a kbridge account](../README.md#you-have-a-kbridge-account)
+   in the README. To change their password they call the API with the access
+   token `kb login` saved in `~/.kbridge/config.yaml`:
+
+   ```bash
+   TOKEN=$(awk '/^token:/{print $2}' ~/.kbridge/config.yaml)
+   curl -X POST https://<control-plane>/api/v1/auth/change-password \
+     -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+     -d '{"current_password":"<pw>","new_password":"<new password>"}'
+   # {"message":"password changed"}
+   ```
+
+   A `401` means the access token expired: run `kb login` and try again.
+
 ## Users
 
-Users authenticate to the control plane; their permissions come from the policy file
-(matched by email), so there is no role-assignment API — edit the policy
-`bindings` instead.
+Permissions come from the policy file, matched by email, so there is no
+role-assignment API; see [Onboard a user](#onboard-a-user).
 
 ```bash
 kb admin users list
-kb admin users create --email dev@corp.com --name "Dev User"
 ```
 
-Or via the API:
+To create a user through the API instead:
 
 ```bash
 curl -X POST https://control-plane:8080/api/v1/admin/users \
@@ -116,7 +191,8 @@ Logs older than `audit.retention_days` are pruned automatically every
 Edit the policy file referenced by `rbac.policy_file`. The control plane reloads it
 within 10 s of the file changing, or at once on `SIGHUP`
 (`kill -HUP <control-plane-pid>`). With the Helm chart, change `rbac.policy` and
-run `helm upgrade`; the control plane restarts with the new policy. A reload
+run `helm upgrade` as in [Onboard a user](#onboard-a-user); the control plane
+restarts with the new policy. A reload
 of the file that fails to parse is rejected and the previous policy stays
 active (the error is logged). Through Helm there is no previous policy to
 keep: the new pod fails to start and logs the error, so fix the value and
