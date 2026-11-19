@@ -90,8 +90,9 @@ kb get pods -n <namespace>
 If login fails with `x509: certificate signed by unknown authority`, your
 control plane uses a private CA: get the CA file from your admin and run
 `export SSL_CERT_FILE=/path/to/ca.crt` (Linux), or add it to your system trust
-store. If an admin chose your first password,
-[change it](docs/cli.md#change-your-password) now. Then read the
+store. The export lasts only for that shell: add it to your shell profile
+(`~/.bashrc`, `~/.zshrc`) so every new terminal has it. If an admin chose your
+first password, [change it](docs/cli.md#change-your-password) now. Then read the
 [CLI reference](docs/cli.md), including
 [when a command is refused](docs/cli.md#when-a-command-is-refused).
 

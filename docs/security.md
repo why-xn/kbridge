@@ -122,6 +122,10 @@ export SSL_CERT_FILE=/path/to/ca.crt
 kb login
 ```
 
+The export lasts only for that shell; every later `kb` command needs it too.
+Tell users to add the export to their shell profile (`~/.bashrc`,
+`~/.zshrc`).
+
 `insecure_skip_verify` in `~/.kbridge/config.yaml` defaults to `false`. Set it
 to `true` only against a development control plane; it turns off certificate
 checks, so anyone on the network path can read the password and tokens.
