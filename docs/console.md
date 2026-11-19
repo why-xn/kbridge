@@ -24,8 +24,8 @@ default). The console then asks you to sign in again.
   (`Disconnected · heartbeat 3 min ago`), or `heartbeat never` if the control
   plane has restarted since. A cluster whose agent has never connected shows
   `Waiting for agent · no heartbeat yet` and the commands to create a token and
-  install the agent. The
-  page refreshes on its own.
+  install the agent. Connected clusters are listed first, then disconnected
+  ones, then those waiting for an agent. The page refreshes on its own.
 - **Audit Log**: every command attempt, newest first. It opens on the Last 24
   Hours; pick Any Time, Last Hour, Last 7 Days or a custom range for more.
   Filter by user, cluster, namespace, time, command text, and status with the
