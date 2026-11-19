@@ -37,6 +37,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   entry; the admin guide has an "Onboard a user" task; the CLI guide explains
   what to do when a command is refused. The security guide's agent Helm
   snippets now use the chart's `controlPlane` key.
+- **The production guide reaches the control plane through a TCP load
+  balancer, not an HTTP Ingress.** An HTTP (L7) Ingress breaks `kb exec -i/-it`
+  and `kb port-forward` and cuts `kb logs -f` at its idle timeout. The guide
+  now serves TLS from the control plane behind a LoadBalancer Service, with
+  TLS passthrough as the option for clusters that keep ingress-nginx. If you
+  installed from the earlier guide, see
+  [Why not an HTTP Ingress](docs/production-install.md#why-not-an-http-ingress).
 
 ### Security
 
