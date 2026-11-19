@@ -10,9 +10,9 @@ on operator workstations.
 |---|---|
 | Helm 3.8+ | OCI registry support (`helm pull oci://…`) |
 | Two or more Kubernetes clusters | one for control plane, one per managed cluster |
-| A public DNS name for control plane | e.g. `control-plane.example.com` |
-| cert-manager (recommended) | or a pre-existing `kubernetes.io/tls` Secret |
-| An ingress controller | the example uses ingress-nginx (`className: nginx`); with another controller change `className` and the `nginx.ingress.kubernetes.io/backend-protocol: HTTPS` annotation (§5a) to its equivalent |
+| A DNS name for control plane | e.g. `control-plane.example.com`; users and agents both use it |
+| `LoadBalancer` Services in the management cluster | users and agents reach the control plane through one L4 load balancer (§3). An HTTP Ingress does not work for this; see [Why not an HTTP Ingress](#why-not-an-http-ingress) |
+| cert-manager (recommended) | with a DNS-01 or private CA issuer (§3a), or a pre-existing `kubernetes.io/tls` Secret |
 | `kubectl` configured for each cluster | context switching between clusters |
 | `kb` CLI | `make build` or download from releases |
 
@@ -43,6 +43,56 @@ kubectl -n kbridge create secret generic kbridge-control-plane-secrets \
 
 ## 3. Install the Control Plane
 
+The control plane serves TLS itself, and one `LoadBalancer` Service carries
+both of its ports: HTTPS for users and the console, gRPC on 9090 for agents.
+
+### Why not an HTTP Ingress
+
+Do not put an HTTP (L7) Ingress in front of the control plane. `kb exec -i`,
+`kb exec -it` and `kb port-forward` send and receive on one HTTP/2 request at
+the same time; an L7 proxy such as ingress-nginx does not pass that through,
+so they never connect. `kb logs -f` and `-w` connect, but the proxy cuts them
+when no output arrives for its idle timeout (60 s by default in ingress-nginx).
+`kb login` and one-shot commands work, which hides the problem until a user
+opens a shell. Raising the proxy's timeouts fixes only `logs -f`.
+
+If you already run ingress-nginx and want the control plane behind it, use TLS
+passthrough instead ([note below](#behind-ingress-nginx-tls-passthrough)).
+
+### 3a. Issue the control plane's certificate
+
+Its `dnsNames` must include every host users put in `kb login` and agents put
+in `controlPlane.url`; add `kbridge-control-plane.kbridge.svc` too if an agent
+runs in this cluster:
+
+```yaml
+# kbridge-control-plane-tls.yaml
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: kbridge-control-plane-tls
+  namespace: kbridge
+spec:
+  secretName: kbridge-control-plane-tls
+  issuerRef:
+    name: letsencrypt-dns
+    kind: ClusterIssuer
+  dnsNames:
+    - control-plane.example.com
+```
+
+```bash
+kubectl apply -f kbridge-control-plane-tls.yaml
+kubectl -n kbridge wait --for=condition=Ready certificate/kbridge-control-plane-tls --timeout=5m
+```
+
+Use a DNS-01 issuer (here `letsencrypt-dns`) or a private CA issuer. An
+HTTP-01 issuer cannot prove the name: Let's Encrypt asks for the challenge on
+port 80 of `control-plane.example.com`, which points at the load balancer from
+§3c, not at an ingress controller, so the Certificate never becomes ready.
+
+### 3b. Install the chart
+
 `auth.adminEmail` only names the account the chart seeds. What that account may
 do in clusters comes from the policy's `bindings`, and the chart's default
 policy binds `admin@kbridge.local`. Keep the two in step with a values file
@@ -56,15 +106,9 @@ auth:
   adminEmail: admin@example.com
 persistence:
   enabled: true
-ingress:
+tls:
   enabled: true
-  className: nginx
-  host: control-plane.example.com
-  annotations:
-    cert-manager.io/cluster-issuer: letsencrypt-prod
-  tls:
-    - secretName: kbridge-ingress-tls
-      hosts: [control-plane.example.com]
+  secretName: kbridge-control-plane-tls
 rbac:
   policy: |
     default: viewer
@@ -99,10 +143,55 @@ helm install kbridge-control-plane oci://ghcr.io/why-xn/charts/kbridge-control-p
   -n kbridge --version 0.3.1-alpha.1 -f values-control-plane.yaml
 ```
 
+With `tls.enabled` the pod serves HTTPS on 8080 and TLS on 9090 with the same
+certificate. The chart mounts the Secret at `/etc/kbridge/tls/` and passes the
+paths as `cert_file` / `key_file` in the generated config.
+
 Never upgrade this release with `--set` flags alone. Without `-f` (or
-`--reuse-values`) Helm resets every other value to the chart defaults: the
-Ingress disappears and `auth.existingSecret` is dropped, so the upgrade fails:
-the chart requires `auth.jwtSecret` or `auth.existingSecret`.
+`--reuse-values`) Helm resets every other value to the chart defaults: TLS is
+turned off and `auth.existingSecret` is dropped, so the upgrade fails: the
+chart requires `auth.jwtSecret` or `auth.existingSecret`.
+
+### 3c. Expose it with a LoadBalancer Service
+
+The chart's own Service stays `ClusterIP`. Create a `LoadBalancer` Service
+that sends 443 to the HTTPS port and 9090 to gRPC. Its selector matches the
+control plane pod by the chart's labels (`app.kubernetes.io/instance` equals
+the Helm release name):
+
+```yaml
+# kbridge-control-plane-lb.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: kbridge-control-plane-lb
+  namespace: kbridge
+spec:
+  type: LoadBalancer
+  selector:
+    app.kubernetes.io/name: kbridge-control-plane
+    app.kubernetes.io/instance: kbridge-control-plane
+  ports:
+    - name: https
+      port: 443
+      targetPort: 8080
+      protocol: TCP
+    - name: grpc
+      port: 9090
+      targetPort: 9090
+      protocol: TCP
+```
+
+```bash
+kubectl apply -f kbridge-control-plane-lb.yaml
+# Wait for an external IP
+kubectl -n kbridge get svc kbridge-control-plane-lb -w
+```
+
+Point `control-plane.example.com` at the external IP. Users run
+`kb login` against `https://control-plane.example.com`, the console is at
+`https://control-plane.example.com/`, and agents set `controlPlane.url` to
+`control-plane.example.com:9090`.
 
 Verify control plane is up:
 
@@ -111,49 +200,46 @@ curl https://control-plane.example.com/health
 # {"status":"healthy","version":"v0.3.1-alpha.1"}
 ```
 
-## 4. Expose gRPC :9090 to External-Cluster Agents
-
-The HTTP Ingress above only reaches port 8080. Agents connect on gRPC port 9090,
-which requires HTTP/2 end-to-end (no TLS termination at an L7 proxy).
-
-### Option A — LoadBalancer Service (recommended)
-
-Create a dedicated LoadBalancer Service in the management cluster. The selector
-matches the control plane pod using the labels set by the Helm chart (`app.kubernetes.io/instance`
-equals the Helm release name):
-
-```yaml
-apiVersion: v1
-kind: Service
-metadata:
-  name: kbridge-control-plane-grpc
-  namespace: kbridge
-spec:
-  type: LoadBalancer
-  selector:
-    app.kubernetes.io/name: kbridge-control-plane
-    app.kubernetes.io/instance: kbridge-control-plane
-  ports:
-    - name: grpc
-      port: 9090
-      targetPort: 9090
-      protocol: TCP
-```
+With a private CA, curl needs the CA: add `--cacert ca.crt`. A cert-manager
+CA issuer puts its CA in every Secret it issues:
 
 ```bash
-kubectl apply -f kbridge-control-plane-grpc-svc.yaml
-# Wait for an external IP
-kubectl -n kbridge get svc kbridge-control-plane-grpc -w
+kubectl -n kbridge get secret kbridge-control-plane-tls -o jsonpath='{.data.ca\.crt}' | base64 -d > ca.crt
+curl --cacert ca.crt https://control-plane.example.com/health
 ```
 
-Point a DNS name, for example `kbridge-grpc.example.com`, at the external IP.
-Agents set `controlPlane.url` to `kbridge-grpc.example.com:9090`; with TLS the
-name must be in the control plane's certificate (step 5a).
+### Behind ingress-nginx: TLS passthrough
 
-### Option B — nginx TCP passthrough
+ingress-nginx is one controller that can hand the TLS connection to the
+control plane untouched, which keeps every stream working. Start the
+controller with `--enable-ssl-passthrough` (with its Helm chart:
+`--set controller.extraArgs.enable-ssl-passthrough=true`), then add an
+`ingress:` block to `values-control-plane.yaml` and upgrade with the file:
 
-Add the gRPC port to the nginx-ingress `tcp-services` ConfigMap. gRPC requires
-HTTP/2 all the way to the backend; do **not** use an HTTP Ingress for port 9090.
+```yaml
+ingress:
+  enabled: true
+  className: nginx
+  host: control-plane.example.com
+  annotations:
+    nginx.ingress.kubernetes.io/ssl-passthrough: "true"
+```
+
+The control plane presents `kbridge-control-plane-tls` from §3a, so the
+Ingress needs no `tls:` list and no cert-manager annotation. Point
+`control-plane.example.com` at the ingress controller. Passthrough carries
+only HTTPS: agents still need 9090, either through the controller's
+`tcp-services` ConfigMap (§4) or through §3c's Service without its `https`
+port, under a second name that is also in the certificate's `dnsNames`.
+
+## 4. Agents in Other Clusters
+
+Agents dial gRPC on port 9090 and need HTTP/2 end to end, so never route 9090
+through an HTTP Ingress. §3c already exposes it: agents set
+`controlPlane.url` to `control-plane.example.com:9090`.
+
+With the ingress-nginx passthrough setup instead, the controller can carry
+9090 as plain TCP. Add the port to its `tcp-services` ConfigMap:
 
 ```yaml
 apiVersion: v1
@@ -167,76 +253,24 @@ data:
 
 Also patch the nginx-ingress controller Service to expose port 9090, then update
 its Deployment args with `--tcp-services-configmap=ingress-nginx/tcp-services`.
-Agents point `controlPlane.url` at the nginx LB host on port 9090.
+Agents point `controlPlane.url` at the nginx LB host on port 9090, which must
+be one of the certificate's `dnsNames`.
 
 ## 5. TLS End-to-End
 
-### 5a. cert-manager Certificate for control plane's gRPC listener
+### 5a. The control plane's certificate
 
-If agents should reach :9090 over TLS, with either option above (neither
-terminates TLS), create a cert-manager Certificate and enable the chart's `tls`
-stanza.
+§3 already serves HTTPS and gRPC with `kbridge-control-plane-tls`. To add a
+host later, add it to the Certificate's `dnsNames` and apply it; cert-manager
+reissues the Secret.
 
-This is a second certificate. cert-manager already issues `kbridge-ingress-tls`
-for the Ingress from step 3 and owns that Certificate object; a Certificate with
-that name would be reverted to the Ingress host alone. The one below is for the
-listener agents dial, so its `dnsNames` must include every host an agent puts
-in `controlPlane.url`:
-
-```yaml
-apiVersion: cert-manager.io/v1
-kind: Certificate
-metadata:
-  name: kbridge-control-plane-tls
-  namespace: kbridge
-spec:
-  secretName: kbridge-control-plane-tls
-  issuerRef:
-    name: letsencrypt-prod
-    kind: ClusterIssuer
-  dnsNames:
-    - control-plane.example.com
-    - kbridge-grpc.example.com
-```
-
-With option A, an HTTP-01 issuer cannot prove `kbridge-grpc.example.com`:
-Let's Encrypt asks for the challenge on port 80 of that name, which points at
-the gRPC LoadBalancer, not the Ingress, so the Certificate never becomes ready. Issue
-this Certificate from a DNS-01 issuer. Pointing the name at the ingress
-controller while it is issued also works, but every renewal needs the same.
-
-Then merge the TLS settings into `values-control-plane.yaml` and upgrade with
-the whole file. Add the top-level `tls:` block and add the annotation to the
-existing `ingress:` block; do not append a second `ingress:` key, since YAML
-keeps only the last one, which drops `enabled: true` and removes the Ingress. The two
-blocks then read:
-
-```yaml
-tls:
-  enabled: true
-  secretName: kbridge-control-plane-tls
-ingress:
-  enabled: true
-  className: nginx
-  host: control-plane.example.com
-  annotations:
-    cert-manager.io/cluster-issuer: letsencrypt-prod
-    nginx.ingress.kubernetes.io/backend-protocol: HTTPS
-  tls:
-    - secretName: kbridge-ingress-tls
-      hosts: [control-plane.example.com]
-```
+The control plane reads the certificate only when it starts. After
+cert-manager reissues or renews the Secret, restart it so it serves the new
+one before the old one expires:
 
 ```bash
-helm upgrade kbridge-control-plane oci://ghcr.io/why-xn/charts/kbridge-control-plane \
-  -n kbridge --version 0.3.1-alpha.1 -f values-control-plane.yaml
+kubectl -n kbridge rollout restart deploy/kbridge-control-plane
 ```
-
-With `tls.enabled` the pod serves HTTPS on 8080 too, so the Ingress must talk
-HTTPS to it.
-
-The chart mounts the Secret at `/etc/kbridge/tls/` and passes the paths as
-`cert_file` / `key_file` in the generated config.
 
 ### 5b. Configure the agent chart for TLS
 
@@ -316,7 +350,7 @@ at `/etc/kbridge-token/token`, passing it via `KBRIDGE_AGENT_TOKEN_FILE`.
 # Still in the target cluster context
 helm install kbridge-agent oci://ghcr.io/why-xn/charts/kbridge-agent \
   -n kbridge --version 0.3.1-alpha.1 \
-  --set controlPlane.url=kbridge-grpc.example.com:9090 \
+  --set controlPlane.url=control-plane.example.com:9090 \
   --set controlPlane.existingSecret=kbridge-agent-secrets \
   --set controlPlane.tls.enabled=true \
   --set cluster.name=prod-us-east \
@@ -324,6 +358,8 @@ helm install kbridge-agent oci://ghcr.io/why-xn/charts/kbridge-agent \
   --set 'networkPolicy.controlPlaneTo[0].ipBlock.cidr=<EXTERNAL-IP>/32' \
   --set "networkPolicy.apiServerCIDRs={$(kubectl -n default get endpointslice kubernetes -o jsonpath='{range .endpoints[*].addresses[*]}{@}/32,{end}' | sed 's/,$//')}"
 ```
+
+`<EXTERNAL-IP>` is the external IP of the §3c Service.
 
 The agent's ServiceAccount token is not mounted at the default path; the chart
 projects it with the cluster CA and namespace at `/var/run/kbridge/sa`
