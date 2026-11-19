@@ -359,9 +359,20 @@ function clustersScreen() {
   return { node };
 }
 
+// Connected clusters first, then disconnected, then those still waiting for
+// their first agent; the API's name order is kept within each group.
+const CLUSTER_GROUP = { connected: 0, disconnected: 1, waiting: 2 };
+
+function clusterGroup(c) {
+  if (c.status === 'connected') return CLUSTER_GROUP.connected;
+  return c.ever_connected ? CLUSTER_GROUP.disconnected : CLUSTER_GROUP.waiting;
+}
+
 function mergeClusters(clusters, rbac) {
   const sync = new Map(rbac.map((r) => [r.cluster, r]));
-  return clusters.map((c) => ({ ...c, sync: sync.get(c.name) || null }));
+  return clusters
+    .map((c) => ({ ...c, sync: sync.get(c.name) || null }))
+    .sort((a, b) => clusterGroup(a) - clusterGroup(b));
 }
 
 function clusterKind(c) {
