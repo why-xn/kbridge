@@ -246,7 +246,7 @@ permissions it renders.
 | **401 from `kb`** | Access token expired? | `kb` auto-refreshes; if the refresh token is also expired, run `kb login` |
 | | `jwt_secret` rotated on the control plane? | Users are refreshed silently while their refresh token is valid. The agents are what break: with `auth.token_pepper` empty, agent tokens are keyed by `jwt_secret`, so every agent is rejected with `invalid agent token` and crash-loops. Set a dedicated `token_pepper` before rotating, or re-issue every agent token afterwards |
 | **TLS errors** | Certificate mismatch? | Verify the SAN on the cert covers the hostname the agent/CLI uses; regenerate with `make certs` for dev |
-| | Self-signed cert rejected by CLI? | Set `insecure_skip_verify: true` in `~/.kbridge/config.yaml` (development only) |
+| | Self-signed or private-CA cert rejected by CLI? | Add the CA to the system trust store, or on Linux run `kb` with `SSL_CERT_FILE=/path/to/ca.crt`. `insecure_skip_verify: true` in `~/.kbridge/config.yaml` is for a development control plane only |
 | **`kb` says `cluster "<name>": agent is disconnected`** (`503` on the API) | Agent pod down? | `kubectl -n kbridge get pod -l app.kubernetes.io/name=kbridge-agent` |
 | | Agent disconnected? | `kubectl -n kbridge logs deploy/kbridge-agent --tail=50`; check for reconnect loop |
 | | Agent heartbeat stale? | Exec probe reads `/tmp/kbridge-agent-healthy`; check `kubectl -n kbridge describe pod <agent-pod>` events |

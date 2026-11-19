@@ -90,7 +90,7 @@ control_plane:
 **Agent** (Helm):
 
 ```yaml
-control_plane:
+controlPlane:
   tls:
     enabled: true
     caCert: |
@@ -99,11 +99,31 @@ control_plane:
       -----END CERTIFICATE-----
 ```
 
-### 4. Disable `insecure_skip_verify` on the CLI
+The certificate must name every host a client dials: the in-cluster Service
+`kbridge-control-plane.<namespace>.svc` (what an agent in the same cluster
+puts in `controlPlane.url`), any external host agents in other clusters use,
+and every hostname users put in `control_plane_url`. A name that is missing
+fails the TLS handshake. `scripts/gen-certs.sh` (`make certs`) covers only
+`localhost` and `127.0.0.1`, so it is for local development only; issue
+production certificates with those names, for example with cert-manager (see
+[production-install.md](production-install.md#5-tls-end-to-end)).
 
-The CLI (`~/.kbridge/config.yaml`) defaults to `insecure_skip_verify: false`.
-Confirm this is not accidentally set to `true` in any user config, especially on
-machines that were used during development with self-signed certificates:
+### 4. Trust the control plane's CA on the CLI; keep `insecure_skip_verify` off
+
+The CLI verifies the control plane's certificate against the system trust
+store. When the certificate comes from a private CA, add that CA to the
+system trust store of each user's machine, or on Linux point the CLI at it for
+one shell:
+
+```bash
+export SSL_CERT_FILE=/path/to/ca.crt
+kb login
+```
+
+`insecure_skip_verify` in `~/.kbridge/config.yaml` defaults to `false`. Set it
+to `true` only against a development control plane; it turns off certificate
+checks, so anyone on the network path can read the password and tokens.
+Confirm it is not left `true` on machines that were used for development:
 
 ```yaml
 # ~/.kbridge/config.yaml
@@ -153,7 +173,7 @@ and `admin_password`. The control plane reads them from the mounted files via
 **Agent chart:**
 
 ```yaml
-control_plane:
+controlPlane:
   existingSecret: kbridge-agent-token   # pre-created Secret with key `token`
   token: ""                             # leave empty when existingSecret is set
 ```
