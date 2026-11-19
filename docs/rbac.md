@@ -245,7 +245,17 @@ restart:
   and a `helm upgrade` that changes `rbac.policy` restarts the control plane
   (`Recreate`), so the new policy applies once the new pod is ready; `kb`
   fails for about a minute in between (the old pod's shutdown grace, then the
-  agent reconnecting).
+  agent reconnecting). Keep the other values when you upgrade, because a plain
+  `helm upgrade` resets everything passed with `--set` at install, secrets
+  included:
+
+  ```bash
+  helm upgrade kbridge-control-plane oci://ghcr.io/why-xn/charts/kbridge-control-plane \
+    -n kbridge --version 0.3.1-alpha.1 --reuse-values --set-file rbac.policy=policy.yaml
+  ```
+
+  or pass the full values file used at install with `-f`, as in
+  [Onboard a user](admin.md#onboard-a-user).
 - **SIGHUP** — sending `SIGHUP` to the control plane process reloads the policy
   at once from the file as it is on disk (it does not hurry a ConfigMap edit).
 Use the PID of the control plane you mean; `pidof kbridge-control-plane`
