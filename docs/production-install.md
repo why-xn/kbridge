@@ -95,7 +95,7 @@ rbac:
 
 ```bash
 helm install kbridge-control-plane oci://ghcr.io/why-xn/charts/kbridge-control-plane \
-  -n kbridge --version 0.3.0-alpha.1 -f values-control-plane.yaml
+  -n kbridge --version 0.3.1-alpha.1 -f values-control-plane.yaml
 ```
 
 Never upgrade this release with `--set` flags alone. Without `-f` (or
@@ -213,7 +213,7 @@ ingress:
 
 ```bash
 helm upgrade kbridge-control-plane oci://ghcr.io/why-xn/charts/kbridge-control-plane \
-  -n kbridge --version 0.3.0-alpha.1 -f values-control-plane.yaml
+  -n kbridge --version 0.3.1-alpha.1 -f values-control-plane.yaml
 ```
 
 With `tls.enabled` the pod serves HTTPS on 8080 too, so the Ingress must talk
@@ -292,7 +292,7 @@ at `/etc/kbridge-token/token`, passing it via `KBRIDGE_AGENT_TOKEN_FILE`.
 ```bash
 # Still in the target cluster context
 helm install kbridge-agent oci://ghcr.io/why-xn/charts/kbridge-agent \
-  -n kbridge --version 0.3.0-alpha.1 \
+  -n kbridge --version 0.3.1-alpha.1 \
   --set controlPlane.url=kbridge-grpc.example.com:9090 \
   --set controlPlane.existingSecret=kbridge-agent-secrets \
   --set controlPlane.tls.enabled=true \

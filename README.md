@@ -234,7 +234,7 @@ Deploy the agent with the Helm chart, one release per cluster:
 
 ```bash
 helm install kbridge-agent oci://ghcr.io/why-xn/charts/kbridge-agent \
-  -n kbridge --version 0.3.0-alpha.1 \
+  -n kbridge --version 0.3.1-alpha.1 \
   --set controlPlane.url=<control-plane-host>:9090 \
   --set controlPlane.token=<token from kb admin agent-tokens create> \
   --set cluster.name=<name the token was created for>

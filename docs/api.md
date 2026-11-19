@@ -7,7 +7,7 @@ requires the `admin` role. Tokens come from `POST /auth/login`.
 ## Health
 
 ### `GET /health`
-Unauthenticated. Returns `{"status":"healthy","version":"v0.3.0-alpha.1"}`;
+Unauthenticated. Returns `{"status":"healthy","version":"v0.3.1-alpha.1"}`;
 `version` is the release tag, or `dev` for an unstamped build.
 
 ## Auth

@@ -463,7 +463,7 @@ function waitingIssue(name) {
 // The agent chart version moves with each release (see the release skill).
 function installCommand(name) {
   return 'helm install kbridge-agent oci://ghcr.io/why-xn/charts/kbridge-agent \\\n' +
-    '  -n kbridge --create-namespace --version 0.3.0-alpha.1 \\\n' +
+    '  -n kbridge --create-namespace --version 0.3.1-alpha.1 \\\n' +
     '  --set controlPlane.url=<control-plane-host>:9090 \\\n' +
     '  --set controlPlane.token=<token from step 1> \\\n' +
     '  --set cluster.name=' + name;

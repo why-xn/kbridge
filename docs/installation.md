@@ -24,7 +24,7 @@ case while kbridge is in alpha. To pin a version:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/why-xn/kbridge/master/install.sh \
-  | KBRIDGE_VERSION=v0.3.0-alpha.1 sh
+  | KBRIDGE_VERSION=v0.3.1-alpha.1 sh
 ```
 
 The default directory is `/usr/local/bin`, which usually needs `sudo`; the
@@ -92,7 +92,7 @@ Multi-stage, CGO-free images (the agent image bundles `kubectl`):
 
 ```bash
 make docker                                  # builds all three images
-make docker IMAGE_PREFIX=ghcr.io/acme VERSION=v0.3.0-alpha.1
+make docker IMAGE_PREFIX=ghcr.io/acme VERSION=v0.3.1-alpha.1
 ```
 
 Images are tagged with `git describe` (`dev` outside a git checkout), never
@@ -113,7 +113,7 @@ docker run -p 8080:8080 -p 9090:9090 \
   -v kbridge-data:/home/kbridge \
   -v "$PWD/control-plane.docker.yaml:/etc/kbridge/control-plane.yaml:ro" \
   -v "$PWD/configs/rbac.yaml:/etc/kbridge/rbac.yaml:ro" \
-  ghcr.io/why-xn/kbridge-control-plane:v0.3.0-alpha.1
+  ghcr.io/why-xn/kbridge-control-plane:v0.3.1-alpha.1
 curl http://localhost:8080/health   # {"status":"healthy"}
 ```
 
@@ -142,7 +142,7 @@ kubectl label namespace kbridge pod-security.kubernetes.io/enforce=restricted
 # Change the secrets for any real deployment; note the admin password
 ADMIN_PASSWORD="$(openssl rand -hex 12)"; echo "admin password: $ADMIN_PASSWORD"
 helm install kbridge-control-plane oci://ghcr.io/why-xn/charts/kbridge-control-plane \
-  -n kbridge --version 0.3.0-alpha.1 \
+  -n kbridge --version 0.3.1-alpha.1 \
   --set auth.jwtSecret="$(openssl rand -hex 32)" \
   --set auth.adminPassword="$ADMIN_PASSWORD"
 kubectl -n kbridge rollout status deploy/kbridge-control-plane
@@ -183,7 +183,7 @@ seeded through the control plane's `bootstrap` config (see the
 
 ```bash
 helm install kbridge-agent oci://ghcr.io/why-xn/charts/kbridge-agent \
-  -n kbridge --version 0.3.0-alpha.1 \
+  -n kbridge --version 0.3.1-alpha.1 \
   --set controlPlane.url=kbridge-control-plane.kbridge.svc:9090 \
   --set controlPlane.token=kbat_xxxxxxxxxxxxxxxxxxxx \
   --set cluster.name=prod-us-east
