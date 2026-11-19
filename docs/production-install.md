@@ -213,14 +213,43 @@ curl --cacert ca.crt https://control-plane.example.com/health
 If you installed from an earlier version of this guide, with an Ingress that
 ends TLS:
 
-1. Issue the control plane's own certificate for every host name users and
-   agents dial (§3a).
-2. Set `tls.enabled` and `tls.secretName` in your values file. Then either
-   remove the `ingress:` block and create §3c's Service, or keep the Ingress
-   and switch it to passthrough (below).
-3. Upgrade, then point DNS at the new address.
-4. Users keep their `https://` URL. If the certificate's CA changed, they
+1. **Issue the control plane's own certificate** for every host name users
+   and agents dial (§3a). If the old Ingress has a
+   `cert-manager.io/cluster-issuer` annotation, cert-manager owns
+   `kbridge-control-plane-tls` through it: it undoes §3a and deletes the
+   Certificate together with the Ingress, so the Secret is never renewed.
+   Detach it first:
+
+   ```bash
+   kubectl -n kbridge patch certificate kbridge-control-plane-tls --type=json \
+     -p '[{"op":"remove","path":"/metadata/ownerReferences"}]'
+   kubectl apply -f kbridge-control-plane-tls.yaml
+   ```
+
+2. **Write `values-control-plane.yaml` as in §3b** (the earlier guide used
+   `--set` flags, so there may be no file yet). Leave out `ingress:` and
+   create §3c's Service, or add the passthrough `ingress:` block (below).
+3. **Upgrade with the file and without `--reuse-values`**, so the old Ingress
+   values are dropped, then point DNS at the new address:
+
+   ```bash
+   helm upgrade kbridge-control-plane oci://ghcr.io/why-xn/charts/kbridge-control-plane \
+     -n kbridge --version 0.3.1-alpha.1 -f values-control-plane.yaml
+   ```
+
+4. **Users** keep their `https://` URL. If the certificate's CA changed, they
    need the new CA (`SSL_CERT_FILE`).
+5. **Agents**: the control plane now serves TLS on 9090 with this
+   certificate. Upgrade each agent with TLS on and the CA. If it moves to a
+   new address, also change its URL and its NetworkPolicy peer:
+
+   ```bash
+   helm upgrade kbridge-agent oci://ghcr.io/why-xn/charts/kbridge-agent \
+     -n kbridge --version 0.3.1-alpha.1 --reuse-values \
+     --set controlPlane.url=control-plane.example.com:9090 \
+     --set controlPlane.tls.enabled=true --set controlPlane.tls.caCert="$(cat ca.crt)" \
+     --set 'networkPolicy.controlPlaneTo[0].ipBlock.cidr=<EXTERNAL-IP>/32'
+   ```
 
 ### Behind ingress-nginx: TLS passthrough
 
@@ -245,6 +274,10 @@ Ingress needs no `tls:` list and no cert-manager annotation. Point
 only HTTPS: agents still need 9090, either through the controller's
 `tcp-services` ConfigMap (§4) or through §3c's Service without its `https`
 port, under a second name that is also in the certificate's `dnsNames`.
+
+Every ingress-nginx reload (any Ingress change in the cluster) closes the
+connections through it after its `worker-shutdown-timeout` (240 s by default):
+open shells end and agents reconnect.
 
 ## 4. Agents in Other Clusters
 
@@ -281,7 +314,8 @@ arguments:
 ```bash
 kubectl -n ingress-nginx patch svc ingress-nginx-controller --type=json \
   -p '[{"op":"add","path":"/spec/ports/-","value":{"name":"grpc","port":9090,"targetPort":9090}}]'
-kubectl -n ingress-nginx edit deploy ingress-nginx-controller   # add the argument
+kubectl -n ingress-nginx patch deploy ingress-nginx-controller --type=json \
+  -p '[{"op":"add","path":"/spec/template/spec/containers/0/args/-","value":"--tcp-services-configmap=ingress-nginx/tcp-services"}]'
 ```
 
 Agents point `controlPlane.url` at the nginx LB host on port 9090, which must
@@ -392,10 +426,11 @@ helm install kbridge-agent oci://ghcr.io/why-xn/charts/kbridge-agent \
 ```
 
 `<EXTERNAL-IP>` is the external IP of the §3c Service (with the ingress-nginx
-passthrough setup: of the controller's Service). If the Service shows a host
-name instead of an IP, as some clouds do, use each address behind it
-(`dig +short <hostname>`) as its own `ipBlock`, or leave `networkPolicy` off
-until the addresses are stable.
+passthrough setup: of the Service agents reach on 9090, the controller's with
+`tcp-services`, or §3c's). If the Service shows a host name instead of an IP,
+as some clouds do, use each address behind it (`dig +short <hostname>`) as its
+own peer (`--set 'networkPolicy.controlPlaneTo[1].ipBlock.cidr=<second-IP>/32'`),
+or leave `networkPolicy` off where those addresses can change.
 
 The agent's ServiceAccount token is not mounted at the default path; the chart
 projects it with the cluster CA and namespace at `/var/run/kbridge/sa`

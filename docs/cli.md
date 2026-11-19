@@ -101,7 +101,9 @@ with plain kubectl. Only kubectl's own `-n`/`--namespace` counts, in any form
 **One-shot commands.** A command without a follow/watch flag and without
 `exec -i`/`-it` is one-shot: the agent runs it and `kb` prints the output when
 it ends. It may run for up to 5 minutes; then the agent stops it and `kb`
-exits with status 1 and no message (`kb admin audit` shows it as `failed`).
+exits with status 1, with `Error: command execution timed out` or with no
+message at all (`kb admin audit` shows it as `timeout` or `failed`). A process
+it started in a container may keep running.
 The agent runs one-shot commands for a cluster one at a
 time, so while one runs, every other user's one-shot command on that cluster
 waits. Stopping `kb` (Ctrl-C) does not stop the command on the agent. Run

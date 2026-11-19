@@ -43,7 +43,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   now serves TLS from the control plane behind a LoadBalancer Service, with
   TLS passthrough as the option for clusters that keep ingress-nginx. If you
   installed from the earlier guide, see
-  [Why not an HTTP Ingress](docs/production-install.md#why-not-an-http-ingress).
+  [Moving from an HTTP Ingress](docs/production-install.md#moving-from-an-http-ingress).
 
 ### Security
 

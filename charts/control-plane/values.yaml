@@ -78,12 +78,12 @@ ingress:
   enabled: false
   className: ""
   host: ""
+  # An Ingress that ends TLS breaks kb exec -i and kb port-forward. Use TLS
+  # passthrough with tls.enabled, and no tls list:
+  #   annotations:
+  #     nginx.ingress.kubernetes.io/ssl-passthrough: "true"
   annotations: {}
   tls: []
-  # An Ingress that ends TLS breaks kb exec -i and kb port-forward. Use TLS
-  # passthrough with tls.enabled, and no tls list here:
-  # annotations:
-  #   nginx.ingress.kubernetes.io/ssl-passthrough: "true"
 
 streams:
   maxConcurrent: 50

@@ -99,16 +99,21 @@ EOF
 
 ### Helm upgrade
 
+Back up first (see above). `--reuse-values` keeps what was set with `--set`;
+the [production install](production-install.md) also keeps a values file,
+which every upgrade passes again:
+
 ```bash
-# Back up first (see above), then:
+# Production install:
 helm upgrade kbridge-control-plane oci://ghcr.io/why-xn/charts/kbridge-control-plane \
   -n kbridge --version 0.3.1-alpha.1 \
   --reuse-values -f values-control-plane.yaml
-```
 
-Pass your values file if you have one, as the
-[production install](production-install.md) keeps it; `--reuse-values` keeps
-what was set with `--set`.
+# Quick start (installed with --set only):
+helm upgrade kbridge-control-plane oci://ghcr.io/why-xn/charts/kbridge-control-plane \
+  -n kbridge --version 0.3.1-alpha.1 \
+  --reuse-values
+```
 
 The chart's `--version` and its default `image.tag` move together, so pin the
 chart version rather than overriding the image tag. From a clone, use
@@ -136,6 +141,10 @@ certificate expires, or users and agents get `x509: certificate has expired`:
 kubectl -n kbridge get certificate kbridge-control-plane-tls -o jsonpath='{.status.renewalTime}'
 kubectl -n kbridge rollout restart deploy/kbridge-control-plane
 ```
+
+`renewalTime` is when cert-manager replaces the Secret: restart after that
+time and before the old certificate's `notAfter`
+(`-o jsonpath='{.status.notAfter}'`).
 
 ## Agent-Token Rotation
 
