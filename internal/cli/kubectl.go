@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -86,14 +87,7 @@ func runKubectl(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("no cluster selected. Run 'kb clusters use <name>' first")
 	}
 
-	// Extract namespace from args if -n or --namespace is provided
-	namespace := ""
-	for i, arg := range args {
-		if (arg == "-n" || arg == "--namespace") && i+1 < len(args) {
-			namespace = args[i+1]
-			break
-		}
-	}
+	namespace := flagNamespace(args)
 
 	// Stream long-lived follow/watch commands via chunked HTTP.
 	if isStreamingCommand(args) {
@@ -196,4 +190,27 @@ func runKubectlEdit(args []string) error {
 	}
 
 	return nil
+}
+
+// flagNamespace returns the namespace kubectl's own -n/--namespace sets, last one winning.
+// Arguments after "--" belong to a container command; the control plane refuses a "--" a
+// flag could take as its value, so the first "--" of a command that runs is a real one.
+func flagNamespace(args []string) string {
+	ns := ""
+	for i := 0; i < len(args); i++ {
+		switch a := args[i]; {
+		case a == "--":
+			return ns
+		case a == "-n" || a == "--namespace":
+			if i+1 < len(args) {
+				ns = args[i+1]
+				i++
+			}
+		case strings.HasPrefix(a, "--namespace="):
+			ns = strings.TrimPrefix(a, "--namespace=")
+		case strings.HasPrefix(a, "-n"):
+			ns = strings.TrimPrefix(a[2:], "=")
+		}
+	}
+	return ns
 }
