@@ -46,6 +46,10 @@ contains `*`).
 `*` (anything), `dev-*` (matches `dev-cluster`), `*-prod`, `app-*-svc`.
 Subjects support the same wildcards, e.g. `*@dev.corp.com`.
 
+Resources match the word typed in the command, with no short names or
+singulars: `resources: ["pods"]` admits `kb get pods` but not `kb get pod` or
+`kb get po`. List each form your users type, or use `*`.
+
 ### How a kubectl command maps to a request
 
 | Part | Derived from |
@@ -54,6 +58,11 @@ Subjects support the same wildcards, e.g. `*@dev.corp.com`.
 | verb | the first kubectl arg (`get`, `delete`, `apply`, …) |
 | resource | the resource type; `pods` for `logs`/`exec`/`cp`/etc.; `foo/name` → `foo`; empty for commands that take a manifest (`apply -f`, `create -f`, `delete -f`, `replace -f`), which only a rule with `resources: ["*"]` admits |
 | namespace | `-n`/`--namespace`; `*` for `-A`/`--all-namespaces`; else `default` |
+
+The refusal for a manifest command names only the verb and namespace, for
+example `permission denied: apply in namespace "default" on cluster "dev" is
+not allowed for dev@corp.com; ask a kbridge admin to extend your role`. It
+does not say that only `resources: ["*"]` admits it.
 
 A flag that takes a value must be written `--flag=value` when it comes before
 the resource, or be placed after it: kbridge reads an unknown `--flag value`
@@ -90,6 +99,10 @@ roles:
         namespaces: ["*"]
         resources: ["pods", "deployments", "services", "configmaps"]
         verbs: ["get", "list", "watch", "describe", "logs", "exec"]
+    clusterAccess:
+      - clusters: ["dev-*", "staging"]
+        clusterRole: view
+        clusterWide: true
 
   - name: viewer
     rules:
@@ -114,12 +127,15 @@ gets developer access on dev/staging; everyone else falls back to read-only
 `viewer`. Every user with no binding holds `default`; a bound user holds only
 their roles, so the `dev.corp.com` users above cannot read prod. List the
 default role in a binding (`roles: ["viewer", "developer"]`) if its users
-should keep it. The chart's default policy and `configs/rbac.yaml` give `admin` a
+should keep it. Without `clusterAccess` the cluster refuses the user even
+where `rules` allow, so every role needs one: `view` above lets developers
+read; for `exec` they also need a role such as `edit` bound in the namespaces
+they work in (see [Cluster bindings](#cluster-bindings-clusteraccess)). The chart's default policy and `configs/rbac.yaml` give `admin` a
 cluster-wide `cluster-admin` binding and `viewer` a cluster-wide `view` binding,
 so a fresh install works without edits. Keep a binding for your seeded admin
 (`auth.admin_email`, `admin@kbridge.local` by default) when you replace that
-policy: an admin with no binding falls back to `default` like anyone else, and
-keeps `kb admin` but loses cluster access.
+policy: an admin with no binding falls back to `default` like anyone else, so
+here it holds read-only `viewer`, keeps `kb admin`, and loses write access.
 
 ## Cluster bindings (`clusterAccess`)
 
@@ -208,8 +224,11 @@ What the agent refuses, reported per binding in `kb admin rbac status`:
   `view` is exempt: it cannot create pods. Cluster-wide bindings are not
   checked; see [security.md](security.md#known-limits).
 
-A ClusterRoleBinding covers every namespace, including the protected ones; the
-agent's proxy still refuses every request into those.
+A ClusterRoleBinding covers every namespace, including the protected ones. The
+agent's proxy refuses every request whose path names a protected namespace,
+and the cluster-wide Secret list, but a cluster-wide list of other kinds still
+includes their objects: `kb get pods -A` lists the pods in protected
+namespaces too.
 
 ## Reloading
 
@@ -228,10 +247,12 @@ restart:
   fails for about a minute in between (the old pod's shutdown grace, then the
   agent reconnecting).
 - **SIGHUP** — sending `SIGHUP` to the control plane process reloads the policy
-  at once from the file as it is on disk (it does not hurry a ConfigMap edit):
+  at once from the file as it is on disk (it does not hurry a ConfigMap edit).
+Use the PID of the control plane you mean; `pidof kbridge-control-plane`
+lists every control plane on the host:
 
   ```bash
-  kill -HUP "$(pidof kbridge-control-plane)"                               # host process
+  kill -HUP <pid>                                                          # host process
   kubectl -n kbridge exec deploy/kbridge-control-plane -- kill -HUP 1      # in a pod
   ```
 
