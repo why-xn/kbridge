@@ -39,7 +39,10 @@ default). The console then asks you to sign in again.
   rest. Secrets are never shown.
 - **Users**: each account with its policy roles, the clusters and namespaces
   those roles allow, its last command, and its denied commands in the last
-  seven days.
+  seven days. A role that lists the `auth` verb shows as `read-write`, because
+  `kubectl auth reconcile` writes RBAC. The default `viewer` lists `auth` for
+  `kb auth whoami`, so it shows `read-write` although the cluster's `view`
+  role refuses every write.
 
 The sidebar has a switch between the dark theme (the default) and the light
 one. The choice is kept in the browser.
