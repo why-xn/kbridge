@@ -36,7 +36,7 @@ kbridge eliminates direct cluster access by placing a control plane between user
 
 1. **Control Plane (`kbridge-control-plane`)** — API gateway that authenticates users, enforces access policies, queues commands, and collects results. The single point of control for all cluster access.
 2. **Cluster Agent (`kbridge-agent`)** — A small daemon deployed in each cluster that initiates an outbound gRPC connection to the control plane. It polls for pending commands, executes them via kubectl locally as the requesting user (by impersonation), and returns results. Since connections are outbound-only, no firewall changes or public endpoints are needed.
-3. **CLI (`kb`)** — A user-friendly command-line tool that talks to the control plane over REST. Developers use familiar kubectl syntax (`kb get pods`) without needing direct cluster credentials or network access. (Installed as `kb`, with a `kbridge` symlink for back-compat.)
+3. **CLI (`kb`)** — A user-friendly command-line tool that talks to the control plane over REST. Developers use familiar kubectl syntax (`kb get pods`) without needing direct cluster credentials or network access. (Installed as `kb`; `make build` also creates a `kbridge` symlink.)
 
 ## Architecture
 
@@ -226,13 +226,20 @@ token: ""
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `KBRIDGE_CONFIG` | Path to config file | `configs/control-plane.yaml` |
+| `KBRIDGE_CONFIG` | Path to config file (`--config` wins) | none: with neither, the control plane runs on built-in defaults, with RBAC off and no seeded admin |
+| `KBRIDGE_JWT_SECRET` | `auth.jwt_secret` (32+ characters), required when the file does not set it | — |
+
+See [docs/configuration.md](docs/configuration.md#control-plane-environment-variables)
+for every variable.
 
 ## Agent Deployment
 
-Deploy the agent with the Helm chart, one release per cluster:
+Deploy the agent with the Helm chart, one release per cluster. Create and
+label its namespace first:
 
 ```bash
+kubectl create namespace kbridge
+kubectl label namespace kbridge pod-security.kubernetes.io/enforce=restricted
 helm install kbridge-agent oci://ghcr.io/why-xn/charts/kbridge-agent \
   -n kbridge --version 0.3.1-alpha.1 \
   --set controlPlane.url=<control-plane-host>:9090 \
@@ -259,23 +266,33 @@ Users authenticate via `kb login`, which obtains a JWT token from the control pl
 Access control is defined in a declarative, hot-reloaded policy file
 (ArgoCD-style), enforced on every kubectl command before it reaches a cluster.
 Roles match by cluster, namespace, resource, and verb with wildcards; bindings
-map users (by JWT email) to roles:
+map users (by JWT email) to roles. `clusterAccess` is the Kubernetes RBAC the
+agent binds for the role's users; without it the cluster refuses them even
+where `rules` allow:
 
 ```yaml
 default: viewer
 roles:
-  - name: developer
+  - name: viewer
     rules:
-      - clusters: ["dev-*", "staging"]
+      - clusters: ["*"]
         namespaces: ["*"]
-        resources: ["pods", "services", "deployments"]
-        verbs: ["get", "list", "logs", "exec", "apply"]
+        resources: ["*"]
+        verbs: ["get", "list", "watch", "describe", "logs"]
+    clusterAccess:
+      - clusters: ["*"]
+        clusterRole: view
+        clusterWide: true
   - name: admin
     rules:
       - clusters: ["*"]
         namespaces: ["*"]
         resources: ["*"]
         verbs: ["*"]
+    clusterAccess:
+      - clusters: ["*"]
+        clusterRole: cluster-admin
+        clusterWide: true
 bindings:
   - subject: admin@kbridge.local
     roles: ["admin"]
@@ -302,8 +319,8 @@ and the CLI. Generate a dev certificate with `make certs`; see
 
 ### Audit Logging
 
-Every command (allowed, denied, failed, or timed out) is recorded with user,
-cluster, command, result, and duration. Query via `kb admin audit` or
+Every command is recorded with user, cluster, namespace, command, status
+(`success`, `denied`, `failed`, `timeout`, or `canceled`), and duration. Query via `kb admin audit` or
 `GET /api/v1/admin/audit`.
 
 ## Tech Stack
