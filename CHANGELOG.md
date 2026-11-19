@@ -31,6 +31,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   command's `-n`/`--namespace` (any form), else `default`, and is `*` for
   `-A`. It used to be the namespace the client sent, which was empty for a
   plain `kb get pods` and could differ from where the command ran.
+- **The docs are reorganised for new users.** The README is a front door
+  with a "Start here" for each kind of reader; the installation guide leads
+  with the Helm quick start and ends on a refused command and its audit
+  entry; the admin guide has an "Onboard a user" task; the CLI guide explains
+  what to do when a command is refused. The security guide's agent Helm
+  snippets now use the chart's `controlPlane` key.
 
 ### Security
 
@@ -47,6 +53,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `kb get pods -- -n x` in `x`; it now reads only kubectl's own
   `-n`/`--namespace` (`-n x`, `-nx`, `--namespace=x`) before `--`. Affects
   v0.3.0-alpha.1.
+- **The control plane no longer runs with the chart's placeholder JWT
+  secret.** The control-plane chart shipped `auth.jwtSecret:
+  "change-me-in-production-at-least-32-chars"` and the control plane accepted
+  it, so an install that never set `auth.jwtSecret`, or a `helm upgrade -f
+  values.yaml` without `--reuse-values`, signed user tokens and keyed agent
+  tokens (when `tokenPepper` is empty) with a public value. The chart now
+  defaults `auth.jwtSecret` to empty and refuses to render without
+  `auth.jwtSecret` or `auth.existingSecret`, or with the old placeholder; the
+  control plane refuses the placeholder at startup, like the development
+  default. With `auth.existingSecret` the chart no longer writes a
+  `jwt_secret` into its config Secret. If affected: set `auth.jwtSecret` to
+  `openssl rand -hex 32` or use `auth.existingSecret`, upgrade, then re-issue
+  agent tokens if `tokenPepper` was empty.
 
 ## [0.3.0-alpha.1] - 2026-11-06
 

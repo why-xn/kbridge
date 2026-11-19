@@ -416,11 +416,10 @@ provide a hardened baseline regardless of how the deployment is configured.
 ### Strong-secret enforcement (fail-closed)
 
 The control plane refuses to start if `jwt_secret` is not set, is shorter than 32
-characters, or is a published default: the binary's development default or
-the Helm chart's former placeholder. The control-plane chart requires `auth.jwtSecret` or
-`auth.existingSecret`. The startup check is
-fail-closed: a misconfigured secret is a fatal error, not a warning. Generate a
-secret with:
+characters, or matches a published placeholder (the development default or the
+old chart value). The Helm chart refuses to render without `auth.jwtSecret` or
+`auth.existingSecret`. The startup check is fail-closed: a misconfigured
+secret is a fatal error, not a warning. Generate a secret with:
 
 ```bash
 openssl rand -hex 32
