@@ -52,7 +52,8 @@ Tokens are stored only as an HMAC-SHA256 digest (keyed by `auth.token_pepper`,
 which falls back to `jwt_secret`) — never in plaintext. The CLI's `list` shows
 each token's ID, cluster, prefix, revoked flag and description. The API's
 `GET /api/v1/admin/agent-tokens` also returns `last_used_at`, updated on every
-successful registration, and `expires_at`; a token that is old and never used
+successful registration, and `expires_at`; the console's Agent Tokens screen
+shows both too. A token that is old and never used
 is a good candidate to revoke.
 
 Creating a token also registers its cluster: `kb clusters list` shows it as
@@ -89,13 +90,14 @@ config (see [configuration](configuration.md)).
 
 ## Audit logs
 
-Every command attempt is recorded (status `success`, `failed`, `denied`, or
-`canceled`) with user, cluster, command, namespace, exit code, duration, and
+Every command attempt is recorded (status `success`, `failed`, `denied`,
+`timeout`, or `canceled`) with user, cluster, command, namespace, exit code, duration, and
 client IP. The namespace is the one kbridge enforced: the command's
 `-n`/`--namespace`, else `default`, and `*` for `-A`. A command refused because
 the cluster's agent is disconnected is recorded as `failed` with the error
 `agent is disconnected` and no exit code; one that hits its timeout is `failed`
-with exit code `-1`. The CLI table shows time, user, cluster, status, exit code
+with exit code `-1`, and one the agent did not answer within its timeout plus
+5 s is `timeout`. The CLI table shows time, user, cluster, status, exit code
 and command; the namespace, duration, client IP and error message are in the
 API response only.
 
