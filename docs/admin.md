@@ -64,8 +64,10 @@ Five steps take a new person from nothing to running commands.
    for Pod Security first; see
    [installation step 4](installation.md#step-4-label-namespaces-where-kbridge-grants-edit).
 
-4. **Wait for `in sync`.** The agent applies the new bindings within about a
-   minute. Until then the row shows `drift`:
+4. **Wait for `in sync`.** A new user's bindings, and a new role's, appear
+   on the agent's next sync, within the agent chart's `sync.interval` (60 s
+   by default). Until then the API server refuses their requests, even the
+   reads the `default` role allows, and the row shows `drift`:
 
    ```bash
    kb admin rbac status

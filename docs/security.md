@@ -334,8 +334,10 @@ namespace and `protectedNamespaces`, bindings not named `kbridge-`, and
 subjects that are not `kbridge:` users. The chart refuses to render with an
 empty `clusterRoles` or with the release namespace in `namespaces`.
 
-A user with no binding can still reach kbridge but every request is refused
-by the API server. `kb auth whoami` prints the name Kubernetes sees. Bindings
+A new user's bindings appear on the agent's next sync, within the chart's
+`sync.interval` (60 s by default); until then the API server refuses their
+requests. A user with no binding can still reach kbridge but every request is
+refused by the API server. `kb auth whoami` prints the name Kubernetes sees. Bindings
 you make by hand for `kbridge:` users still work, and the agent leaves any
 binding without its label alone.
 
