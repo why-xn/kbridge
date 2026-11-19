@@ -98,9 +98,24 @@ with plain kubectl. Only kubectl's own `-n`/`--namespace` counts, in any form
 (`-n x`, `-nx`, `--namespace=x`), and only before `--`: in
 `kb exec web -- grep -n web /f` the namespace is `default`.
 
+**One-shot commands.** A command without a follow/watch flag and without
+`exec -i`/`-it` is one-shot: the agent runs it and `kb` prints the output when
+it ends. It may run for up to 5 minutes; then the agent stops it and `kb`
+exits with status 1. The agent runs one-shot commands for a cluster one at a
+time, so while one runs, every other user's one-shot command on that cluster
+waits. Stopping `kb` (Ctrl-C) does not stop the command on the agent. Run
+anything that may not end quickly, such as a `sleep`, a migration or a
+`tail -f`, with `kb exec -i`.
+
+**`-h` and `--help` belong to `kb`.** Even after `--`, `kb` takes them and
+prints its own help: `kb exec web -- ls -h /` shows `kb` help. Wrap the
+command in a shell to pass them on: `kb exec web -- sh -c 'ls -h /'`.
+
 **Streaming (`logs -f` / `get -w`).** When the command uses a follow/watch flag
 (`logs -f`/`--follow`, or `-w`/`--watch` on any command), the CLI streams output
-live until you stop it with Ctrl-C and exits with kubectl's exit code:
+live until you stop it with Ctrl-C and exits with kubectl's exit code. An
+HTTP proxy in front of the control plane cuts a stream that is quiet for its
+idle timeout; see [production install](production-install.md#why-not-an-http-ingress):
 
 ```bash
 kb logs -f deploy/api -n prod    # tail logs live
@@ -113,7 +128,9 @@ or `htop`); use `-i` alone for stdin-only (no TTY). Both go through the
 interactive path. Without `-i` or `-t`, `kb exec` falls back to the one-shot
 path (same as `kb exec`). The `--` separator is required to pass flags to the
 remote command instead of to `kb` itself. Ctrl-C and Ctrl-D are forwarded to
-the remote shell, not to the CLI. There is no inactivity timeout on the session.
+the remote shell, not to the CLI. kbridge sets no inactivity timeout on the
+session; a proxy in front of the control plane may (see
+[production install](production-install.md#why-not-an-http-ingress)).
 In a script or a pipe, where stdin is not a terminal, use `-i` alone: `-it`
 without a terminal waits forever.
 
@@ -130,8 +147,10 @@ port spec can be `LOCAL:REMOTE` (fixed local port), bare `REMOTE` (local equals
 remote), or `:REMOTE` (OS-assigned random local port). Multiple ports can be
 forwarded in a single command. List each remote port once: a remote port
 listed twice makes the command hang. Any TCP-based protocol works (Postgres, Redis,
-HTTP, etc.). Binds localhost only (v1). Press Ctrl-C to stop all listeners. There
-is no inactivity timeout — the session stays open until you stop it.
+HTTP, etc.). Binds localhost only (v1). Press Ctrl-C to stop all listeners.
+kbridge sets no inactivity timeout, so the session stays open until you stop
+it; a proxy in front of the control plane may set one (see
+[production install](production-install.md#why-not-an-http-ingress)).
 
 ```bash
 kb port-forward deploy/db 5432:5432              # fixed local port
