@@ -132,7 +132,7 @@ its status. It does not show who you are, and after `kb logout` it still
 reports the control plane as reachable; a command that answers
 `authentication required` is the cue to run `kb login`.
 
-## Admin (requires the admin role)
+## Admin (requires the kbridge admin account)
 
 ### `kb admin users list` (alias `ls`)
 Lists all users.

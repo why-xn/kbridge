@@ -102,7 +102,7 @@ kb port-forward deploy/db 5432:5432  # Forward pod port to localhost
 kb kubectl get pods           # 'kubectl'/'k' force kubectl explicitly
 kb status                     # Show current context
 
-# Admin (requires the admin role)
+# Admin (requires the kbridge admin account)
 kb admin users list                          # List users
 kb admin users create --email dev@corp.com --name Dev
 kb admin agent-tokens create --cluster prod  # Generate an agent token

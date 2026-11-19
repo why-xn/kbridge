@@ -2,7 +2,9 @@
 
 Base URL: the control plane (`http(s)://host:8080`). All `/api/v1/*` routes
 require a `Authorization: Bearer <access_token>` header; `/api/v1/admin/*` also
-requires the `admin` role. Tokens come from `POST /auth/login`.
+requires the kbridge admin account (`is_admin`, the account seeded from
+`auth.admin_*`); the policy's `admin` role does not open it, and anyone else
+gets `403` `{"error":"admin role required"}`. Tokens come from `POST /auth/login`.
 
 ## Health
 
@@ -49,11 +51,11 @@ delayed. Status codes:
 
 | Code | Meaning |
 |------|---------|
-| 200 | Command executed (check `exit_code`) |
+| 200 | Command executed (check `exit_code`). A command that hits `timeout` is killed and returns `exit_code` `-1`, audited as `failed` |
 | 403 | Denied by RBAC policy, or an argument kbridge refuses (see below) |
 | 404 | Cluster not found (a known cluster whose agent is not connected is 503) |
 | 503 | Cluster agent disconnected, or the agent does not support impersonation |
-| 504 | Command timed out |
+| 504 | The agent did not answer within `timeout` plus 5 s; audited as `timeout` |
 
 Every call is recorded in the audit log.
 
@@ -166,6 +168,8 @@ Every session is recorded in the audit log.
 Body: `{"cluster_name","description?","expires_in_days?"}`. Creates (and, if
 needed, registers) the cluster and returns the token **once**:
 `{id, token, cluster_name, token_prefix, expires_at, created_at}`.
+`expires_in_days` of `0`, omitted, or negative means the token never expires
+(`expires_at` is left out).
 
 ### `GET /api/v1/admin/agent-tokens[?cluster=<name>]`
 Lists token metadata (never the secret).
@@ -242,6 +246,7 @@ Binding sync state of each connected cluster, sorted by cluster name. Returns:
 ### `GET /api/v1/admin/audit`
 Query params: `user`, `cluster`, `status`, `namespace` (exact), `command`
 (case-insensitive substring, first 200 characters), `from`/`to` (RFC3339),
-`page`, `per_page` (max 200). Returns `{logs, total, page, per_page}`, newest first.
+`page`, `per_page` (max 200). Returns `{logs, total, page, per_page}`, newest first;
+`logs` is `null`, not `[]`, when nothing matches.
 An entry's `namespace` is the one kbridge enforced: the command's `-n`/`--namespace`, else the
 request's `namespace` field, else `default`; `*` for `-A`.
