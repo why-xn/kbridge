@@ -49,6 +49,21 @@ plane root (`/`); see [docs/console.md](docs/console.md).
 
 ## Start here
 
+### Run your own kbridge
+
+kbridge is self-hosted: you run the control plane and an agent in each
+cluster. Follow the [Helm quick start](docs/installation.md#quick-start-helm-one-cluster).
+It puts the control plane and an agent on one cluster (kind works) in about
+20 minutes, and ends on a refused command and its audit entry.
+
+### You are taking it to production
+
+1. [Production install](docs/production-install.md): Secrets, TLS, more clusters.
+2. [Security hardening](docs/security.md): the checklist before users arrive.
+3. [Onboard a user](docs/admin.md#onboard-a-user): the first users, their roles
+   and their first password.
+4. [Operations](docs/operations.md): backup, upgrades, troubleshooting.
+
 ### You have a kbridge account
 
 Your admin gave you a control plane URL, an email and a password. Install
@@ -76,20 +91,6 @@ If an admin chose your first password,
 [change it](docs/cli.md#change-your-password) now. Then read the
 [CLI reference](docs/cli.md), including
 [when a command is refused](docs/cli.md#when-a-command-is-refused).
-
-### You want to try kbridge
-
-Follow the [Helm quick start](docs/installation.md#quick-start-helm-one-cluster).
-It puts the control plane and an agent on one cluster (kind works) in about
-20 minutes, and ends on a refused command and its audit entry.
-
-### You are taking it to production
-
-1. [Production install](docs/production-install.md): Secrets, TLS, more clusters.
-2. [Security hardening](docs/security.md): the checklist before users arrive.
-3. [Onboard a user](docs/admin.md#onboard-a-user): the first users, their roles
-   and their first password.
-4. [Operations](docs/operations.md): backup, upgrades, troubleshooting.
 
 ## Problem
 
