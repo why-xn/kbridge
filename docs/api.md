@@ -1,6 +1,7 @@
 # HTTP API Reference
 
-Base URL: the control plane (`http(s)://host:8080`). All `/api/v1/*` routes
+Base URL: the URL you give `kb login` (`https://control-plane.example.com` in
+the production install, `http://localhost:8080` in the quick start). All `/api/v1/*` routes
 require a `Authorization: Bearer <access_token>` header; `/api/v1/admin/*` also
 requires the kbridge admin account (`is_admin`, the account seeded from
 `auth.admin_*`); the policy's `admin` role does not open it, and anyone else

@@ -80,11 +80,10 @@ ingress:
   host: ""
   annotations: {}
   tls: []
-  # tls:
-  #   - secretName: kbridge-control-plane-tls
-  #     hosts: [ control-plane.example.com ]
+  # An Ingress that ends TLS breaks kb exec -i and kb port-forward. Use TLS
+  # passthrough with tls.enabled, and no tls list here:
   # annotations:
-  #   cert-manager.io/cluster-issuer: letsencrypt-prod
+  #   nginx.ingress.kubernetes.io/ssl-passthrough: "true"
 
 streams:
   maxConcurrent: 50

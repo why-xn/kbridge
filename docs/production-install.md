@@ -208,6 +208,20 @@ kubectl -n kbridge get secret kbridge-control-plane-tls -o jsonpath='{.data.ca\.
 curl --cacert ca.crt https://control-plane.example.com/health
 ```
 
+### Moving from an HTTP Ingress
+
+If you installed from an earlier version of this guide, with an Ingress that
+ends TLS:
+
+1. Issue the control plane's own certificate for every host name users and
+   agents dial (§3a).
+2. Set `tls.enabled` and `tls.secretName` in your values file. Then either
+   remove the `ingress:` block and create §3c's Service, or keep the Ingress
+   and switch it to passthrough (below).
+3. Upgrade, then point DNS at the new address.
+4. Users keep their `https://` URL. If the certificate's CA changed, they
+   need the new CA (`SSL_CERT_FILE`).
+
 ### Behind ingress-nginx: TLS passthrough
 
 ingress-nginx is one controller that can hand the TLS connection to the
@@ -239,7 +253,16 @@ through an HTTP Ingress. §3c already exposes it: agents set
 `controlPlane.url` to `control-plane.example.com:9090`.
 
 With the ingress-nginx passthrough setup instead, the controller can carry
-9090 as plain TCP. Add the port to its `tcp-services` ConfigMap:
+9090 as plain TCP. If ingress-nginx is installed from its Helm chart, one
+value adds the ConfigMap entry, the Service port and the controller argument
+(hand edits would be undone by its next upgrade):
+
+```bash
+helm upgrade ingress-nginx ingress-nginx --repo https://kubernetes.github.io/ingress-nginx \
+  -n ingress-nginx --reuse-values --set tcp.9090=kbridge/kbridge-control-plane:9090
+```
+
+Without the chart, add the port to its `tcp-services` ConfigMap:
 
 ```yaml
 apiVersion: v1
@@ -251,8 +274,16 @@ data:
   "9090": "kbridge/kbridge-control-plane:9090"
 ```
 
-Also patch the nginx-ingress controller Service to expose port 9090, then update
-its Deployment args with `--tcp-services-configmap=ingress-nginx/tcp-services`.
+then expose port 9090 on the controller's Service and add
+`--tcp-services-configmap=ingress-nginx/tcp-services` to the controller's
+arguments:
+
+```bash
+kubectl -n ingress-nginx patch svc ingress-nginx-controller --type=json \
+  -p '[{"op":"add","path":"/spec/ports/-","value":{"name":"grpc","port":9090,"targetPort":9090}}]'
+kubectl -n ingress-nginx edit deploy ingress-nginx-controller   # add the argument
+```
+
 Agents point `controlPlane.url` at the nginx LB host on port 9090, which must
 be one of the certificate's `dnsNames`.
 
@@ -328,7 +359,8 @@ kb admin agent-tokens create --cluster prod-us-east
 # Store it now — it cannot be retrieved again. ...
 ```
 
-Store the token in a Secret in the **target** cluster:
+Ignore any hint to set `controlPlane.token` directly: in production the token
+goes in a Secret. Store it in the **target** cluster:
 
 ```bash
 # Switch context to the target cluster
@@ -359,7 +391,11 @@ helm install kbridge-agent oci://ghcr.io/why-xn/charts/kbridge-agent \
   --set "networkPolicy.apiServerCIDRs={$(kubectl -n default get endpointslice kubernetes -o jsonpath='{range .endpoints[*].addresses[*]}{@}/32,{end}' | sed 's/,$//')}"
 ```
 
-`<EXTERNAL-IP>` is the external IP of the §3c Service.
+`<EXTERNAL-IP>` is the external IP of the §3c Service (with the ingress-nginx
+passthrough setup: of the controller's Service). If the Service shows a host
+name instead of an IP, as some clouds do, use each address behind it
+(`dig +short <hostname>`) as its own `ipBlock`, or leave `networkPolicy` off
+until the addresses are stable.
 
 The agent's ServiceAccount token is not mounted at the default path; the chart
 projects it with the cluster CA and namespace at `/var/run/kbridge/sa`

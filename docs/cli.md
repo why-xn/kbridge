@@ -101,7 +101,8 @@ with plain kubectl. Only kubectl's own `-n`/`--namespace` counts, in any form
 **One-shot commands.** A command without a follow/watch flag and without
 `exec -i`/`-it` is one-shot: the agent runs it and `kb` prints the output when
 it ends. It may run for up to 5 minutes; then the agent stops it and `kb`
-exits with status 1. The agent runs one-shot commands for a cluster one at a
+exits with status 1 and no message (`kb admin audit` shows it as `failed`).
+The agent runs one-shot commands for a cluster one at a
 time, so while one runs, every other user's one-shot command on that cluster
 waits. Stopping `kb` (Ctrl-C) does not stop the command on the agent. Run
 anything that may not end quickly, such as a `sleep`, a migration or a
@@ -131,8 +132,9 @@ remote command instead of to `kb` itself. Ctrl-C and Ctrl-D are forwarded to
 the remote shell, not to the CLI. kbridge sets no inactivity timeout on the
 session; a proxy in front of the control plane may (see
 [production install](production-install.md#why-not-an-http-ingress)).
-In a script or a pipe, where stdin is not a terminal, use `-i` alone: `-it`
-without a terminal waits forever.
+In a script or a pipe, where stdin is not a terminal, use `-i` alone: with `-it`
+the remote shell does not see the end of stdin, so it stays open until it
+reads `exit`.
 
 ```bash
 kb exec -it <pod> -- sh                          # interactive shell (full TTY)

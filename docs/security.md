@@ -10,13 +10,13 @@ disclosure policy.
 
 ## Post-install security checklist
 
-Work through these items after every new deployment before exposing the control plane
-service to users.
+Work through these items after every new deployment before you give users the
+control plane URL.
 
 ### 1. Change the admin password
 
 The admin account is seeded from `auth.admin_email` / `auth.admin_password` in
-`control-plane.yaml` (or the Helm chart's `auth.adminPassword`) on first startup.
+`control-plane.yaml` (or the Helm chart's `auth.adminPassword`, or the `admin_password` key of `auth.existingSecret`) on first startup.
 Change it immediately via the API:
 
 ```bash

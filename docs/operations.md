@@ -103,8 +103,12 @@ EOF
 # Back up first (see above), then:
 helm upgrade kbridge-control-plane oci://ghcr.io/why-xn/charts/kbridge-control-plane \
   -n kbridge --version 0.3.1-alpha.1 \
-  --reuse-values
+  --reuse-values -f values-control-plane.yaml
 ```
+
+Pass your values file if you have one, as the
+[production install](production-install.md) keeps it; `--reuse-values` keeps
+what was set with `--set`.
 
 The chart's `--version` and its default `image.tag` move together, so pin the
 chart version rather than overriding the image tag. From a clone, use
@@ -121,6 +125,17 @@ chart version rather than overriding the image tag. From a clone, use
   Expect a brief downtime (seconds) during pod replacement.
 
 ---
+
+## Certificate renewal
+
+The control plane reads its TLS certificate only when it starts. When
+cert-manager renews the Secret, restart the control plane before the old
+certificate expires, or users and agents get `x509: certificate has expired`:
+
+```bash
+kubectl -n kbridge get certificate kbridge-control-plane-tls -o jsonpath='{.status.renewalTime}'
+kubectl -n kbridge rollout restart deploy/kbridge-control-plane
+```
 
 ## Agent-Token Rotation
 
@@ -249,7 +264,7 @@ permissions it renders.
 | | `kb clusters list` shows "disconnected"? | Check agent logs: `kubectl -n kbridge logs deploy/kbridge-agent -f` |
 | **401 from `kb`** | Access token expired? | `kb` auto-refreshes; if the refresh token is also expired, run `kb login` |
 | | `jwt_secret` rotated on the control plane? | Users are refreshed silently while their refresh token is valid. The agents are what break: with `auth.token_pepper` empty, agent tokens are keyed by `jwt_secret`, so every agent is rejected with `invalid agent token` and crash-loops. Set a dedicated `token_pepper` before rotating, or re-issue every agent token afterwards |
-| **TLS errors** | Certificate mismatch? | Verify the SAN on the cert covers the hostname the agent/CLI uses; regenerate with `make certs` for dev |
+| **TLS errors** | Certificate mismatch? | Verify the SAN on the cert covers the hostname the agent/CLI uses; regenerate with `make certs` for dev. `certificate has expired` while the Secret is fresh: restart the control plane ([Certificate renewal](#certificate-renewal)) |
 | | Self-signed or private-CA cert rejected by CLI? | Add the CA to the system trust store, or on Linux run `kb` with `SSL_CERT_FILE=/path/to/ca.crt`. `insecure_skip_verify: true` in `~/.kbridge/config.yaml` is for a development control plane only |
 | **`kb` says `cluster "<name>": agent is disconnected`** (`503` on the API) | Agent pod down? | `kubectl -n kbridge get pod -l app.kubernetes.io/name=kbridge-agent` |
 | | Agent disconnected? | `kubectl -n kbridge logs deploy/kbridge-agent --tail=50`; check for reconnect loop |
@@ -272,7 +287,8 @@ Each request line includes timestamp, method, path, status, latency, and client
 IP. Health endpoint:
 
 ```bash
-curl http://<control-plane-host>:8080/health
+curl https://<control-plane-host>/health      # production install; add --cacert ca.crt for a private CA
+curl http://localhost:8080/health             # quick start, through the port-forward
 # {"status":"healthy","version":"v0.3.1-alpha.1"}
 ```
 

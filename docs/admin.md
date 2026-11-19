@@ -37,7 +37,7 @@ Five steps take a new person from nothing to running commands.
 
    ```yaml
    bindings:
-     - subject: admin@kbridge.local
+     - subject: admin@kbridge.local   # your auth.adminEmail
        roles: ["admin"]
      - subject: dev@example.com
        roles: ["viewer", "developer"]
@@ -106,7 +106,7 @@ kb admin users list
 To create a user through the API instead:
 
 ```bash
-curl -X POST https://control-plane:8080/api/v1/admin/users \
+curl -X POST https://<control-plane>/api/v1/admin/users \
   -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
   -d '{"email":"dev@corp.com","name":"Dev User","password":"..."}'
 ```
@@ -140,7 +140,7 @@ Creating a token also registers its cluster: `kb clusters list` shows it as
 Via the API instead:
 
 ```bash
-curl -X POST https://control-plane:8080/api/v1/admin/agent-tokens \
+curl -X POST https://<control-plane>/api/v1/admin/agent-tokens \
   -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
   -d '{"cluster_name":"prod-us-east","description":"prod agent","expires_in_days":90}'
 # -> {"id":"...","token":"kbat_...","cluster_name":"prod-us-east",...}
