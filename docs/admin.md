@@ -156,7 +156,7 @@ shows `disconnected` within seconds too; see
 [operations](operations.md#agent).
 
 **Rotation:** issue a new token, update the agent, then revoke the old one. In
-that order nothing is cut off. [Agent-token rotation](operations.md#agent-token-rotation)
+that order the cluster stays connected. [Agent-token rotation](operations.md#agent-token-rotation)
 has the commands and says what happens to running commands and streams.
 
 For local development you can instead seed a token via the control plane's `bootstrap`
