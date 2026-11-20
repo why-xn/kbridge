@@ -4,6 +4,41 @@ This guide covers a hardened, multi-cluster kbridge deployment: the control plan
 on a management cluster, one or more agents in target clusters, and the `kb` CLI
 on operator workstations.
 
+## What you will have at the end
+
+```text
+users: kb, browser ─── HTTPS ─── control-plane.example.com:443  ────┐
+                                                                    ├── LoadBalancer Service ── control plane
+agents in target clusters ─ gRPC ─ control-plane.example.com:9090 ──┘
+```
+
+The control plane runs in the management cluster, in the namespace `kbridge`,
+and one `LoadBalancer` Service there carries both ports. It serves TLS itself
+on both with one certificate (from cert-manager in this guide) and reads its
+secrets from a Kubernetes Secret. Each target cluster runs an agent that dials
+out to port 9090; nothing dials into a target cluster.
+
+### Placeholders to replace
+
+The commands below use these example values. Replace each with yours
+everywhere it appears:
+
+| Placeholder | Replace with | Used in |
+|---|---|---|
+| `control-plane.example.com` | The DNS name users and agents reach the control plane at | §3a `dnsNames`; §3c DNS record and health check; §4 and §7 `controlPlane.url`; §6 `kb login` |
+| `letsencrypt-dns` | Your cert-manager `ClusterIssuer` (DNS-01 or private CA) | §3a |
+| `admin@example.com` | The email of the admin account the chart seeds | §3b `auth.adminEmail` and the policy's binding; §6 `kb login` |
+| `<EXTERNAL-IP>` | The external IP of the §3c Service | §7 `networkPolicy.controlPlaneTo`; [Moving from an HTTP Ingress](#moving-from-an-http-ingress) step 5 |
+| `prod-us-east` | The target cluster's name in kbridge (here also its kubectl context) | §6 `--cluster` and `kubectl config use-context`; §7 `cluster.name`; §8 |
+| `management` | The management cluster's kubectl context | §8 |
+| `ca.crt`, `/path/to/ca.crt` | Your private CA's certificate; not needed with a public CA | §3c health check; §5b; §6 `SSL_CERT_FILE`; §7 `controlPlane.tls.caCert` |
+| `kbat_xxxxxxxxxxxxxxxxxxxx` | The agent token §6 prints | §6 the agent's Secret |
+
+The namespace `kbridge`, the release names and the Secret names
+(`kbridge-control-plane-secrets`, `kbridge-control-plane-tls`,
+`kbridge-agent-secrets`) can stay as they are; if you change one, change it
+in every command.
+
 ## 1. Prerequisites
 
 | Requirement | Notes |
