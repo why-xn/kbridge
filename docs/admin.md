@@ -156,12 +156,8 @@ shows `disconnected` within seconds too; see
 [operations](operations.md#agent).
 
 **Rotation:** issue a new token, update the agent, then revoke the old one. In
-that order nothing is cut off: the agent already runs on the new token. The
-update rolls the agent pod; the new pod takes over the cluster as soon as it
-registers, and the old one stands by until Kubernetes stops it, finishing any
-command it was running within the pod's termination grace period (see
-[operations](operations.md#agent-token-rotation)). A stream it was serving (`logs -f`, `exec -it`,
-`port-forward`) ends when the old pod stops; run it again.
+that order nothing is cut off. [Agent-token rotation](operations.md#agent-token-rotation)
+has the commands and says what happens to running commands and streams.
 
 For local development you can instead seed a token via the control plane's `bootstrap`
 config (see [configuration](configuration.md)).
@@ -191,16 +187,8 @@ Logs older than `audit.retention_days` are pruned automatically every
 
 ## RBAC changes
 
-Edit the policy file referenced by `rbac.policy_file`. The control plane reloads it
-within 10 s of the file changing, or at once on `SIGHUP`
-(`kill -HUP <control-plane-pid>`). With the Helm chart, change `rbac.policy` and
-run `helm upgrade` as in [Onboard a user](#onboard-a-user); the control plane
-restarts with the new policy. A reload
-of the file that fails to parse is rejected and the previous policy stays
-active (the error is logged). Through Helm there is no previous policy to
-keep: the new pod fails to start and logs the error, so fix the value and
-upgrade again. In a pod, send the signal with
-`kubectl -n kbridge exec deploy/kbridge-control-plane -- kill -HUP 1`.
-See the [RBAC reference](rbac.md#reloading). Run
-`kb admin rbac status` to see whether each cluster's RoleBindings match the policy
-(see [operations](operations.md)).
+Edit the policy (the file `rbac.policy_file` names, or `rbac.policy` in your
+Helm values) and load it as [Reloading](rbac.md#reloading) describes: a file
+change or `SIGHUP` reloads in place, a `helm upgrade` restarts the control
+plane. Then run `kb admin rbac status` to see whether each cluster's
+RoleBindings match the policy (see [RBAC sync](operations.md#rbac-sync)).

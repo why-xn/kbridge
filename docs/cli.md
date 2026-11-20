@@ -315,11 +315,8 @@ kb admin audit --cluster prod --limit 100
 | `--status` | `success` / `failed` / `denied` / `timeout` / `canceled` | — |
 | `--limit` | Max entries | 50 |
 
-A command that hits its timeout is recorded as `failed` with exit code `-1`.
-`timeout` means the agent did not answer within the command's timeout plus
-5 s.
-The table shows time, user, cluster, status, exit code and command; the
-namespace, duration and client IP are in the API response only.
+What each status means, and which fields only the API returns, is in the
+[admin guide](admin.md#audit-logs).
 
 ### `kb admin rbac status`
 Shows, per cluster, whether the RoleBindings the agent manages match the

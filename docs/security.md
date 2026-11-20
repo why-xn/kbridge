@@ -21,15 +21,9 @@ control plane URL.
 
 The admin account is seeded from `auth.admin_email` / `auth.admin_password` in
 `control-plane.yaml` (or the Helm chart's `auth.adminPassword`, or the `admin_password` key of `auth.existingSecret`) on first startup.
-Change it immediately via the API:
-
-```bash
-TOKEN=$(awk '/^token:/{print $2}' ~/.kbridge/config.yaml)   # saved by kb login
-curl -s -X POST https://<control-plane>/api/v1/auth/change-password \
-  -H "Authorization: Bearer $TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{"current_password":"<seed-password>","new_password":"<strong-password>"}'
-```
+Change it immediately: `kb login` as the admin, then make the API call in
+[Change your password](cli.md#change-your-password), with the seed password as
+`current_password`.
 
 The `admin_password` in the Helm values or Secret only seeds the first start:
 after this change it no longer matches, and restarting does not reset it. See the
@@ -548,8 +542,9 @@ trust `X-Forwarded-For`), so the limit is effectively per email.
 Agent tokens are stored only as an HMAC-SHA256 digest keyed by `token_pepper`
 (falling back to `jwt_secret` when `token_pepper` is not set). The plaintext
 token is shown exactly once at creation and never stored. A stolen database
-cannot be used to verify or forge tokens without the pepper. See the
-[admin guide](admin.md#agent-tokens) for rotation procedures.
+cannot be used to verify or forge tokens without the pepper. See
+[Agent-token rotation](operations.md#agent-token-rotation) for the rotation
+procedure.
 
 #### Audit log of every command
 
@@ -559,7 +554,7 @@ client IP (behind a load balancer or proxy, usually the node's or the proxy's
 address). The log is queryable via `kb admin audit` or
 `GET /api/v1/admin/audit`. Denied requests are included (status `denied`), so
 the audit log is also useful for detecting over-broad expectations in the RBAC
-policy.
+policy. The [admin guide](admin.md#audit-logs) explains each status.
 
 Logs are retained for `audit.retention_days` (default 90 days) and pruned
 automatically.

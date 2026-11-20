@@ -211,9 +211,8 @@ and the CLI.
 3. On the agent, set `control_plane.tls.enabled: true` and either `ca_file: certs/tls.crt`
    (verify) or `insecure: true` (skip — dev only).
 4. For the CLI, use an `https://` `control_plane_url`. With a certificate from a
-   private CA, add the CA to the system trust store or, on Linux, run the CLI
-   with `SSL_CERT_FILE=/path/to/ca.crt`. Set `insecure_skip_verify: true` only
-   against a development control plane (see
-   [security.md](security.md#4-trust-the-control-planes-ca-on-the-cli-keep-insecure_skip_verify-off)).
+   private CA, give the CLI the CA as
+   [security.md](security.md#4-trust-the-control-planes-ca-on-the-cli-keep-insecure_skip_verify-off)
+   describes.
 
 The same certificate secures both the HTTP and gRPC servers.

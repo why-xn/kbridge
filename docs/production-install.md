@@ -324,13 +324,9 @@ be one of the certificate's `dnsNames`.
 host later, add it to the Certificate's `dnsNames` and apply it; cert-manager
 reissues the Secret.
 
-The control plane reads the certificate only when it starts. After
-cert-manager reissues or renews the Secret, restart it so it serves the new
-one before the old one expires:
-
-```bash
-kubectl -n kbridge rollout restart deploy/kbridge-control-plane
-```
+The control plane reads the certificate only when it starts, so restart it
+after cert-manager reissues or renews the Secret; see
+[Certificate renewal](operations.md#certificate-renewal).
 
 ### 5b. Configure the agent chart for TLS
 

@@ -2,12 +2,10 @@
 
 kbridge authorization is **declarative**: a single YAML policy file defines roles
 and who they apply to. The file is pointed to by `rbac.policy_file` in
-`control-plane.yaml`. A change to the mounted file, or a `SIGHUP`, reloads it in
-place within 10 s of reaching the disk; a change through Helm restarts the
-control plane, and `kb` fails for about a minute while the old pod stops and
-the agent reconnects — see
-[Reloading](#reloading) below. When `rbac.policy_file` is empty, enforcement is
-disabled and every authenticated user is allowed.
+`control-plane.yaml`. A change to the file reloads without a restart; a change
+through Helm restarts the control plane (see [Reloading](#reloading)). When
+`rbac.policy_file` is empty, enforcement is disabled and every authenticated
+user is allowed.
 
 Authentication (who you are) is separate from authorization (what you can do):
 identity comes from the JWT; permissions come from this file.
