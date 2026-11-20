@@ -12,6 +12,34 @@ disabled and every authenticated user is allowed.
 Authentication (who you are) is separate from authorization (what you can do):
 identity comes from the JWT; permissions come from this file.
 
+## A role has two halves
+
+A role says what kbridge allows and what the cluster allows:
+
+- **`rules`**: the commands kbridge lets the role's users send, checked on the
+  control plane.
+- **`clusterAccess`**: the Kubernetes RBAC the agent binds to the same users,
+  `kbridge:<email>`, checked by the API server.
+
+A command runs only when both say yes. Take `dev@example.com` with the
+[example](#example) policy below:
+
+```text
+kb get secrets -n default
+  1. control plane: does a rule of dev's roles allow get secrets in default?
+       no  -> Error: permission denied: ... ask a kbridge admin to extend your role
+       yes (viewer allows get on any resource)
+  2. API server, as kbridge:dev@example.com: does a binding allow it?
+       no  -> Error from server (Forbidden): secrets is forbidden: User "kbridge:dev@example.com" cannot list resource "secrets" ...
+       yes -> the output comes back
+  Either way, kb admin audit records the attempt.
+```
+
+Here step 1 passes and step 2 refuses: `viewer`'s rules allow `get` on any
+resource, but its `clusterAccess` binds the ClusterRole `view`, which does not
+include Secrets. In `team-a`, where `developer` binds `edit`, the same command
+works. A role without `clusterAccess` is refused at step 2 for everything.
+
 ## Structure
 
 ```yaml
@@ -78,6 +106,11 @@ it could take as its value is refused (`flag --sort-by must be written as
 
 ## Example
 
+This policy works as written on the [quick start](installation.md#quick-start-helm-one-cluster)
+cluster, `prod-us-east`. It gives `dev@example.com` (the user from the quick
+start's step 5) the whole of one namespace, `team-a`, and read access
+everywhere else:
+
 ```yaml
 default: viewer
 
@@ -95,47 +128,90 @@ roles:
 
   - name: developer
     rules:
-      - clusters: ["dev-*", "staging"]
-        namespaces: ["*"]
-        resources: ["pods", "deployments", "services", "configmaps"]
-        verbs: ["get", "list", "watch", "describe", "logs", "exec"]
+      - clusters: ["prod-us-east"]
+        namespaces: ["team-a"]
+        resources: ["*"]
+        verbs: ["*"]
     clusterAccess:
-      - clusters: ["dev-*", "staging"]
-        clusterRole: view
-        clusterWide: true
+      - clusters: ["prod-us-east"]
+        clusterRole: edit
+        namespaces: ["team-a"]
 
   - name: viewer
     rules:
       - clusters: ["*"]
         namespaces: ["*"]
         resources: ["*"]
-        verbs: ["get", "list", "watch", "describe", "logs"]
+        verbs: ["get", "list", "watch", "describe", "logs", "auth"]
     clusterAccess:
       - clusters: ["*"]
         clusterRole: view
         clusterWide: true
 
 bindings:
-  - subject: admin@corp.com
+  - subject: admin@kbridge.local
     roles: ["admin"]
-  - subject: "*@dev.corp.com"
-    roles: ["developer"]
+  - subject: dev@example.com
+    roles: ["viewer", "developer"]
 ```
 
-With this policy: `admin@corp.com` can do anything; anyone at `dev.corp.com`
-gets developer access on dev/staging; everyone else falls back to read-only
-`viewer`. Every user with no binding holds `default`; a bound user holds only
-their roles, so the `dev.corp.com` users above cannot read prod. List the
-default role in a binding (`roles: ["viewer", "developer"]`) if its users
-should keep it. Without `clusterAccess` the cluster refuses the user even
-where `rules` allow, so every role needs one: `view` above lets developers
-read; for `exec` they also need a role such as `edit` bound in the namespaces
-they work in (see [Cluster bindings](#cluster-bindings-clusteraccess)). The chart's default policy and `configs/rbac.yaml` give `admin` a
-cluster-wide `cluster-admin` binding and `viewer` a cluster-wide `view` binding,
-so a fresh install works without edits. Keep a binding for your seeded admin
-(`auth.admin_email`, `admin@kbridge.local` by default) when you replace that
-policy: an admin with no binding falls back to `default` like anyone else, so
-here it holds read-only `viewer`, keeps `kb admin`, and loses write access.
+Apply it in four steps:
+
+1. **Create the namespace and make it enforce Pod Security `baseline`.** The
+   agent binds only in a namespace that exists, and binds `edit` only where
+   Pod Security is enforced (see [below](#cluster-bindings-clusteraccess)):
+
+   ```bash
+   kubectl create namespace team-a
+   kubectl label ns team-a pod-security.kubernetes.io/enforce=baseline
+   ```
+
+2. **Load the policy.** Save it as `policy.yaml` and upgrade the control plane
+   with it; `--reuse-values` keeps the secrets the quick start set with
+   `--set`:
+
+   ```bash
+   helm upgrade kbridge-control-plane oci://ghcr.io/why-xn/charts/kbridge-control-plane \
+     -n kbridge --version 0.3.1-alpha.1 --reuse-values --set-file rbac.policy=policy.yaml
+   kubectl -n kbridge rollout status deploy/kbridge-control-plane
+   ```
+
+   The upgrade restarts the control plane, which ends the quick start's
+   `kubectl port-forward`: start it again.
+
+3. **Wait for `in sync`** (up to a minute, the agent's `sync.interval`):
+
+   ```bash
+   kb admin rbac status
+   # CLUSTER       VERSION   STATE    ERRORS  REPORTED
+   # prod-us-east  fe53cfc1  in sync  0       2026-11-20T00:17:37Z
+   ```
+
+   Skipped step 1? The row shows `drift` and the error under it says what is
+   missing, for example
+   `namespace "team-a" must enforce pod-security baseline or restricted before edit can be granted there (kubectl label ns team-a pod-security.kubernetes.io/enforce=baseline)`.
+
+4. **Try it as the developer:**
+
+   ```bash
+   kb create deployment web --image=nginx -n team-a
+   # deployment.apps/web created
+   kb create deployment web --image=nginx -n default
+   # Error: permission denied: create deployment in namespace "default" on cluster "prod-us-east" is not allowed for dev@example.com; ask a kbridge admin to extend your role
+   ```
+
+With this policy, `admin@kbridge.local` can do anything, `dev@example.com`
+can do anything in `team-a` and read elsewhere, and everyone else falls back
+to read-only `viewer`. Every user with no binding holds `default`; a bound
+user holds only their roles, so `dev@example.com` lists `viewer` next to
+`developer` to keep it. Without `clusterAccess` the cluster refuses the user
+even where `rules` allow, so every role needs one. The chart's default policy
+and `configs/rbac.yaml` give `admin` a cluster-wide `cluster-admin` binding
+and `viewer` a cluster-wide `view` binding, so a fresh install works without
+edits. Keep a binding for your seeded admin (`auth.admin_email`,
+`admin@kbridge.local` by default) when you replace that policy: an admin with
+no binding falls back to `default` like anyone else, so here it holds
+read-only `viewer`, keeps `kb admin`, and loses write access.
 
 ## Cluster bindings (`clusterAccess`)
 

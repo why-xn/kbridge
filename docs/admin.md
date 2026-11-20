@@ -30,9 +30,9 @@ Five steps take a new person from nothing to running commands.
 
 2. **Give them a role.** Add a binding to the [policy](rbac.md) for a role
    it defines (the default policy has only `admin` and `viewer`; the
-   [RBAC example](rbac.md#example) adds a `developer` role; set its
-   `clusters` to yours, since the example's `dev-*` and `staging` match no
-   other cluster). A bound user
+   [RBAC example](rbac.md#example) adds a `developer` role for the quick
+   start's cluster `prod-us-east` and namespace `team-a`; change those to
+   yours). A bound user
    holds only the roles listed, so list `viewer` too if they should keep it:
 
    ```yaml
