@@ -106,23 +106,27 @@ EOF
 [Back up](#backup) first, then:
 
 ```bash
-# Production install:
+# Production install: pass the values file again, without --reuse-values
 helm upgrade kbridge-control-plane oci://ghcr.io/why-xn/charts/kbridge-control-plane \
-  -n kbridge --version 0.3.1-alpha.1 \
-  --reuse-values -f values-control-plane.yaml
+  -n kbridge --version 0.3.1-alpha.1 -f values-control-plane.yaml
 
-# Quick start (installed with --set only):
+# Quick start (installed with --set only): save the values you set, then pass them
+helm get values kbridge-control-plane -n kbridge -o yaml > cp-values.yaml
 helm upgrade kbridge-control-plane oci://ghcr.io/why-xn/charts/kbridge-control-plane \
-  -n kbridge --version 0.3.1-alpha.1 \
-  --reuse-values
+  -n kbridge --version 0.3.1-alpha.1 -f cp-values.yaml
+rm cp-values.yaml
 ```
 
-`--reuse-values` keeps what was set with `--set`; the
-[production install](production-install.md) also keeps a values file, which
-every upgrade passes again. The chart's `--version` and its default
-`image.tag` move together, so pin the chart version rather than overriding the
-image tag. From a clone, use `./charts/control-plane` in place of the
-`oci://…` reference.
+Do not move to a new chart version with `--reuse-values`: it keeps the old
+chart's defaults as well as your values, so the image tag does not change and
+a value the new chart added is missing. From 0.3.0-alpha.1 that upgrade fails
+with `nil pointer evaluating interface {}.enabled`. The
+[production install](production-install.md)'s values file, or the values
+`helm get values` saved, holds only what you set, so the new chart's defaults,
+its image tag included, apply. `cp-values.yaml` holds the JWT secret and admin
+password the quick start set with `--set`, so the commands delete it. Pin the
+chart version rather than overriding the image tag. From a clone, use
+`./charts/control-plane` in place of the `oci://…` reference.
 
 - Schema migrations run automatically on startup via `createSchema` in
   `internal/controlplane/migrations.go`. New tables and columns are added; no manual
