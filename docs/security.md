@@ -6,6 +6,10 @@ must take to harden a deployment. It complements the
 [SECURITY.md](../SECURITY.md) at the repo root, which is the vulnerability
 disclosure policy.
 
+Part 1 is the [checklist](#post-install-security-checklist) to work through
+after an install. Part 2, the [security model](#security-model), explains what
+the checklist protects.
+
 ---
 
 ## Post-install security checklist
@@ -34,6 +38,16 @@ after this change it no longer matches, and restarting does not reset it. See th
 > The server logs a warning at startup when `admin_password` is `admin123` or
 > shorter than 8 characters, but this is advisory — change it regardless.
 
+**Check:** the seed password no longer works and the new one does:
+
+```bash
+kb logout
+kb login      # with the seed password
+# Error: invalid email or password
+kb login      # with the new password
+# Login successful.
+```
+
 ### 2. Set a dedicated `token_pepper`
 
 Agent tokens are stored as HMAC-SHA256 digests. By default the HMAC key falls
@@ -58,7 +72,19 @@ auth:
 > Changing `token_pepper` invalidates all existing agent tokens. Re-issue them
 > with `kb admin agent-tokens create` after rotating.
 
+**Check:** with `auth.existingSecret` as in the
+[production install](production-install.md#2-pre-create-secrets), the Secret
+holds its own pepper; one made with `openssl rand -hex 32` is 64 characters:
+
+```bash
+kubectl -n kbridge get secret kbridge-control-plane-secrets -o jsonpath='{.data.token_pepper}' | base64 -d | wc -c
+# 64
+```
+
 ### 3. Enable TLS on the control plane and the agent
+
+Without TLS, passwords, tokens and every command and its output cross the
+network in clear text.
 
 **control plane** (binary / Docker):
 
@@ -110,6 +136,17 @@ fails the TLS handshake. `scripts/gen-certs.sh` (`make certs`) covers only
 production certificates with those names, for example with cert-manager (see
 [production-install.md](production-install.md#3a-issue-the-control-planes-certificate)).
 
+**Check:** the control plane answers over HTTPS (add `--cacert ca.crt` for a
+private CA), and each agent shows `connected`:
+
+```bash
+curl https://control-plane.example.com/health
+# {"status":"healthy","version":"v0.3.1-alpha.1"}
+kb clusters list
+# CURRENT  NAME          STATUS
+#          prod-us-east  connected
+```
+
 ### 4. Trust the control plane's CA on the CLI; keep `insecure_skip_verify` off
 
 The CLI verifies the control plane's certificate against the system trust
@@ -136,10 +173,19 @@ Confirm it is not left `true` on machines that were used for development:
 insecure_skip_verify: false
 ```
 
+**Check:** `kb login` succeeds without `x509: certificate signed by unknown
+authority`, and the config file keeps verification on:
+
+```bash
+grep insecure_skip_verify ~/.kbridge/config.yaml
+# insecure_skip_verify: false
+```
+
 ### 5. Remove `bootstrap.agent_token`
 
 The `bootstrap` block is a dev convenience that seeds one agent token at startup.
-Remove it (or leave it blank) in production:
+The token is written in the config, so anyone who can read the file can
+register an agent with it. Remove it (or leave it blank) in production:
 
 ```yaml
 # control-plane.yaml
@@ -158,6 +204,18 @@ bootstrap:
 
 Use `kb admin agent-tokens create --cluster <name>` to provision tokens through
 the admin API instead.
+
+Removing the block does not remove a token it already seeded: that token stays
+valid until you revoke it.
+
+**Check:** no token is described as seeded from config; revoke any that is:
+
+```bash
+kb admin agent-tokens list
+# ID          CLUSTER      PREFIX         REVOKED  DESCRIPTION
+# 3aeebebd-…  dev-cluster  dev-token-sta  false    bootstrap token (seeded from config)
+kb admin agent-tokens revoke <id>
+```
 
 ### 6. Use `existingSecret` — no plaintext secrets in Helm values
 
@@ -184,15 +242,51 @@ controlPlane:
   token: ""                             # leave empty when existingSecret is set
 ```
 
+**Check:** the values Helm stores hold no secret. Both commands print nothing:
+
+```bash
+helm get values kbridge-control-plane -n kbridge | grep -E 'jwtSecret|tokenPepper|adminPassword'
+helm get values kbridge-agent -n kbridge | grep 'token:'
+```
+
 ---
 
-## Two-layer authorization
+## Security model
+
+How kbridge decides what a command may do, what it does not protect against,
+and what it enforces whatever the configuration.
+
+### Terms
+
+- **Window**: the TLS proxy on loopback inside the agent. kubectl reaches the
+  API server only through it, with a one-off nonce instead of a credential;
+  the window forwards each request with the agent's token, impersonating the
+  user. See [Layer 2](#layer-2--the-agent-what-kubectl-can-actually-do).
+- **`clusterAccess`**: the part of a policy role that says which ClusterRole
+  the agent binds to the role's users, in which clusters and namespaces. See
+  [rbac.md](rbac.md#cluster-bindings-clusteraccess).
+- **`accessCeiling`**: an agent chart value, the most the agent may bind in
+  its cluster whatever the policy asks for. See
+  [Binding kbridge users in the cluster](#binding-kbridge-users-in-the-cluster).
+- **Protected namespaces**: the agent's own (release) namespace and any listed
+  in the chart's `protectedNamespaces`. The window refuses every request whose
+  path names one, and the agent never binds there.
+- **The admin account and the policy's `admin` role** are different things.
+  The admin account is the user the control plane seeds from `auth.admin_*`;
+  only it may run `kb admin` and open the [console](console.md). The policy's
+  `admin` role decides which kubectl commands a user may run, nothing more.
+- **Agent token**: the `kbat_...` secret an agent registers with, bound to one
+  cluster and shown once at creation. See [admin.md](admin.md#agent-tokens).
+- **Token pepper**: `auth.token_pepper`, the HMAC key agent tokens are stored
+  under. When it is empty, `jwt_secret` is used.
+
+### Two-layer authorization
 
 kbridge applies authorization at two independent layers, in order: the kbridge
 policy on the control plane, then Kubernetes RBAC on the cluster, evaluated as
 the requesting user. A command runs only when both allow it.
 
-### Layer 1 — kbridge RBAC policy (what users may request)
+#### Layer 1 — kbridge RBAC policy (what users may request)
 
 The kbridge policy file (`rbac.policy_file` in `control-plane.yaml`) is enforced by
 The control plane **before** any command reaches a cluster. It controls which authenticated
@@ -218,7 +312,7 @@ the audit log with status `denied` — the agent never sees it.
 See [rbac.md](rbac.md) for the full policy reference including wildcards,
 hot-reload, and the `default` role.
 
-### Layer 2 — the agent (what kubectl can actually do)
+#### Layer 2 — the agent (what kubectl can actually do)
 
 Every command runs as the user who sent it. The control plane sends the
 user's identity with each command, stream and port-forward, and the agent
@@ -291,7 +385,7 @@ accounts): a compromised agent holds every binding whose subject is a `User`,
 chart's optional `networkPolicy`, which limits agent egress to the API server,
 the control plane and cluster DNS.
 
-### How the layers interact
+#### How the layers interact
 
 | kbridge policy | Kubernetes RBAC for `kbridge:<email>` | Outcome |
 |----------------|---------------------------------------|---------|
@@ -302,7 +396,7 @@ the control plane and cluster DNS.
 
 ---
 
-## Binding kbridge users in the cluster
+### Binding kbridge users in the cluster
 
 Each kbridge user appears to Kubernetes as the user `kbridge:<email>` (with the
 group `system:authenticated`). The agent binds those users as the policy's
@@ -347,7 +441,7 @@ refused by the API server. `kb auth whoami` prints the name Kubernetes sees. Bin
 you make by hand for `kbridge:` users still work, and the agent leaves any
 binding without its label alone.
 
-### Kubernetes audit log
+#### Kubernetes audit log
 
 Requests made through kbridge appear in the API server audit log with:
 
@@ -362,7 +456,7 @@ The request id is the one in the control plane log line
 audit`) records the user email, cluster, command and time but not the id, so
 match it to the Kubernetes audit event by email, cluster and time.
 
-## Known limits
+### Known limits
 
 - **A compromised control plane can bind the ceiling roles to anyone** in any
   namespace that is not protected: it decides who holds which role, and it
@@ -414,12 +508,12 @@ match it to the Kubernetes audit event by email, cluster and time.
 - **Per-call agent authentication is the agent id issued at registration.**
   Mutual TLS is planned before a stable release.
 
-## What the platform enforces
+### What the platform enforces
 
 These controls are built into kbridge and are not configurable away. They
 provide a hardened baseline regardless of how the deployment is configured.
 
-### Strong-secret enforcement (fail-closed)
+#### Strong-secret enforcement (fail-closed)
 
 The control plane refuses to start if `jwt_secret` is not set, is shorter than 32
 characters, or matches a published placeholder (the development default or the
@@ -431,7 +525,7 @@ secret is a fatal error, not a warning. Generate a secret with:
 openssl rand -hex 32
 ```
 
-### Short-lived access tokens with transparent refresh
+#### Short-lived access tokens with transparent refresh
 
 Access tokens expire after **1 hour** (both the compiled default and the Helm
 chart default — tighten with `auth.accessTokenExpiry` for higher-security
@@ -440,7 +534,7 @@ are not prompted to log in until the refresh token expires. Running `kb logout`
 invalidates the refresh token on the server immediately — subsequent refresh
 attempts are rejected.
 
-### Login rate limiting
+#### Login rate limiting
 
 The `/auth/login` endpoint is rate-limited. Clients that exceed the limit receive
 `429 Too Many Requests`. The limit is keyed by client IP and email, and protects
@@ -449,7 +543,7 @@ balancer Service, an ingress controller or another proxy the control plane
 usually sees the node's or the proxy's address, not the user's (it does not
 trust `X-Forwarded-For`), so the limit is effectively per email.
 
-### Agent tokens hashed with HMAC + pepper
+#### Agent tokens hashed with HMAC + pepper
 
 Agent tokens are stored only as an HMAC-SHA256 digest keyed by `token_pepper`
 (falling back to `jwt_secret` when `token_pepper` is not set). The plaintext
@@ -457,7 +551,7 @@ token is shown exactly once at creation and never stored. A stolen database
 cannot be used to verify or forge tokens without the pepper. See the
 [admin guide](admin.md#agent-tokens) for rotation procedures.
 
-### Audit log of every command
+#### Audit log of every command
 
 Every command attempt — allowed, denied, failed, or timed out — is recorded in
 the audit log with: user, cluster, namespace, command, exit code, duration, and
