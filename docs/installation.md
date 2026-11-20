@@ -323,31 +323,5 @@ The admin can also open the read-only console at `http://localhost:8080/`.
 
 ## Agent chart values
 
-Key chart values are documented in each chart's `values.yaml`. The agent chart
-creates a ServiceAccount + ClusterRole that grants impersonation and binding
-management; every command runs as `kbridge:<email>`, and the agent binds those
-users as the policy's `clusterAccess` says, up to `accessCeiling` (see
-[security.md](security.md#binding-kbridge-users-in-the-cluster)).
-
-The agent never hands its ServiceAccount token to kubectl. The chart turns off
-the default token mount and projects the token, CA and namespace read-only
-at `/var/run/kbridge/sa` (`defaultMode: 0400`; the kubelet adds group read for
-the pod's `fsGroup: 10001`, the agent user). Agent chart values for this:
-
-| Value | Default | Purpose |
-|---|---|---|
-| `protectedNamespaces` | `[]` | Namespaces the agent refuses every request for by path (exec, logs, port-forward, reads, writes). A cluster-wide list such as `kb get pods -A` still shows their objects, except Secrets. The release namespace is always added; add the control plane's namespace when it runs in the same cluster. |
-| `accessCeiling.clusterRoles` | `[view, edit, cluster-admin]` | ClusterRoles the agent may bind for kbridge users. Must not be empty. Lowering it (or adding to `protectedNamespaces`) does not remove bindings already made; see [Known limits](security.md#known-limits). |
-| `accessCeiling.namespaces` | `[]` | Namespaces the agent may write RoleBindings in; empty means any. Must not include the release namespace. |
-| `accessCeiling.clusterWide` | `true` | Allow ClusterRoleBindings (`clusterWide: true` in policy). |
-| `sync.interval` | `60s` | How often the agent re-checks its bindings when nothing else triggers a sync, e.g. after a namespace is labelled for Pod Security. |
-| `serviceAccountToken.expirationSeconds` | `600` | Lifetime of the projected token; the kubelet rotates it. |
-| `networkPolicy.enabled` | `false` | Render an egress NetworkPolicy (recommended). Requires `apiServerCIDRs` and `controlPlaneTo`; rendering fails without them. |
-| `networkPolicy.apiServerCIDRs` | `[]` | API server endpoint IPs, e.g. `kubectl -n default get endpointslice kubernetes -o jsonpath='{.endpoints[*].addresses[*]}'` as `/32`s. |
-| `networkPolicy.apiServerPorts` | `[443, 6443]` | API server ports. |
-| `networkPolicy.controlPlaneTo` | `[]` | NetworkPolicyPeer list for the control plane, e.g. `[{ipBlock: {cidr: 203.0.113.10/32}}]`. |
-| `networkPolicy.controlPlanePort` | `9090` | Control plane gRPC port. |
-
-With the policy on, the agent can reach only the API server, the control plane
-and `kube-dns` in `kube-system` (53/UDP and TCP).
-
+Every agent chart value, with its default, is listed in
+[configuration.md](configuration.md#agent-chart-values).

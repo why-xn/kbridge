@@ -4,6 +4,41 @@ This guide covers a hardened, multi-cluster kbridge deployment: the control plan
 on a management cluster, one or more agents in target clusters, and the `kb` CLI
 on operator workstations.
 
+## What you will have at the end
+
+```text
+users: kb, browser ─── HTTPS ─── control-plane.example.com:443  ────┐
+                                                                    ├── LoadBalancer Service ── control plane
+agents in target clusters ─ gRPC ─ control-plane.example.com:9090 ──┘
+```
+
+The control plane runs in the management cluster, in the namespace `kbridge`,
+and one `LoadBalancer` Service there carries both ports. It serves TLS itself
+on both with one certificate (from cert-manager in this guide) and reads its
+secrets from a Kubernetes Secret. Each target cluster runs an agent that dials
+out to port 9090; nothing dials into a target cluster.
+
+### Placeholders to replace
+
+The commands below use these example values. Replace each with yours
+everywhere it appears:
+
+| Placeholder | Replace with | Used in |
+|---|---|---|
+| `control-plane.example.com` | The DNS name users and agents reach the control plane at | §3a `dnsNames`; §3c DNS record and health check; §4 and §7 `controlPlane.url`; §6 `kb login` |
+| `letsencrypt-dns` | Your cert-manager `ClusterIssuer` (DNS-01 or private CA) | §3a |
+| `admin@example.com` | The email of the admin account the chart seeds | §3b `auth.adminEmail` and the policy's binding; §6 `kb login` |
+| `<EXTERNAL-IP>` | The external IP of the §3c Service | §7 `networkPolicy.controlPlaneTo`; [Moving from an HTTP Ingress](#moving-from-an-http-ingress) step 5 |
+| `prod-us-east` | The target cluster's name in kbridge (here also its kubectl context) | §6 `--cluster` and `kubectl config use-context`; §7 `cluster.name`; §8 |
+| `management` | The management cluster's kubectl context | §8 |
+| `ca.crt`, `/path/to/ca.crt` | Your private CA's certificate; not needed with a public CA | §3c health check; §5b; §6 `SSL_CERT_FILE`; §7 `controlPlane.tls.caCert` |
+| `kbat_xxxxxxxxxxxxxxxxxxxx` | The agent token §6 prints | §6 the agent's Secret |
+
+The namespace `kbridge`, the release names and the Secret names
+(`kbridge-control-plane-secrets`, `kbridge-control-plane-tls`,
+`kbridge-agent-secrets`) can stay as they are; if you change one, change it
+in every command.
+
 ## 1. Prerequisites
 
 | Requirement | Notes |
@@ -22,15 +57,10 @@ Never pass secrets as `--set` flags in production — they appear in Helm releas
 history. Create the Secret first, then point the chart at it with
 `auth.existingSecret`.
 
-The chart mounts three keys from this Secret as files under
-`/run/secrets/kbridge/` and passes their paths via `KBRIDGE_*_FILE` environment
-variables:
-
-| Secret key | Environment variable |
-|---|---|
-| `jwt_secret` | `KBRIDGE_JWT_SECRET_FILE` |
-| `token_pepper` | `KBRIDGE_TOKEN_PEPPER_FILE` |
-| `admin_password` | `KBRIDGE_ADMIN_PASSWORD_FILE` |
+The Secret holds three keys, `jwt_secret`, `token_pepper` and `admin_password`.
+The chart mounts them as files under `/run/secrets/kbridge/` and passes their
+paths in `KBRIDGE_JWT_SECRET_FILE`, `KBRIDGE_TOKEN_PEPPER_FILE` and
+`KBRIDGE_ADMIN_PASSWORD_FILE` (see [configuration.md](configuration.md#control-plane-control-planeyaml)):
 
 ```bash
 kubectl create namespace kbridge
@@ -147,9 +177,11 @@ With `tls.enabled` the pod serves HTTPS on 8080 and TLS on 9090 with the same
 certificate. The chart mounts the Secret at `/etc/kbridge/tls/` and passes the
 paths as `cert_file` / `key_file` in the generated config.
 
-Never upgrade this release with `--set` flags alone. Without `-f` (or
-`--reuse-values`) Helm resets every other value to the chart defaults: TLS is
-turned off and `auth.existingSecret` is dropped, so the upgrade fails: the
+Never upgrade this release with `--set` flags alone, or with `--reuse-values`
+(it fails when the chart version changes; see
+[Helm upgrade](operations.md#helm-upgrade)). Without
+`-f values-control-plane.yaml` Helm resets every other value to the chart
+defaults: TLS is turned off and `auth.existingSecret` is dropped, so the upgrade fails: the
 chart requires `auth.jwtSecret` or `auth.existingSecret`.
 
 ### 3c. Expose it with a LoadBalancer Service
@@ -244,12 +276,17 @@ ends TLS:
    new address, also change its URL and its NetworkPolicy peer:
 
    ```bash
+   helm get values kbridge-agent -n kbridge -o yaml > agent-values.yaml
    helm upgrade kbridge-agent oci://ghcr.io/why-xn/charts/kbridge-agent \
-     -n kbridge --version 0.3.1-alpha.1 --reuse-values \
+     -n kbridge --version 0.3.1-alpha.1 -f agent-values.yaml \
      --set controlPlane.url=control-plane.example.com:9090 \
      --set controlPlane.tls.enabled=true --set controlPlane.tls.caCert="$(cat ca.crt)" \
      --set 'networkPolicy.controlPlaneTo[0].ipBlock.cidr=<EXTERNAL-IP>/32'
+   rm agent-values.yaml
    ```
+
+   The saved values keep the rest of the agent's install (not
+   `--reuse-values`: see [Helm upgrade](operations.md#helm-upgrade)).
 
 ### Behind ingress-nginx: TLS passthrough
 
@@ -292,8 +329,13 @@ value adds the ConfigMap entry, the Service port and the controller argument
 
 ```bash
 helm upgrade ingress-nginx ingress-nginx --repo https://kubernetes.github.io/ingress-nginx \
-  -n ingress-nginx --reuse-values --set tcp.9090=kbridge/kbridge-control-plane:9090
+  -n ingress-nginx --version <chart-version> --reuse-values \
+  --set tcp.9090=kbridge/kbridge-control-plane:9090
 ```
+
+`<chart-version>` is the version you run, the `CHART` column of
+`helm list -n ingress-nginx` without `ingress-nginx-`. Without `--version`
+Helm moves to the newest chart while keeping the old one's defaults.
 
 Without the chart, add the port to its `tcp-services` ConfigMap:
 
@@ -329,23 +371,15 @@ be one of the certificate's `dnsNames`.
 host later, add it to the Certificate's `dnsNames` and apply it; cert-manager
 reissues the Secret.
 
-The control plane reads the certificate only when it starts. After
-cert-manager reissues or renews the Secret, restart it so it serves the new
-one before the old one expires:
-
-```bash
-kubectl -n kbridge rollout restart deploy/kbridge-control-plane
-```
+The control plane reads the certificate only when it starts, so restart it
+after cert-manager reissues or renews the Secret; see
+[Certificate renewal](operations.md#certificate-renewal).
 
 ### 5b. Configure the agent chart for TLS
 
-The agent chart exposes these TLS value keys under `controlPlane.tls`:
-
-| Key | Default | Purpose |
-|---|---|---|
-| `controlPlane.tls.enabled` | `false` | Enable TLS for the gRPC connection |
-| `controlPlane.tls.insecure` | `false` | Skip server cert verification — never set `true` in prod |
-| `controlPlane.tls.caCert` | `""` | PEM-encoded CA cert; mounted as `/etc/kbridge/ca.crt` and passed as `ca_file` |
+The agent's TLS values are `controlPlane.tls.enabled`, `controlPlane.tls.caCert`
+and `controlPlane.tls.insecure`; [configuration.md](configuration.md#agent-agentyaml)
+lists their defaults.
 
 For a public cert (Let's Encrypt / DigiCert) the system CA bundle is sufficient;
 set `controlPlane.tls.enabled=true` and leave `caCert` empty:

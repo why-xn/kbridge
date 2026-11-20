@@ -7,14 +7,10 @@ and known limitations.
 
 ## Backup & Restore (SQLite)
 
-The control plane stores all state in a single SQLite file at `/data/kbridge.db`
-(the path set by `persistence.dbPath` in the Helm chart, defaulting to
-`/data/kbridge.db`).
-
-The image has no `sqlite3`, and a copy of a live WAL-mode database is not
-consistent, so backup and restore stop the control plane for a moment and work
-through a helper pod that mounts its PVC. The commands assume the release
-`kbridge-control-plane` in namespace `kbridge`.
+Backup and restore stop the control plane for a moment and work through a
+helper pod that mounts its PVC (why: [below](#why-the-control-plane-stops)).
+The commands assume the release `kbridge-control-plane` in namespace
+`kbridge`.
 
 ### Helper pod
 
@@ -76,6 +72,14 @@ kubectl -n kbridge delete pod kbridge-db
 kubectl -n kbridge scale deploy/kbridge-control-plane --replicas=1
 ```
 
+### Why the control plane stops
+
+The control plane stores all state in a single SQLite file at `/data/kbridge.db`
+(the path set by `persistence.dbPath` in the Helm chart, defaulting to
+`/data/kbridge.db`). The image has no `sqlite3`, and a copy of a live WAL-mode
+database is not consistent, so the database is copied while no control plane
+has it open.
+
 ### PVC snapshots
 
 If your storage class supports `VolumeSnapshot`, take a PVC snapshot for
@@ -99,23 +103,28 @@ EOF
 
 ### Helm upgrade
 
-Back up first (see above). `--reuse-values` keeps what was set with `--set`;
-the [production install](production-install.md) also keeps a values file,
-which every upgrade passes again:
+[Back up](#backup) first, then:
 
 ```bash
-# Production install:
+# Production install: pass the values file again, without --reuse-values
 helm upgrade kbridge-control-plane oci://ghcr.io/why-xn/charts/kbridge-control-plane \
-  -n kbridge --version 0.3.1-alpha.1 \
-  --reuse-values -f values-control-plane.yaml
+  -n kbridge --version 0.3.1-alpha.1 -f values-control-plane.yaml
 
-# Quick start (installed with --set only):
+# Quick start (installed with --set only): save the values you set, then pass them
+helm get values kbridge-control-plane -n kbridge -o yaml > cp-values.yaml
 helm upgrade kbridge-control-plane oci://ghcr.io/why-xn/charts/kbridge-control-plane \
-  -n kbridge --version 0.3.1-alpha.1 \
-  --reuse-values
+  -n kbridge --version 0.3.1-alpha.1 -f cp-values.yaml
+rm cp-values.yaml
 ```
 
-The chart's `--version` and its default `image.tag` move together, so pin the
+Do not move to a new chart version with `--reuse-values`: it keeps the old
+chart's defaults as well as your values, so the image tag does not change and
+a value the new chart added is missing. From 0.3.0-alpha.1 that upgrade fails
+with `nil pointer evaluating interface {}.enabled`. The
+[production install](production-install.md)'s values file, or the values
+`helm get values` saved, holds only what you set, so the new chart's defaults,
+its image tag included, apply. `cp-values.yaml` holds the JWT secret and admin
+password the quick start set with `--set`, so the commands delete it. Pin the
 chart version rather than overriding the image tag. From a clone, use
 `./charts/control-plane` in place of the `oci://…` reference.
 
@@ -129,56 +138,76 @@ chart version rather than overriding the image tag. From a clone, use
   the `Recreate` strategy, so the old pod stops before the new one starts.
   Expect a brief downtime (seconds) during pod replacement.
 
+### Upgrading agents
+
+Upgrade the control plane first, then the agents, one cluster at a time. In
+each target cluster:
+
+```bash
+helm get values kbridge-agent -n kbridge -o yaml > agent-values.yaml
+helm upgrade kbridge-agent oci://ghcr.io/why-xn/charts/kbridge-agent \
+  -n kbridge --version 0.3.1-alpha.1 -f agent-values.yaml
+rm agent-values.yaml
+kubectl -n kbridge rollout status deploy/kbridge-agent
+kb clusters list                     # the cluster's STATUS is connected again
+```
+
+The first command saves the values you set at install, so the upgrade keeps
+them and takes the new chart's defaults, including its image tag. The file
+holds the agent token if you set `controlPlane.token`, so the commands delete
+it. From a clone, use `./charts/agent` in place of the `oci://…` reference.
+
+The control plane works with agents one release older, so each cluster keeps
+working while its agent waits; upgrade every agent before the next control
+plane upgrade. The upgrade
+rolls the agent pod the same way a [token rotation](#agent-token-rotation)
+does: the new pod takes the cluster over as soon as it registers, and a stream
+the old pod serves ends with it.
+
 ---
 
 ## Certificate renewal
-
-The control plane reads its TLS certificate only when it starts. When
-cert-manager renews the Secret, restart the control plane before the old
-certificate expires, or users and agents get `x509: certificate has expired`:
 
 ```bash
 kubectl -n kbridge get certificate kbridge-control-plane-tls -o jsonpath='{.status.renewalTime}'
 kubectl -n kbridge rollout restart deploy/kbridge-control-plane
 ```
 
+The control plane reads its TLS certificate only when it starts. When
+cert-manager renews the Secret, restart the control plane before the old
+certificate expires, or users and agents get `x509: certificate has expired`.
 `renewalTime` is when cert-manager replaces the Secret: restart after that
 time and before the old certificate's `notAfter`
-(`-o jsonpath='{.status.notAfter}'`).
+(`-o jsonpath='{.status.notAfter}'`). After you add a host to the
+Certificate's `dnsNames`, restart the same way once cert-manager reissues it.
 
 ## Agent-Token Rotation
 
-Hot rotation (no reconnect) is not implemented; each rotation rolls the agent
-pod. That costs no outage: the new pod serves the cluster as soon as it
-registers, and the old one, once replaced, stands by until Kubernetes stops it
-(it does not exit or register again while the new agent is connected, so it
-does not take the cluster back). If the new agent dies or disconnects first, the
-standing-by agent registers again within 30 s and serves the cluster. A
-command running on the old pod finishes there, within the pod's termination
-grace period (`terminationGracePeriodSeconds`, 30 s by default); a longer one
-is killed with the pod and fails with `agent shut down while the command was
-running; retry it`. A stream the old pod serves (`logs -f`, `exec -it`,
-`port-forward`) ends when it stops. A replaced agent that is never stopped
-exits after 10 minutes with `replaced by a newer agent and never stopped:
-exiting`; Kubernetes restarts it and it takes the cluster over, so two
-replicas for one cluster swap it about every 10 minutes. Run one agent replica
-per cluster (`replicaCount: 1`, the chart default). Issue the new token first:
+Rotate in three steps: issue the new token, give it to the agent, then
+revoke the old one. In that order the cluster stays connected.
+
+**1. Issue the new token:**
 
 ```bash
 kb admin agent-tokens create --cluster <cluster-name>
 # Note the kbat_... value: it is shown only once.
 ```
 
-Then give it to the agent, the same way the agent was installed.
+**2. Give it to the agent**, the same way the agent was installed.
 
 Inline token (`controlPlane.token`): the upgrade changes the config Secret,
 which restarts the agent.
 
 ```bash
+helm get values kbridge-agent -n kbridge -o yaml > agent-values.yaml
 helm upgrade kbridge-agent oci://ghcr.io/why-xn/charts/kbridge-agent \
   -n kbridge --version 0.3.1-alpha.1 \
-  --reuse-values --set controlPlane.token=<new-token>
+  -f agent-values.yaml --set controlPlane.token=<new-token>
+rm agent-values.yaml
 ```
+
+The file keeps the agent's other values and holds the old token, so the
+commands delete it (not `--reuse-values`: see [Helm upgrade](#helm-upgrade)).
 
 Existing Secret (`controlPlane.existingSecret`, `kbridge-agent-secrets` in the
 [production guide](production-install.md)): update it, then restart the agent.
@@ -190,7 +219,7 @@ kubectl -n kbridge create secret generic kbridge-agent-secrets \
 kubectl -n kbridge rollout restart deploy/kbridge-agent
 ```
 
-Then check the agent reconnected and revoke the old token:
+**3. Check the agent reconnected, then revoke the old token:**
 
 ```bash
 kubectl -n kbridge rollout status deploy/kbridge-agent
@@ -212,9 +241,35 @@ any agent still using the old one at once, and that agent stops
 If the control plane's `auth.token_pepper` (or `jwt_secret`) is rotated, all existing
 agent tokens become invalid and must be re-issued.
 
+### What happens to the agent during rotation
+
+Hot rotation (no reconnect) is not implemented; each rotation rolls the agent
+pod. That costs no outage: the new pod serves the cluster as soon as it
+registers, and the old one, once replaced, stands by until Kubernetes stops it
+(it does not exit or register again while the new agent is connected, so it
+does not take the cluster back). If the new agent dies or disconnects first, the
+standing-by agent registers again within 30 s and serves the cluster. A
+command running on the old pod finishes there, within the pod's termination
+grace period (`terminationGracePeriodSeconds`, 30 s by default); a longer one
+is killed with the pod and fails with `agent shut down while the command was
+running; retry it`. A stream the old pod serves (`logs -f`, `exec -it`,
+`port-forward`) ends when it stops. A replaced agent that is never stopped
+exits after 10 minutes with `replaced by a newer agent and never stopped:
+exiting`; Kubernetes restarts it and it takes the cluster over, so two
+replicas for one cluster swap it about every 10 minutes. Run one agent replica
+per cluster (`replicaCount: 1`, the chart default).
+
 ---
 
 ## RBAC sync
+
+```bash
+kb admin rbac status
+# CLUSTER   VERSION   STATE    ERRORS  REPORTED
+# prod      426e2298  in sync  0       2026-11-05T20:09:44Z
+# staging   1c9b07aa  drift    1       2026-11-05T20:09:41Z
+#     binding kbridge-developer-admin: clusterRole admin is outside this cluster's accessCeiling (agent chart value accessCeiling.clusterRoles); ask the cluster owner to raise it
+```
 
 Each agent keeps its cluster's RoleBindings for `kbridge:<email>` users in
 step with the policy's `clusterAccess` (see
@@ -224,14 +279,6 @@ after any `kbridge`-labelled binding changes in the cluster, and every
 `sync.interval` (default `60s`, env `KBRIDGE_SYNC_INTERVAL`). A policy edit or
 a new, disabled or deleted user therefore reaches each cluster within about
 30s.
-
-```bash
-kb admin rbac status
-# CLUSTER   VERSION   STATE    ERRORS  REPORTED
-# prod      426e2298  in sync  0       2026-11-05T20:09:44Z
-# staging   1c9b07aa  drift    1       2026-11-05T20:09:41Z
-#     binding kbridge-developer-admin: clusterRole admin is outside this cluster's accessCeiling (agent chart value accessCeiling.clusterRoles); ask the cluster owner to raise it
-```
 
 | State | Meaning |
 |-------|---------|
@@ -265,20 +312,19 @@ permissions it renders.
 
 ## Troubleshooting Runbook
 
-| Symptom | Check | Resolution |
-|---------|-------|------------|
-| **Agent won't connect** | gRPC port 9090 reachable from agent pod? | `kubectl -n kbridge exec deploy/kbridge-agent -- nc -zv <control-plane-host> 9090` |
-| | TLS CA mismatch? | Verify agent `control_plane.tls.ca_file` matches the cert served by the control plane |
-| | Token invalid or revoked? | `kb admin agent-tokens list` — the agent's token `PREFIX` must be listed with `REVOKED` `false`; a token created with `--expires-in-days` also has an `expires_at` (`GET /api/v1/admin/agent-tokens`) that must be in the future. Issue a new one if not |
-| | `kb clusters list` shows "disconnected"? | Check agent logs: `kubectl -n kbridge logs deploy/kbridge-agent -f` |
-| **401 from `kb`** | Access token expired? | `kb` auto-refreshes; if the refresh token is also expired, run `kb login` |
-| | `jwt_secret` rotated on the control plane? | Users are refreshed silently while their refresh token is valid. The agents are what break: with `auth.token_pepper` empty, agent tokens are keyed by `jwt_secret`, so every agent is rejected with `invalid agent token` and crash-loops. Set a dedicated `token_pepper` before rotating, or re-issue every agent token afterwards |
-| **TLS errors** | Certificate mismatch? | Verify the SAN on the cert covers the hostname the agent/CLI uses; regenerate with `make certs` for dev. `certificate has expired` while the Secret is fresh: restart the control plane ([Certificate renewal](#certificate-renewal)) |
-| | Self-signed or private-CA cert rejected by CLI? | Add the CA to the system trust store, or on Linux run `kb` with `SSL_CERT_FILE=/path/to/ca.crt`. `insecure_skip_verify: true` in `~/.kbridge/config.yaml` is for a development control plane only |
-| **`kb` says `cluster "<name>": agent is disconnected`** (`503` on the API) | Agent pod down? | `kubectl -n kbridge get pod -l app.kubernetes.io/name=kbridge-agent` |
-| | Agent disconnected? | `kubectl -n kbridge logs deploy/kbridge-agent --tail=50`; check for reconnect loop |
-| | Agent heartbeat stale? | Exec probe reads `/tmp/kbridge-agent-healthy`; check `kubectl -n kbridge describe pod <agent-pod>` events |
-| **429 Too Many Requests** | Concurrent session limit hit? | Default `streams.max_concurrent=50`; increase in `control-plane.yaml` or reduce concurrent users |
+Find the row that starts with what you see.
+
+| What you see | Cause | Fix |
+|--------------|-------|-----|
+| `Error: cluster "<name>": agent is disconnected` (a stream says `Error: cluster "<name>" cannot stream right now`, `exec -i` says `Error: cluster agent is disconnected`); `kb clusters list` shows `disconnected` | The cluster's agent is down, crash-looping, or cannot reach the control plane | `kubectl -n kbridge get pod -l app.kubernetes.io/name=kbridge-agent`, then `kubectl -n kbridge logs <agent-pod> --tail=50` for the pod that is not `Running` (during a rollout, `logs deploy/kbridge-agent` may show the healthy old pod): the log names the cause (next rows). A pod that restarts without an error failed its exec probe, which reads `/tmp/kbridge-agent-healthy`; see `kubectl -n kbridge describe pod <agent-pod>` |
+| Agent log `Agent error: registering with control plane: registration rejected: <reason>`, where `<reason>` is `invalid agent token`, `agent token revoked`, `agent token expired` or `token not valid for requested cluster`; the pod is in `CrashLoopBackOff` | The token is revoked, expired or wrong, or the control plane's `auth.token_pepper` (or, with the pepper empty, `jwt_secret`) changed | `kb admin agent-tokens list`: the agent's token `PREFIX` must be listed with `REVOKED` `false`; a token created with `--expires-in-days` also has an `expires_at` (`GET /api/v1/admin/agent-tokens`) that must be in the future. Issue a new one and give it to the agent as in [Agent-Token Rotation](#agent-token-rotation). Rotating `jwt_secret` with `token_pepper` empty does this to every agent (users are refreshed silently while their refresh token is valid): set a dedicated `token_pepper` before rotating, or re-issue every agent token afterwards |
+| Agent log `dialing control plane: context deadline exceeded` | Port 9090 is not reachable from the agent, a NetworkPolicy blocks it, or the agent's TLS does not match the control plane's certificate | `kubectl -n kbridge exec deploy/kbridge-agent -- nc -zv <control-plane-host> 9090`; check that `controlPlane.tls.caCert` is the CA that signed the control plane's certificate and that the host is in its names ([production install §8](production-install.md#8-verify-the-deployment)) |
+| `Error: authentication required: run 'kb login' first` | You are logged out, or the refresh token expired (`kb` refreshes the access token on its own until then) | `kb login` |
+| `x509: certificate signed by unknown authority` | The control plane's certificate comes from a private CA the CLI does not trust | Give the CLI the CA as [security.md](security.md#4-trust-the-control-planes-ca-on-the-cli-keep-insecure_skip_verify-off) describes |
+| `x509: certificate is valid for <names>, not <host>` | The host you dial is not in the certificate | Add it to the Certificate's `dnsNames` ([production install §3a](production-install.md#3a-issue-the-control-planes-certificate)) and restart once it is reissued ([Certificate renewal](#certificate-renewal)); for a dev certificate, regenerate it with `make certs` |
+| `x509: certificate has expired` while the Secret is fresh | The control plane still serves the certificate it read at start | Restart the control plane ([Certificate renewal](#certificate-renewal)) |
+| `Error: too many concurrent streams; try again later` (`logs -f`, `-w`) or `Error: too many concurrent sessions` (`exec -i`, `port-forward`) | `streams.max_concurrent` live sessions are open (default 50) | Raise `streams.max_concurrent` (`streams.maxConcurrent` in the chart), or wait for sessions to end |
+| `Error: login failed: {"error":"too many attempts, slow down"}` | The [login rate limit](security.md#login-rate-limiting) | Wait a minute, then log in again |
 
 ---
 

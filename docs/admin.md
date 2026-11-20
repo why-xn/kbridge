@@ -30,9 +30,9 @@ Five steps take a new person from nothing to running commands.
 
 2. **Give them a role.** Add a binding to the [policy](rbac.md) for a role
    it defines (the default policy has only `admin` and `viewer`; the
-   [RBAC example](rbac.md#example) adds a `developer` role; set its
-   `clusters` to yours, since the example's `dev-*` and `staging` match no
-   other cluster). A bound user
+   [RBAC example](rbac.md#example) adds a `developer` role for the quick
+   start's cluster `prod-us-east` and namespace `team-a`; change those to
+   yours). A bound user
    holds only the roles listed, so list `viewer` too if they should keep it:
 
    ```yaml
@@ -43,18 +43,27 @@ Five steps take a new person from nothing to running commands.
        roles: ["viewer", "developer"]
    ```
 
-   With the Helm chart, edit `rbac.policy` in your values file. It replaces
+   With the Helm chart, the policy is the `rbac.policy` value. It replaces
    the whole policy, so start from the one in the chart's
    [values.yaml](../charts/control-plane/values.yaml) and keep the admin's
    binding. Then upgrade:
 
    ```bash
+   # Production install: edit rbac.policy in your values file, then
    helm upgrade kbridge-control-plane oci://ghcr.io/why-xn/charts/kbridge-control-plane \
-     -n kbridge --version 0.3.1-alpha.1 --reuse-values -f values-control-plane.yaml
+     -n kbridge --version 0.3.1-alpha.1 -f values-control-plane.yaml
+
+   # Quick start (installed with --set only): save the policy as policy.yaml, then
+   helm get values kbridge-control-plane -n kbridge -o yaml > cp-values.yaml
+   helm upgrade kbridge-control-plane oci://ghcr.io/why-xn/charts/kbridge-control-plane \
+     -n kbridge --version 0.3.1-alpha.1 -f cp-values.yaml --set-file rbac.policy=policy.yaml
+   rm cp-values.yaml
    ```
 
-   `--reuse-values` keeps what you set with `--set` at install, such as
-   `auth.jwtSecret`; without it those go back to the chart defaults. The
+   Both keep what you set at install, such as `auth.jwtSecret`. Not
+   `--reuse-values`: it fails when the chart version changes (see
+   [Helm upgrade](operations.md#helm-upgrade)). `cp-values.yaml` holds the
+   JWT secret and admin password, so the commands delete it. The
    upgrade restarts the control plane, so `kb` fails for about a minute. If
    you reach it through `kubectl port-forward`, as in the quick start, the
    forward ends with the old pod: start it again once the new pod is ready.
@@ -156,12 +165,8 @@ shows `disconnected` within seconds too; see
 [operations](operations.md#agent).
 
 **Rotation:** issue a new token, update the agent, then revoke the old one. In
-that order nothing is cut off: the agent already runs on the new token. The
-update rolls the agent pod; the new pod takes over the cluster as soon as it
-registers, and the old one stands by until Kubernetes stops it, finishing any
-command it was running within the pod's termination grace period (see
-[operations](operations.md#agent-token-rotation)). A stream it was serving (`logs -f`, `exec -it`,
-`port-forward`) ends when the old pod stops; run it again.
+that order the cluster stays connected. [Agent-token rotation](operations.md#agent-token-rotation)
+has the commands and says what happens to running commands and streams.
 
 For local development you can instead seed a token via the control plane's `bootstrap`
 config (see [configuration](configuration.md)).
@@ -191,16 +196,8 @@ Logs older than `audit.retention_days` are pruned automatically every
 
 ## RBAC changes
 
-Edit the policy file referenced by `rbac.policy_file`. The control plane reloads it
-within 10 s of the file changing, or at once on `SIGHUP`
-(`kill -HUP <control-plane-pid>`). With the Helm chart, change `rbac.policy` and
-run `helm upgrade` as in [Onboard a user](#onboard-a-user); the control plane
-restarts with the new policy. A reload
-of the file that fails to parse is rejected and the previous policy stays
-active (the error is logged). Through Helm there is no previous policy to
-keep: the new pod fails to start and logs the error, so fix the value and
-upgrade again. In a pod, send the signal with
-`kubectl -n kbridge exec deploy/kbridge-control-plane -- kill -HUP 1`.
-See the [RBAC reference](rbac.md#reloading). Run
-`kb admin rbac status` to see whether each cluster's RoleBindings match the policy
-(see [operations](operations.md)).
+Edit the policy (the file `rbac.policy_file` names, or `rbac.policy` in your
+Helm values) and load it as [Reloading](rbac.md#reloading) describes: a file
+change or `SIGHUP` reloads in place, a `helm upgrade` restarts the control
+plane. Then run `kb admin rbac status` to see whether each cluster's
+RoleBindings match the policy (see [RBAC sync](operations.md#rbac-sync)).

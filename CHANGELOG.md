@@ -145,6 +145,36 @@ are opt-in, and a policy with none behaves exactly as before.
 
 ## [0.3.1-alpha.1] - 2026-11-19
 
+### Upgrading from 0.3.0-alpha.1
+
+Do not upgrade with `--reuse-values`. It keeps the 0.3.0-alpha.1 chart's
+defaults, so the control-plane upgrade fails with
+
+```
+Error: UPGRADE FAILED: template: kbridge-control-plane/templates/secret.yaml:37:25: executing "kbridge-control-plane/templates/secret.yaml" at <.Values.ui.enabled>: nil pointer evaluating interface {}.enabled
+```
+
+and the agent upgrade succeeds but keeps running the
+`kbridge-agent:v0.3.0-alpha.1` image. Pass the values you
+set at install instead, control plane first. With a values file, use
+`-f values-control-plane.yaml`; installed with `--set` only, as in the quick
+start:
+
+```bash
+helm get values kbridge-control-plane -n kbridge -o yaml > cp-values.yaml
+helm upgrade kbridge-control-plane oci://ghcr.io/why-xn/charts/kbridge-control-plane \
+  -n kbridge --version 0.3.1-alpha.1 -f cp-values.yaml
+rm cp-values.yaml    # it holds the JWT secret and admin password
+
+helm get values kbridge-agent -n kbridge -o yaml > agent-values.yaml
+helm upgrade kbridge-agent oci://ghcr.io/why-xn/charts/kbridge-agent \
+  -n kbridge --version 0.3.1-alpha.1 -f agent-values.yaml
+rm agent-values.yaml # it holds the agent token
+```
+
+Users stay logged in and the agent reconnects. See
+[docs/operations.md](docs/operations.md#upgrades).
+
 ### Added
 
 - **Admin console at the control plane root.** A read-only web view for admins: cluster
