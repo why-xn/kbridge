@@ -22,15 +22,10 @@ Never pass secrets as `--set` flags in production — they appear in Helm releas
 history. Create the Secret first, then point the chart at it with
 `auth.existingSecret`.
 
-The chart mounts three keys from this Secret as files under
-`/run/secrets/kbridge/` and passes their paths via `KBRIDGE_*_FILE` environment
-variables:
-
-| Secret key | Environment variable |
-|---|---|
-| `jwt_secret` | `KBRIDGE_JWT_SECRET_FILE` |
-| `token_pepper` | `KBRIDGE_TOKEN_PEPPER_FILE` |
-| `admin_password` | `KBRIDGE_ADMIN_PASSWORD_FILE` |
+The Secret holds three keys, `jwt_secret`, `token_pepper` and `admin_password`.
+The chart mounts them as files under `/run/secrets/kbridge/` and passes their
+paths in `KBRIDGE_JWT_SECRET_FILE`, `KBRIDGE_TOKEN_PEPPER_FILE` and
+`KBRIDGE_ADMIN_PASSWORD_FILE` (see [configuration.md](configuration.md#control-plane-control-planeyaml)):
 
 ```bash
 kubectl create namespace kbridge
@@ -339,13 +334,9 @@ kubectl -n kbridge rollout restart deploy/kbridge-control-plane
 
 ### 5b. Configure the agent chart for TLS
 
-The agent chart exposes these TLS value keys under `controlPlane.tls`:
-
-| Key | Default | Purpose |
-|---|---|---|
-| `controlPlane.tls.enabled` | `false` | Enable TLS for the gRPC connection |
-| `controlPlane.tls.insecure` | `false` | Skip server cert verification — never set `true` in prod |
-| `controlPlane.tls.caCert` | `""` | PEM-encoded CA cert; mounted as `/etc/kbridge/ca.crt` and passed as `ca_file` |
+The agent's TLS values are `controlPlane.tls.enabled`, `controlPlane.tls.caCert`
+and `controlPlane.tls.insecure`; [configuration.md](configuration.md#agent-agentyaml)
+lists their defaults.
 
 For a public cert (Let's Encrypt / DigiCert) the system CA bundle is sufficient;
 set `controlPlane.tls.enabled=true` and leave `caCert` empty:
