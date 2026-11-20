@@ -177,9 +177,11 @@ With `tls.enabled` the pod serves HTTPS on 8080 and TLS on 9090 with the same
 certificate. The chart mounts the Secret at `/etc/kbridge/tls/` and passes the
 paths as `cert_file` / `key_file` in the generated config.
 
-Never upgrade this release with `--set` flags alone. Without `-f` (or
-`--reuse-values`) Helm resets every other value to the chart defaults: TLS is
-turned off and `auth.existingSecret` is dropped, so the upgrade fails: the
+Never upgrade this release with `--set` flags alone, or with `--reuse-values`
+(it fails when the chart version changes; see
+[Helm upgrade](operations.md#helm-upgrade)). Without
+`-f values-control-plane.yaml` Helm resets every other value to the chart
+defaults: TLS is turned off and `auth.existingSecret` is dropped, so the upgrade fails: the
 chart requires `auth.jwtSecret` or `auth.existingSecret`.
 
 ### 3c. Expose it with a LoadBalancer Service
@@ -274,12 +276,17 @@ ends TLS:
    new address, also change its URL and its NetworkPolicy peer:
 
    ```bash
+   helm get values kbridge-agent -n kbridge -o yaml > agent-values.yaml
    helm upgrade kbridge-agent oci://ghcr.io/why-xn/charts/kbridge-agent \
-     -n kbridge --version 0.3.1-alpha.1 --reuse-values \
+     -n kbridge --version 0.3.1-alpha.1 -f agent-values.yaml \
      --set controlPlane.url=control-plane.example.com:9090 \
      --set controlPlane.tls.enabled=true --set controlPlane.tls.caCert="$(cat ca.crt)" \
      --set 'networkPolicy.controlPlaneTo[0].ipBlock.cidr=<EXTERNAL-IP>/32'
+   rm agent-values.yaml
    ```
+
+   The saved values keep the rest of the agent's install (not
+   `--reuse-values`: see [Helm upgrade](operations.md#helm-upgrade)).
 
 ### Behind ingress-nginx: TLS passthrough
 
@@ -322,8 +329,13 @@ value adds the ConfigMap entry, the Service port and the controller argument
 
 ```bash
 helm upgrade ingress-nginx ingress-nginx --repo https://kubernetes.github.io/ingress-nginx \
-  -n ingress-nginx --reuse-values --set tcp.9090=kbridge/kbridge-control-plane:9090
+  -n ingress-nginx --version <chart-version> --reuse-values \
+  --set tcp.9090=kbridge/kbridge-control-plane:9090
 ```
+
+`<chart-version>` is the version you run, the `CHART` column of
+`helm list -n ingress-nginx` without `ingress-nginx-`. Without `--version`
+Helm moves to the newest chart while keeping the old one's defaults.
 
 Without the chart, add the port to its `tcp-services` ConfigMap:
 

@@ -199,10 +199,15 @@ Inline token (`controlPlane.token`): the upgrade changes the config Secret,
 which restarts the agent.
 
 ```bash
+helm get values kbridge-agent -n kbridge -o yaml > agent-values.yaml
 helm upgrade kbridge-agent oci://ghcr.io/why-xn/charts/kbridge-agent \
   -n kbridge --version 0.3.1-alpha.1 \
-  --reuse-values --set controlPlane.token=<new-token>
+  -f agent-values.yaml --set controlPlane.token=<new-token>
+rm agent-values.yaml
 ```
+
+The file keeps the agent's other values and holds the old token, so the
+commands delete it (not `--reuse-values`: see [Helm upgrade](#helm-upgrade)).
 
 Existing Secret (`controlPlane.existingSecret`, `kbridge-agent-secrets` in the
 [production guide](production-install.md)): update it, then restart the agent.

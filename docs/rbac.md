@@ -165,15 +165,19 @@ Apply it in four steps:
    ```
 
 2. **Load the policy.** Save it as `policy.yaml` and upgrade the control plane
-   with it; `--reuse-values` keeps the secrets the quick start set with
-   `--set`:
+   with it, passing the values the quick start set with `--set` so its
+   secrets are kept:
 
    ```bash
+   helm get values kbridge-control-plane -n kbridge -o yaml > cp-values.yaml
    helm upgrade kbridge-control-plane oci://ghcr.io/why-xn/charts/kbridge-control-plane \
-     -n kbridge --version 0.3.1-alpha.1 --reuse-values --set-file rbac.policy=policy.yaml
+     -n kbridge --version 0.3.1-alpha.1 -f cp-values.yaml --set-file rbac.policy=policy.yaml
+   rm cp-values.yaml
    kubectl -n kbridge rollout status deploy/kbridge-control-plane
    ```
 
+   `cp-values.yaml` holds the JWT secret and admin password, so the commands
+   delete it. Not `--reuse-values`: see [Helm upgrade](operations.md#helm-upgrade).
    The upgrade restarts the control plane, which ends the quick start's
    `kubectl port-forward`: start it again.
 
@@ -648,12 +652,15 @@ restart:
   included:
 
   ```bash
+  helm get values kbridge-control-plane -n kbridge -o yaml > cp-values.yaml
   helm upgrade kbridge-control-plane oci://ghcr.io/why-xn/charts/kbridge-control-plane \
-    -n kbridge --version 0.3.1-alpha.1 --reuse-values --set-file rbac.policy=policy.yaml
+    -n kbridge --version 0.3.1-alpha.1 -f cp-values.yaml --set-file rbac.policy=policy.yaml
+  rm cp-values.yaml   # it holds the JWT secret and admin password
   ```
 
-  or pass `--reuse-values -f` with your values file, as in
-  [Onboard a user](admin.md#onboard-a-user).
+  or pass `-f` with your values file, as in
+  [Onboard a user](admin.md#onboard-a-user). Not `--reuse-values`: see
+  [Helm upgrade](operations.md#helm-upgrade).
 - **SIGHUP** — sending `SIGHUP` to the control plane process reloads the policy
   at once from the file as it is on disk (it does not hurry a ConfigMap edit).
 Use the PID of the control plane you mean; `pidof kbridge-control-plane`

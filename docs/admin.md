@@ -43,18 +43,27 @@ Five steps take a new person from nothing to running commands.
        roles: ["viewer", "developer"]
    ```
 
-   With the Helm chart, edit `rbac.policy` in your values file. It replaces
+   With the Helm chart, the policy is the `rbac.policy` value. It replaces
    the whole policy, so start from the one in the chart's
    [values.yaml](../charts/control-plane/values.yaml) and keep the admin's
    binding. Then upgrade:
 
    ```bash
+   # Production install: edit rbac.policy in your values file, then
    helm upgrade kbridge-control-plane oci://ghcr.io/why-xn/charts/kbridge-control-plane \
-     -n kbridge --version 0.3.1-alpha.1 --reuse-values -f values-control-plane.yaml
+     -n kbridge --version 0.3.1-alpha.1 -f values-control-plane.yaml
+
+   # Quick start (installed with --set only): save the policy as policy.yaml, then
+   helm get values kbridge-control-plane -n kbridge -o yaml > cp-values.yaml
+   helm upgrade kbridge-control-plane oci://ghcr.io/why-xn/charts/kbridge-control-plane \
+     -n kbridge --version 0.3.1-alpha.1 -f cp-values.yaml --set-file rbac.policy=policy.yaml
+   rm cp-values.yaml
    ```
 
-   `--reuse-values` keeps what you set with `--set` at install, such as
-   `auth.jwtSecret`; without it those go back to the chart defaults. The
+   Both keep what you set at install, such as `auth.jwtSecret`. Not
+   `--reuse-values`: it fails when the chart version changes (see
+   [Helm upgrade](operations.md#helm-upgrade)). `cp-values.yaml` holds the
+   JWT secret and admin password, so the commands delete it. The
    upgrade restarts the control plane, so `kb` fails for about a minute. If
    you reach it through `kubectl port-forward`, as in the quick start, the
    forward ends with the old pod: start it again once the new pod is ready.
