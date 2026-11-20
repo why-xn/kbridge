@@ -190,12 +190,15 @@ Apply it in four steps:
    ```
 
    Skipped step 1? The row shows `drift` and the error under it says what is
-   missing, for example
-   `namespace "team-a" must enforce pod-security baseline or restricted before edit can be granted there (kubectl label ns team-a pod-security.kubernetes.io/enforce=baseline)`.
+   missing: `reading namespace "team-a": … not found` without the namespace,
+   or `namespace "team-a" must enforce pod-security baseline or restricted before edit can be granted there (kubectl label ns team-a pod-security.kubernetes.io/enforce=baseline)`
+   without the label.
 
 4. **Try it as the developer:**
 
    ```bash
+   kb logout
+   kb login        # as dev@example.com
    kb create deployment web --image=nginx -n team-a
    # deployment.apps/web created
    kb create deployment web --image=nginx -n default

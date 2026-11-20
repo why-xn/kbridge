@@ -232,8 +232,7 @@ and `admin_password`. The control plane reads them from the mounted files via
 
 ```yaml
 controlPlane:
-  existingSecret: kbridge-agent-token   # pre-created Secret with key `token`
-  token: ""                             # leave empty when existingSecret is set
+  existingSecret: kbridge-agent-token   # pre-created Secret with key `token`; leave `token` unset
 ```
 
 **Check:** the values Helm stores hold no secret. Both commands print nothing:

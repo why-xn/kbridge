@@ -150,7 +150,9 @@ Validation: `kubernetes.server` and `kubernetes.token_file` are required unless
 ### Agent chart values
 
 These chart values have no config key: they shape the agent's Kubernetes
-permissions and network access.
+permissions and network access. The chart's other values (image,
+`replicaCount`, `serviceAccount`, `rbac.create`) are described in its
+[values.yaml](../charts/agent/values.yaml).
 
 The agent never hands its ServiceAccount token to kubectl. The chart turns off
 the default token mount and projects the token, CA and namespace read-only
